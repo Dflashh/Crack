@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.10
+// @version      1.1.0
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -49,8 +49,8 @@
     lineBreak: 'crack-ui-line-break-optimize',
     pauseAnimatedThumbs: 'crack-ui-pause-animated-thumbs',
     hideStatBar: 'crack-ui-hide-stat-bar',
-    widthDragging: 'crack-ui-width-dragging',
     chatWidthCustom: 'crack-ui-chat-width-custom',
+    widthDragging: 'crack-ui-width-dragging',
   };
 
   function clampImageSize(value) {
@@ -330,29 +330,49 @@
       }
 
       /*
-       * 대화창 폭 조절은 안전하게 마킹된 Crack 기본 대화 영역에만 적용한다.
-       * bottom composer / textarea / ProseMirror / 다른 확프 인라인 host는 건드리지 않는다.
-       * 라디오존데 같은 채팅창 고정 확프가 host를 다시 계산할 때 한 칸 내려가는 문제 방지용.
+       * 대화창 폭 조절
+       * - PC에서만 적용한다.
+       * - 모바일 입력창 주변은 라디오존데/턴수/계산기 같은 인라인 확프들이 같은 host를 공유해서
+       *   max-width를 건드리면 host 재탐색과 absolute 위치 계산이 깨진다.
+       * - 모바일 안정화가 우선이라 모바일에서는 폭 조절 CSS를 적용하지 않는다.
        */
-      html.${CLS.chatWidthCustom} [data-crack-ui-chat-width-target="1"] {
-        max-width: var(--crack-ui-chat-width, 768px) !important;
-        width: 100% !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        transition: max-width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-      }
+      @media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+        html.${CLS.chatWidthCustom} div[class*="max-w-screen-md"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-[768px]"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-[850px]"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-3xl"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-4xl"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-5xl"],
+        html.${CLS.chatWidthCustom} div[class*="bottom-0"] div[class*="max-w-"] {
+          max-width: var(--crack-ui-chat-width, 768px) !important;
+          width: 100% !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          transition: max-width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
 
-      html.${CLS.chatWidthCustom}.${CLS.widthDragging} [data-crack-ui-chat-width-target="1"] {
-        transition: none !important;
-      }
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-screen-md"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-[768px]"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-[850px]"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-3xl"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-4xl"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-5xl"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="bottom-0"] div[class*="max-w-"] {
+          transition: none !important;
+        }
 
-      html.${CLS.chatWidthCustom} [data-crack-ui-scroll-button-target="1"] {
-        right: max(20px, calc(50% - var(--crack-ui-scroll-button-offset, 428px))) !important;
-        transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-      }
+        html.${CLS.chatWidthCustom} div[class*="max-w-[640px]"] {
+          max-width: 100% !important;
+        }
 
-      html.${CLS.chatWidthCustom}.${CLS.widthDragging} [data-crack-ui-scroll-button-target="1"] {
-        transition: none !important;
+        html.${CLS.chatWidthCustom} div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"] {
+          right: max(20px, calc(50% - var(--crack-ui-scroll-button-offset, 428px))) !important;
+          transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"] {
+          transition: none !important;
+        }
       }
 
       .crack-ui-search-cluster {
@@ -1203,68 +1223,6 @@
     });
   }
 
-  const CHAT_WIDTH_TARGET_SELECTOR = [
-    'div[class*="max-w-screen-md"]',
-    'div[class*="max-w-[768px]"]',
-    'div[class*="max-w-[850px]"]',
-    'div[class*="max-w-3xl"]',
-    'div[class*="max-w-4xl"]',
-    'div[class*="max-w-5xl"]',
-  ].join(',');
-
-  const SCROLL_BUTTON_TARGET_SELECTOR =
-    'div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"]';
-
-  function unmarkChatWidthTargets() {
-    if (!document.body) return;
-
-    document.querySelectorAll('[data-crack-ui-chat-width-target="1"]').forEach((el) => {
-      delete el.dataset.crackUiChatWidthTarget;
-    });
-
-    document.querySelectorAll('[data-crack-ui-scroll-button-target="1"]').forEach((el) => {
-      delete el.dataset.crackUiScrollButtonTarget;
-    });
-  }
-
-  function isThirdPartyOrComposerRelated(el) {
-    if (!(el instanceof HTMLElement)) return true;
-
-    if (el.closest(`#${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.gearDesktop}, #${ID.gearMobile}`)) return true;
-    if (el.closest('#igx-live-popup, .igx-inline-overlay-host')) return true;
-    if (el.closest('[id^="igx-"], [class*="igx-"]')) return true;
-
-    const className = String(el.className || '');
-    const id = String(el.id || '');
-    if (className.includes('crack-ui-') || className.includes('igx-')) return true;
-    if (id.startsWith('crack-ui-') || id.startsWith('igx-')) return true;
-
-    // 채팅 입력창/인라인 확프가 들어가는 bottom composer 쪽은 폭 조절에서 제외한다.
-    if (el.closest('div[class*="bottom-0"]')) return true;
-    if (el.querySelector('textarea, [contenteditable="true"], .ProseMirror, #igx-live-popup, .igx-inline-overlay-host')) return true;
-
-    return false;
-  }
-
-  function markChatWidthTargets() {
-    if (!document.body) return;
-
-    unmarkChatWidthTargets();
-
-    if (clampChatWidthPercent(chatWidthPercent) === 0) return;
-
-    document.querySelectorAll(CHAT_WIDTH_TARGET_SELECTOR).forEach((el) => {
-      if (isThirdPartyOrComposerRelated(el)) return;
-      el.dataset.crackUiChatWidthTarget = '1';
-    });
-
-    document.querySelectorAll(SCROLL_BUTTON_TARGET_SELECTOR).forEach((el) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (el.closest('#igx-live-popup, .igx-inline-overlay-host, [id^="igx-"]')) return;
-      el.dataset.crackUiScrollButtonTarget = '1';
-    });
-  }
-
   function applyImageSize() {
     document.documentElement.style.setProperty('--crack-ui-img-size', `${imageSize}%`);
   }
@@ -1274,7 +1232,6 @@
     document.documentElement.classList.toggle(CLS.chatWidthCustom, customWidth);
     document.documentElement.style.setProperty('--crack-ui-chat-width', getCssWidthFromPercent(chatWidthPercent));
     document.documentElement.style.setProperty('--crack-ui-scroll-button-offset', getCssScrollButtonOffsetFromPercent(chatWidthPercent));
-    markChatWidthTargets();
   }
 
   function saveImageSizeSoon() {
