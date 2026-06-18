@@ -15,13 +15,7 @@
 > 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 전송 버튼 옆 간단 출력모델 변경 버튼 | 빈출력 자동전송 잠금 | 기타 등등
 ***
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
-[패치 노트](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
+[패치 노트 & 참고 확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
 
 **기능**
 > 턴수 | 응답누적수 | 사용 크래커 | 잔여 크래커 | 차감 크래커
-
-**참고 확프**
-
-* [턴수 & 크래커 표시기](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=210345)
-
-* [크래커 실시간 모니터링](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=151973)
