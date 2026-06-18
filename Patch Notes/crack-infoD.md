@@ -1,3 +1,9 @@
+**참고 확프**
+
+* [턴수 & 크래커 표시기](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=210345)
+
+* [크래커 실시간 모니터링](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=151973)
+***
 ## Update v2.2
 ► CPU/메모리를 잡아먹던 로직 최적화
 * 과하게 호출하는 부분을 최적화한거라 사용 크래커 항목의 갱신이 느릴 수 있음!
