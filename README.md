@@ -4,7 +4,7 @@
 > **돚거 환영!** 버그 제보는 해당 확프 게시글 or 본인이 버그픽스 후 **꼭 뤼튼 여성향 갤러리에 올려주셈**
 ***
 
-## Crack UI Plus <v.1.0.1> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/CrackUI.user.js)
+## Crack UI Plus <v.1.0.6> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/CrackUI.user.js)
 Crack UI 개선용 설정 패널
 
 **기능**
