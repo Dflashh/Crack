@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.7
+// @version      1.0.10
 // @description  Crack을 더 가볍고 편하게
-// @author       깡통들과 나
 // @match        *://crack.wrtn.ai/*
+// @author       깡통들과 나
 // @run-at       document-start
 // @grant        GM_addStyle
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/icon.webp
@@ -50,6 +50,7 @@
     pauseAnimatedThumbs: 'crack-ui-pause-animated-thumbs',
     hideStatBar: 'crack-ui-hide-stat-bar',
     widthDragging: 'crack-ui-width-dragging',
+    chatWidthCustom: 'crack-ui-chat-width-custom',
   };
 
   function clampImageSize(value) {
@@ -328,13 +329,12 @@
         white-space: pre-wrap !important;
       }
 
-      div[class*="max-w-screen-md"],
-      div[class*="max-w-[768px]"],
-      div[class*="max-w-[850px]"],
-      div[class*="max-w-3xl"],
-      div[class*="max-w-4xl"],
-      div[class*="max-w-5xl"],
-      div[class*="bottom-0"] div[class*="max-w-"] {
+      /*
+       * 대화창 폭 조절은 안전하게 마킹된 Crack 기본 대화 영역에만 적용한다.
+       * bottom composer / textarea / ProseMirror / 다른 확프 인라인 host는 건드리지 않는다.
+       * 라디오존데 같은 채팅창 고정 확프가 host를 다시 계산할 때 한 칸 내려가는 문제 방지용.
+       */
+      html.${CLS.chatWidthCustom} [data-crack-ui-chat-width-target="1"] {
         max-width: var(--crack-ui-chat-width, 768px) !important;
         width: 100% !important;
         margin-left: auto !important;
@@ -342,26 +342,16 @@
         transition: max-width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
       }
 
-      html.${CLS.widthDragging} div[class*="max-w-screen-md"],
-      html.${CLS.widthDragging} div[class*="max-w-[768px]"],
-      html.${CLS.widthDragging} div[class*="max-w-[850px]"],
-      html.${CLS.widthDragging} div[class*="max-w-3xl"],
-      html.${CLS.widthDragging} div[class*="max-w-4xl"],
-      html.${CLS.widthDragging} div[class*="max-w-5xl"],
-      html.${CLS.widthDragging} div[class*="bottom-0"] div[class*="max-w-"] {
+      html.${CLS.chatWidthCustom}.${CLS.widthDragging} [data-crack-ui-chat-width-target="1"] {
         transition: none !important;
       }
 
-      div[class*="max-w-[640px]"] {
-        max-width: 100% !important;
-      }
-
-      div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"] {
+      html.${CLS.chatWidthCustom} [data-crack-ui-scroll-button-target="1"] {
         right: max(20px, calc(50% - var(--crack-ui-scroll-button-offset, 428px))) !important;
         transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
       }
 
-      html.${CLS.widthDragging} div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"] {
+      html.${CLS.chatWidthCustom}.${CLS.widthDragging} [data-crack-ui-scroll-button-target="1"] {
         transition: none !important;
       }
 
@@ -730,10 +720,7 @@
         display: none !important;
       }
 
-      #${ID.toggleHeader},
-      #${ID.toggleLineBreak},
-      #${ID.toggleAnimatedThumbs},
-      #${ID.toggleStatBar} {
+      .crack-ui-toggle {
         position: absolute;
         opacity: 0;
         pointer-events: none;
@@ -772,20 +759,14 @@
         transition: transform 170ms cubic-bezier(.28, 1.25, .35, 1);
       }
 
-      #${ID.toggleHeader}:checked + .crack-ui-switch,
-      #${ID.toggleLineBreak}:checked + .crack-ui-switch,
-      #${ID.toggleAnimatedThumbs}:checked + .crack-ui-switch,
-      #${ID.toggleStatBar}:checked + .crack-ui-switch {
+      .crack-ui-toggle:checked + .crack-ui-switch {
         background: #34C759;
         box-shadow:
           inset 0 0 0 1px rgba(255, 255, 255, .08),
           inset 0 1px 2px rgba(0, 0, 0, .08);
       }
 
-      #${ID.toggleHeader}:checked + .crack-ui-switch::after,
-      #${ID.toggleLineBreak}:checked + .crack-ui-switch::after,
-      #${ID.toggleAnimatedThumbs}:checked + .crack-ui-switch::after,
-      #${ID.toggleStatBar}:checked + .crack-ui-switch::after {
+      .crack-ui-toggle:checked + .crack-ui-switch::after {
         transform: translateX(15px);
       }
 
@@ -987,7 +968,7 @@
     return result;
   }
 
-  function getStillThumbCandidates(animatedUrl, img = null) {
+  function getBaseStillThumbCandidates(animatedUrl) {
     if (!animatedUrl) return [];
 
     const raw = String(animatedUrl);
@@ -1001,10 +982,6 @@
     const mapped = map.get(raw) || map.get(normalized);
 
     addUniqueUrl(candidates, mapped);
-
-    // 같은 카드 안에 이미 정지 이미지가 있으면 그걸 최우선 후보로 쓴다.
-    // 일부 카드에는 blur 배경/실제 썸네일 중 하나가 이미 w600으로 들어와 있다.
-    getSiblingStillCandidates(img).forEach((url) => addUniqueUrl(candidates, url));
 
     // Crack CDN 썸네일 규칙 후보들.
     // 1) _q70_q70_gif600.webp -> _w600.webp
@@ -1026,7 +1003,24 @@
     addUniqueUrl(candidates, raw.replace(/\.gif(?=([?#]|$))/i, '.png'));
     addUniqueUrl(candidates, raw.replace(/\.gif(?=([?#]|$))/i, '.jpg'));
 
+    if (!animatedThumbStillCandidateCache.has(cacheKey) && animatedThumbStillCandidateCache.size > 400) {
+      animatedThumbStillCandidateCache.clear();
+    }
+
     animatedThumbStillCandidateCache.set(cacheKey, candidates.slice());
+    return candidates;
+  }
+
+  function getStillThumbCandidates(animatedUrl, img = null) {
+    if (!animatedUrl) return [];
+
+    const candidates = [];
+
+    // 같은 카드 안에 이미 정지 이미지가 있으면 매번 다시 확인한다.
+    // 카드 DOM은 라우팅/지연 로딩에 따라 달라질 수 있어서 URL 캐시에 넣지 않는다.
+    getSiblingStillCandidates(img).forEach((url) => addUniqueUrl(candidates, url));
+    getBaseStillThumbCandidates(animatedUrl).forEach((url) => addUniqueUrl(candidates, url));
+
     return candidates;
   }
 
@@ -1209,13 +1203,78 @@
     });
   }
 
+  const CHAT_WIDTH_TARGET_SELECTOR = [
+    'div[class*="max-w-screen-md"]',
+    'div[class*="max-w-[768px]"]',
+    'div[class*="max-w-[850px]"]',
+    'div[class*="max-w-3xl"]',
+    'div[class*="max-w-4xl"]',
+    'div[class*="max-w-5xl"]',
+  ].join(',');
+
+  const SCROLL_BUTTON_TARGET_SELECTOR =
+    'div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"]';
+
+  function unmarkChatWidthTargets() {
+    if (!document.body) return;
+
+    document.querySelectorAll('[data-crack-ui-chat-width-target="1"]').forEach((el) => {
+      delete el.dataset.crackUiChatWidthTarget;
+    });
+
+    document.querySelectorAll('[data-crack-ui-scroll-button-target="1"]').forEach((el) => {
+      delete el.dataset.crackUiScrollButtonTarget;
+    });
+  }
+
+  function isThirdPartyOrComposerRelated(el) {
+    if (!(el instanceof HTMLElement)) return true;
+
+    if (el.closest(`#${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.gearDesktop}, #${ID.gearMobile}`)) return true;
+    if (el.closest('#igx-live-popup, .igx-inline-overlay-host')) return true;
+    if (el.closest('[id^="igx-"], [class*="igx-"]')) return true;
+
+    const className = String(el.className || '');
+    const id = String(el.id || '');
+    if (className.includes('crack-ui-') || className.includes('igx-')) return true;
+    if (id.startsWith('crack-ui-') || id.startsWith('igx-')) return true;
+
+    // 채팅 입력창/인라인 확프가 들어가는 bottom composer 쪽은 폭 조절에서 제외한다.
+    if (el.closest('div[class*="bottom-0"]')) return true;
+    if (el.querySelector('textarea, [contenteditable="true"], .ProseMirror, #igx-live-popup, .igx-inline-overlay-host')) return true;
+
+    return false;
+  }
+
+  function markChatWidthTargets() {
+    if (!document.body) return;
+
+    unmarkChatWidthTargets();
+
+    if (clampChatWidthPercent(chatWidthPercent) === 0) return;
+
+    document.querySelectorAll(CHAT_WIDTH_TARGET_SELECTOR).forEach((el) => {
+      if (isThirdPartyOrComposerRelated(el)) return;
+      el.dataset.crackUiChatWidthTarget = '1';
+    });
+
+    document.querySelectorAll(SCROLL_BUTTON_TARGET_SELECTOR).forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (el.closest('#igx-live-popup, .igx-inline-overlay-host, [id^="igx-"]')) return;
+      el.dataset.crackUiScrollButtonTarget = '1';
+    });
+  }
+
   function applyImageSize() {
     document.documentElement.style.setProperty('--crack-ui-img-size', `${imageSize}%`);
   }
 
   function applyChatWidth() {
+    const customWidth = clampChatWidthPercent(chatWidthPercent) !== 0;
+    document.documentElement.classList.toggle(CLS.chatWidthCustom, customWidth);
     document.documentElement.style.setProperty('--crack-ui-chat-width', getCssWidthFromPercent(chatWidthPercent));
     document.documentElement.style.setProperty('--crack-ui-scroll-button-offset', getCssScrollButtonOffsetFromPercent(chatWidthPercent));
+    markChatWidthTargets();
   }
 
   function saveImageSizeSoon() {
@@ -1326,7 +1385,7 @@
     cleanedOnce = true;
 
     document.querySelectorAll(
-      '#wrtn-settings-desktop, #wrtn-settings-mobile, #crack-wrtn-ui-settings-panel, #crack-wrtn-ui-reveal-zone, #wrtn-custom-settings-panel, #wrtn-img-resizer-btn, #wrtn-img-resizer-btn-mobile, #chasm-inline-container'
+      '#wrtn-settings-desktop, #wrtn-settings-mobile, #crack-wrtn-ui-settings-panel, #crack-wrtn-ui-reveal-zone, #wrtn-custom-settings-panel, #wrtn-img-resizer-btn, #wrtn-img-resizer-btn-mobile'
     ).forEach((el) => el.remove());
 
     document.querySelectorAll('.crack-ui-search-cluster').forEach((cluster) => {
@@ -1361,7 +1420,9 @@
           ? wrap
           : bar;
 
-      root.dataset.crackUiStatBar = '1';
+      if (root.dataset.crackUiStatBar !== '1') {
+        root.dataset.crackUiStatBar = '1';
+      }
     });
   }
 
@@ -1590,6 +1651,39 @@
     });
   }
 
+  function bindCheckbox(panel, id, checked, onChange) {
+    const input = panel.querySelector(`#${id}`);
+    if (!input) return null;
+
+    input.checked = checked;
+    input.addEventListener('change', () => {
+      onChange(input.checked, input);
+    });
+
+    return input;
+  }
+
+  function bindRangeInput(panel, id, onInput, onCommit = null) {
+    const input = panel.querySelector(`#${id}`);
+    if (!input) return null;
+
+    input.addEventListener('input', (e) => {
+      onInput(e.target.value, e);
+    });
+
+    if (onCommit) {
+      input.addEventListener('change', onCommit);
+      input.addEventListener('blur', onCommit);
+    }
+
+    return input;
+  }
+
+  function syncCheckbox(id, checked) {
+    const input = document.getElementById(id);
+    if (input) input.checked = checked;
+  }
+
   function ensurePanel() {
     if (document.getElementById(ID.panel)) return;
 
@@ -1630,7 +1724,7 @@
               </span>
 
               <span>
-                <input id="${ID.toggleHeader}" type="checkbox">
+                <input id="${ID.toggleHeader}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
@@ -1644,7 +1738,7 @@
               </span>
 
               <span>
-                <input id="${ID.toggleAnimatedThumbs}" type="checkbox">
+                <input id="${ID.toggleAnimatedThumbs}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
@@ -1674,7 +1768,7 @@
               </span>
 
               <span>
-                <input id="${ID.toggleStatBar}" type="checkbox">
+                <input id="${ID.toggleStatBar}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
@@ -1688,7 +1782,7 @@
               </span>
 
               <span>
-                <input id="${ID.toggleLineBreak}" type="checkbox">
+                <input id="${ID.toggleLineBreak}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
@@ -1742,16 +1836,13 @@
       closePanel();
     });
 
+    document.body.appendChild(panel);
+
     bindPanelSections(panel);
     syncPanelSections();
 
-    document.body.appendChild(panel);
-
-    const toggle = panel.querySelector(`#${ID.toggleHeader}`);
-    toggle.checked = autoHideHeader;
-
-    toggle.addEventListener('change', () => {
-      autoHideHeader = toggle.checked;
+    bindCheckbox(panel, ID.toggleHeader, autoHideHeader, (checked) => {
+      autoHideHeader = checked;
       writeStorage(LS.autoHideHeader, autoHideHeader ? '1' : '0');
 
       if (!autoHideHeader) {
@@ -1762,56 +1853,41 @@
       applyState();
     });
 
-    const lineBreakToggle = panel.querySelector(`#${ID.toggleLineBreak}`);
-    lineBreakToggle.checked = lineBreakOptimize;
-
-    lineBreakToggle.addEventListener('change', () => {
-      lineBreakOptimize = lineBreakToggle.checked;
-      writeStorage(LS.lineBreakOptimize, lineBreakOptimize ? '1' : '0');
-      applyState();
-    });
-
-    const animatedThumbToggle = panel.querySelector(`#${ID.toggleAnimatedThumbs}`);
-    animatedThumbToggle.checked = pauseAnimatedThumbs;
-
-    animatedThumbToggle.addEventListener('change', () => {
-      pauseAnimatedThumbs = animatedThumbToggle.checked;
+    bindCheckbox(panel, ID.toggleAnimatedThumbs, pauseAnimatedThumbs, (checked) => {
+      pauseAnimatedThumbs = checked;
       writeStorage(LS.pauseAnimatedThumbs, pauseAnimatedThumbs ? '1' : '0');
       applyState();
       applyAnimatedThumbState();
     });
 
-    const statBarToggle = panel.querySelector(`#${ID.toggleStatBar}`);
-    statBarToggle.checked = hideStatBar;
-
-    statBarToggle.addEventListener('change', () => {
-      hideStatBar = statBarToggle.checked;
+    bindCheckbox(panel, ID.toggleStatBar, hideStatBar, (checked) => {
+      hideStatBar = checked;
       writeStorage(LS.hideStatBar, hideStatBar ? '1' : '0');
       applyState();
     });
 
-    const slider = panel.querySelector(`#${ID.imageSlider}`);
-    slider.addEventListener('input', (e) => {
-      setImageSize(e.target.value);
-    });
-    slider.addEventListener('change', flushImageSizeSave);
-    slider.addEventListener('blur', flushImageSizeSave);
-
-    const chatWidthSlider = panel.querySelector(`#${ID.chatWidthSlider}`);
-    chatWidthSlider.addEventListener('input', (e) => {
-      setChatWidthPercent(e.target.value);
+    bindCheckbox(panel, ID.toggleLineBreak, lineBreakOptimize, (checked) => {
+      lineBreakOptimize = checked;
+      writeStorage(LS.lineBreakOptimize, lineBreakOptimize ? '1' : '0');
+      applyState();
     });
 
-    chatWidthSlider.addEventListener('pointerdown', startChatWidthDrag);
-    chatWidthSlider.addEventListener('touchstart', startChatWidthDrag, { passive: true });
-    chatWidthSlider.addEventListener('mousedown', startChatWidthDrag);
-    chatWidthSlider.addEventListener('pointerup', stopChatWidthDrag);
-    chatWidthSlider.addEventListener('pointercancel', stopChatWidthDrag);
-    chatWidthSlider.addEventListener('touchend', stopChatWidthDrag, { passive: true });
-    chatWidthSlider.addEventListener('touchcancel', stopChatWidthDrag, { passive: true });
-    chatWidthSlider.addEventListener('mouseup', stopChatWidthDrag);
-    chatWidthSlider.addEventListener('change', stopChatWidthDrag);
-    chatWidthSlider.addEventListener('blur', stopChatWidthDrag);
+    bindRangeInput(panel, ID.imageSlider, setImageSize, flushImageSizeSave);
+
+    const chatWidthSlider = bindRangeInput(panel, ID.chatWidthSlider, setChatWidthPercent);
+
+    if (chatWidthSlider) {
+      chatWidthSlider.addEventListener('pointerdown', startChatWidthDrag);
+      chatWidthSlider.addEventListener('touchstart', startChatWidthDrag, { passive: true });
+      chatWidthSlider.addEventListener('mousedown', startChatWidthDrag);
+      chatWidthSlider.addEventListener('pointerup', stopChatWidthDrag);
+      chatWidthSlider.addEventListener('pointercancel', stopChatWidthDrag);
+      chatWidthSlider.addEventListener('touchend', stopChatWidthDrag, { passive: true });
+      chatWidthSlider.addEventListener('touchcancel', stopChatWidthDrag, { passive: true });
+      chatWidthSlider.addEventListener('mouseup', stopChatWidthDrag);
+      chatWidthSlider.addEventListener('change', stopChatWidthDrag);
+      chatWidthSlider.addEventListener('blur', stopChatWidthDrag);
+    }
 
     updateImageSizeUi();
     updateChatWidthUi();
@@ -1849,17 +1925,10 @@
 
     clearMobileHideTimer();
 
-    const toggle = panel.querySelector(`#${ID.toggleHeader}`);
-    if (toggle) toggle.checked = autoHideHeader;
-
-    const lineBreakToggle = panel.querySelector(`#${ID.toggleLineBreak}`);
-    if (lineBreakToggle) lineBreakToggle.checked = lineBreakOptimize;
-
-    const animatedThumbToggle = panel.querySelector(`#${ID.toggleAnimatedThumbs}`);
-    if (animatedThumbToggle) animatedThumbToggle.checked = pauseAnimatedThumbs;
-
-    const statBarToggle = panel.querySelector(`#${ID.toggleStatBar}`);
-    if (statBarToggle) statBarToggle.checked = hideStatBar;
+    syncCheckbox(ID.toggleHeader, autoHideHeader);
+    syncCheckbox(ID.toggleAnimatedThumbs, pauseAnimatedThumbs);
+    syncCheckbox(ID.toggleStatBar, hideStatBar);
+    syncCheckbox(ID.toggleLineBreak, lineBreakOptimize);
 
     syncPanelSections();
     updateImageSizeUi();
