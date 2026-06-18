@@ -19,5 +19,7 @@ Crack UI 개선용 설정 패널
 > 턴수 | 응답누적수 | 사용 크래커 | 잔여 크래커 | 차감 크래커
 
 **참고 확프**
-[턴수 & 크래커 표시기](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=210345)
-[크래커 실시간 모니터링](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=151973)
+
+* [턴수 & 크래커 표시기](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=210345)
+
+* [크래커 실시간 모니터링](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=151973)
