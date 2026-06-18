@@ -4,7 +4,9 @@
 > 버그 제보는 해당 확프 게시글 or 본인이 버그픽스 후 **꼭 뤼튼 여성향 갤러리에 올려주셈**
 ***
 ## Crack UI Plus <v.1.1.5> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/CrackUI.user.js)
-[Crack UI 개선용 설정 패널 참고글](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248)
+[Crack UI 개선용 설정 패널 게시글](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248)
+
+[패치노트](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md)
 
 **기능**
 > 상단바 자동 숨김 | 스탯바 숨김 | 썸네일 정지 | 줄바꿈 최적화 | 채팅 이미지 크기 | 대화창 폭조절
