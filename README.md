@@ -7,8 +7,6 @@
 ## Crack UI Plus <v.1.1.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/CrackUI.user.js)
 Crack UI 개선용 설정 패널
 
-현재 버그 고치는 중 > 일단은 폭 늘려도 하단 안늘어남
-
 **기능**
 > 상단바 자동 숨김 | 스탯바 숨김 | 섬네일 정지 | 줄바꿈 최적화 | 채팅 이미지 크기 | 대화창 폭조절
 
