@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.1.2
+// @version      1.1.5
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -108,7 +108,6 @@
     try {
       localStorage.setItem(key, String(value));
     } catch {
-      // 저장소 접근이 막혀도 UI 기능은 계속 동작하게 둠
     }
   }
 
@@ -116,7 +115,6 @@
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch {
-      // 저장소 접근이 막혀도 UI 기능은 계속 동작하게 둠
     }
   }
 
@@ -324,11 +322,6 @@
         white-space: pre-wrap !important;
       }
 
-      /*
-       * 대화창 폭 조절
-       * - 데스크탑(PC) 환경에서만 작동하도록 미디어 쿼리로 격리
-       * - 모바일(767px 이하)에서는 타 확장프로그램(턴수, 라존데) 레이아웃 붕괴 방지를 위해 순정 폭 유지
-       */
       @media (min-width: 768px) {
         html.${CLS.chatWidthCustom} div[class*="max-w-screen-md"],
         html.${CLS.chatWidthCustom} div[class*="max-w-[768px]"],
@@ -641,6 +634,25 @@
         border-color: rgba(255, 255, 255, .12);
       }
 
+      .crack-ui-range-row[data-disabled="1"] {
+        opacity: .52;
+        filter: grayscale(.35);
+      }
+
+      .crack-ui-range-row[data-disabled="1"],
+      .crack-ui-range-row[data-disabled="1"] * {
+        cursor: not-allowed !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"]:hover {
+        background: rgba(0, 0, 0, .42);
+        border-color: rgba(255, 255, 255, .07);
+      }
+
+      .crack-ui-range:disabled {
+        opacity: .42;
+      }
+
       .crack-ui-row-text {
         display: flex;
         flex-direction: column;
@@ -862,6 +874,10 @@
     return window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)').matches;
   }
 
+  function isChatWidthSupportedViewport() {
+    return window.matchMedia('(min-width: 768px)').matches;
+  }
+
   function normalizeUrl(url) {
     try {
       return new URL(String(url || ''), location.href).href;
@@ -988,11 +1004,6 @@
 
     addUniqueUrl(candidates, mapped);
 
-    // Crack CDN 썸네일 규칙 후보들.
-    // 1) _q70_q70_gif600.webp -> _w600.webp
-    // 2) _q70_q70_gif600.webp -> _q70_q70_w600.webp
-    // 3) _q70_gif600.webp -> _w600.webp
-    // 4) _q70_gif600.webp -> _q70_w600.webp
     const suffixMatch = raw.match(/_gif(\d+)(\.[a-z0-9]+)(?=([?#]|$))/i);
     const size = suffixMatch?.[1] || '600';
     const ext = suffixMatch?.[2] || '.webp';
@@ -1002,7 +1013,6 @@
       addUniqueUrl(candidates, raw.replace(new RegExp(`_q\\d+_gif${size}${ext.replace('.', '\\.')}(?=([?#]|$))`, 'i'), `_w${size}${ext}`));
     }
 
-    // 일반 gif 파일은 같은 이름의 webp/png/jpg가 있으면 후보로 검사한다.
     addUniqueUrl(candidates, raw.replace(/\.gif(?=([?#]|$))/i, '.webp'));
     addUniqueUrl(candidates, raw.replace(/\.gif(?=([?#]|$))/i, '.png'));
     addUniqueUrl(candidates, raw.replace(/\.gif(?=([?#]|$))/i, '.jpg'));
@@ -1019,8 +1029,6 @@
     if (!animatedUrl) return [];
     const candidates = [];
 
-    // 같은 카드 안에 이미 정지 이미지가 있으면 매번 다시 확인한다.
-    // 카드 DOM은 라우팅/지연 로딩에 따라 달라질 수 있어서 URL 캐시에 넣지 않는다.
     getSiblingStillCandidates(img).forEach((url) => addUniqueUrl(candidates, url));
     getBaseStillThumbCandidates(animatedUrl).forEach((url) => addUniqueUrl(candidates, url));
 
@@ -1117,14 +1125,11 @@
     const animatedSrc = getAnimatedImageSrc(img);
     if (!animatedSrc) return false;
 
-    // 배지/로고 같은 UI 이미지는 제외한다.
     const alt = img.getAttribute('alt') || '';
     const src = img.getAttribute('src') || img.currentSrc || img.src || '';
     if (alt === 'crack original') return false;
     if (/\/crack\/original\//i.test(src)) return false;
     if (/\/asset\/badge\//i.test(src)) return false;
-    // 홈/목록 썸네일은 대부분 data-nimg가 있고 object-cover/object-contain을 가진다.
-    // 그래도 사용자가 원한 건 “움짤이면 멈춤”이므로 animated URL이면 기본적으로 대상에 포함한다.
     return true;
   }
 
@@ -1201,7 +1206,15 @@
 
   function applyChatWidth() {
     const customWidth = clampChatWidthPercent(chatWidthPercent) !== 0;
-    document.documentElement.classList.toggle(CLS.chatWidthCustom, customWidth);
+    const supported = isChatWidthSupportedViewport();
+
+    document.documentElement.classList.toggle(CLS.chatWidthCustom, customWidth && supported);
+
+    if (!supported) {
+      isChatWidthDragging = false;
+      document.documentElement.classList.remove(CLS.widthDragging);
+    }
+
     document.documentElement.style.setProperty('--crack-ui-chat-width', getCssWidthFromPercent(chatWidthPercent));
     document.documentElement.style.setProperty('--crack-ui-scroll-button-offset', getCssScrollButtonOffsetFromPercent(chatWidthPercent));
   }
@@ -1251,8 +1264,23 @@
   function updateChatWidthUi() {
     const slider = document.getElementById(ID.chatWidthSlider);
     const value = document.getElementById(ID.chatWidthValue);
-    if (slider) slider.value = String(chatWidthPercent);
-    if (value) value.textContent = formatChatWidthDisplay(chatWidthPercent);
+    const row = slider?.closest('[data-crack-ui-chat-width-row]');
+    const supported = isChatWidthSupportedViewport();
+
+    if (row) {
+      row.dataset.disabled = supported ? '0' : '1';
+      row.setAttribute('aria-disabled', supported ? 'false' : 'true');
+    }
+
+    if (slider) {
+      slider.value = String(chatWidthPercent);
+      slider.disabled = !supported;
+      slider.title = supported ? '' : 'PC/태블릿 전용';
+    }
+
+    if (value) {
+      value.textContent = supported ? formatChatWidthDisplay(chatWidthPercent) : 'PC/태블릿 전용';
+    }
   }
 
   function setImageSize(nextValue) {
@@ -1691,12 +1719,11 @@
               </span>
             </label>
 
-            <div class="crack-ui-range-row">
+            <div class="crack-ui-range-row" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
               <div class="crack-ui-range-head">
                 <span class="crack-ui-row-name">대화창 폭 조절</span>
                 <span id="${ID.chatWidthValue}" class="crack-ui-range-value">${formatChatWidthDisplay(chatWidthPercent)}</span>
               </div>
-
               <input
                 id="${ID.chatWidthSlider}"
                 class="crack-ui-range"
@@ -1937,6 +1964,9 @@
       if (e.key === 'Escape') closePanel();
     });
     window.addEventListener('resize', () => {
+      applyChatWidth();
+      updateChatWidthUi();
+
       if (!panelOpen) return;
       const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
       positionPanel(anchor);
