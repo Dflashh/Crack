@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.0
+// @version      1.0.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @run-at       document-start
 // @grant        GM_addStyle
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/icon.webp
+// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/CrackUI.user.js
+// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/CrackUI.user.js
 // ==/UserScript==
 
 (() => {
