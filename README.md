@@ -6,7 +6,7 @@
 ## Crack UI Plus <v.1.1.5> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/CrackUI.user.js)
 [Crack UI 게시글](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248)
 
-[패치 노트](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md)
+[패치 노트 & 참고확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md)
 
 **기능**
 > 상단바 자동 숨김 | 스탯바 숨김 | 썸네일 정지 | 줄바꿈 최적화 | 채팅 이미지 크기 | 대화창 폭조절
