@@ -1,7 +1,7 @@
 # Crack
 내 아이디어 뤼붕 아이디어들을 모아 만든 Crack 확장프로그램 모음
 
-> **돚거 환영!** 버그 제보는 해당 확프 게시글 or 본인이 버그픽스 후 **꼭 뤼튼 여성향 갤러리에 올려주셈**
+> 버그 제보는 해당 확프 게시글 or 본인이 버그픽스 후 **꼭 뤼튼 여성향 갤러리에 올려주셈**
 ***
 ## Crack UI Plus <v.1.1.5> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/CrackUI.user.js)
 Crack UI 개선용 설정 패널
