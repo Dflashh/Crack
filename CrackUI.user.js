@@ -1,9 +1,8 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.1
+// @version      1.0.6
 // @description  Crack을 더 가볍고 편하게
-// @author       깡통들과 나
 // @match        *://crack.wrtn.ai/*
 // @run-at       document-start
 // @grant        GM_addStyle
@@ -24,6 +23,7 @@
     toggleHeader: 'crack-ui-toggle-header',
     toggleLineBreak: 'crack-ui-toggle-line-break',
     toggleAnimatedThumbs: 'crack-ui-toggle-animated-thumbs',
+    toggleStatBar: 'crack-ui-toggle-stat-bar',
     imageSlider: 'crack-ui-image-size-slider',
     imageValue: 'crack-ui-image-size-value',
     chatWidthSlider: 'crack-ui-chat-width-slider',
@@ -35,7 +35,10 @@
     imageConfig: 'wrtn_img_resizer_config',
     lineBreakOptimize: 'crack_ui_line_break_optimize',
     pauseAnimatedThumbs: 'crack_ui_pause_animated_thumbs',
+    hideStatBar: 'crack_ui_hide_stat_bar',
     chatWidthPercent: 'crack_ui_chat_width_percent_v2',
+    sectionDisplayOpen: 'crack_ui_section_display_open',
+    sectionChatOpen: 'crack_ui_section_chat_open',
   };
 
   const CLS = {
@@ -44,6 +47,7 @@
     panelOpen: 'crack-ui-panel-open',
     lineBreak: 'crack-ui-line-break-optimize',
     pauseAnimatedThumbs: 'crack-ui-pause-animated-thumbs',
+    hideStatBar: 'crack-ui-hide-stat-bar',
     widthDragging: 'crack-ui-width-dragging',
   };
 
@@ -137,6 +141,12 @@
     return raw === '1';
   }
 
+  function loadHideStatBar() {
+    const raw = readStorage(LS.hideStatBar);
+    if (raw == null) return false;
+    return raw === '1';
+  }
+
   function loadChatWidthPercent() {
     const raw = readStorage(LS.chatWidthPercent);
     if (raw != null) return clampChatWidthPercent(raw);
@@ -144,11 +154,20 @@
     return 0;
   }
 
+  function loadSectionOpen(key, fallback = true) {
+    const raw = readStorage(key);
+    if (raw == null) return fallback;
+    return raw === '1';
+  }
+
   let autoHideHeader = readStorage(LS.autoHideHeader) === '1';
   let imageSize = loadImageSize();
   let lineBreakOptimize = loadLineBreakOptimize();
   let pauseAnimatedThumbs = loadPauseAnimatedThumbs();
+  let hideStatBar = loadHideStatBar();
   let chatWidthPercent = loadChatWidthPercent();
+  let displaySectionOpen = loadSectionOpen(LS.sectionDisplayOpen, true);
+  let chatSectionOpen = loadSectionOpen(LS.sectionChatOpen, true);
 
   let panelOpen = false;
   let pointerOnZone = false;
@@ -175,6 +194,10 @@
 
   if (pauseAnimatedThumbs) {
     document.documentElement.classList.add(CLS.pauseAnimatedThumbs);
+  }
+
+  if (hideStatBar) {
+    document.documentElement.classList.add(CLS.hideStatBar);
   }
 
   applyImageSize();
@@ -461,6 +484,95 @@
         gap: 8px;
       }
 
+      .crack-ui-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 6px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, .035);
+        border: 1px solid rgba(255, 255, 255, .055);
+        overflow: hidden;
+      }
+
+      .crack-ui-section-head {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 28px;
+        padding: 3px 7px 4px;
+        box-sizing: border-box;
+        border: 0;
+        border-radius: 14px;
+        background: transparent;
+        color: rgba(255, 255, 255, .92);
+        cursor: pointer;
+        font-family: inherit;
+        transform: none !important;
+        transition: background-color 130ms ease;
+      }
+
+      .crack-ui-section-head:hover {
+        background: rgba(255, 255, 255, .055);
+      }
+
+      .crack-ui-section-head:active {
+        transform: none !important;
+      }
+
+      .crack-ui-section-head:focus,
+      .crack-ui-section-head:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+      }
+
+      .crack-ui-section-title {
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: -.02em;
+        color: rgba(255, 255, 255, .94);
+      }
+
+
+      .crack-ui-section-chevron {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        color: rgba(255, 255, 255, .54);
+        font-size: 14px;
+        line-height: 1;
+        transform: rotate(90deg);
+        transition:
+          transform 150ms ease,
+          background-color 130ms ease,
+          color 130ms ease;
+      }
+
+      .crack-ui-section-head:hover .crack-ui-section-chevron {
+        background: rgba(255, 255, 255, .07);
+        color: rgba(255, 255, 255, .80);
+      }
+
+      .crack-ui-section[data-open="0"] .crack-ui-section-chevron {
+        transform: rotate(0deg);
+      }
+
+      .crack-ui-section-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .crack-ui-section[data-open="0"] .crack-ui-section-body {
+        display: none;
+      }
+
       .crack-ui-panel-close {
         display: inline-flex;
         align-items: center;
@@ -612,9 +724,15 @@
           0 0 1px rgba(0, 0, 0, .20);
       }
 
+      html.${CLS.hideStatBar} [data-crack-ui-stat-bar="1"],
+      html.${CLS.hideStatBar} div[role="button"]:has([data-stat-index]) {
+        display: none !important;
+      }
+
       #${ID.toggleHeader},
       #${ID.toggleLineBreak},
-      #${ID.toggleAnimatedThumbs} {
+      #${ID.toggleAnimatedThumbs},
+      #${ID.toggleStatBar} {
         position: absolute;
         opacity: 0;
         pointer-events: none;
@@ -655,7 +773,8 @@
 
       #${ID.toggleHeader}:checked + .crack-ui-switch,
       #${ID.toggleLineBreak}:checked + .crack-ui-switch,
-      #${ID.toggleAnimatedThumbs}:checked + .crack-ui-switch {
+      #${ID.toggleAnimatedThumbs}:checked + .crack-ui-switch,
+      #${ID.toggleStatBar}:checked + .crack-ui-switch {
         background: #34C759;
         box-shadow:
           inset 0 0 0 1px rgba(255, 255, 255, .08),
@@ -664,7 +783,8 @@
 
       #${ID.toggleHeader}:checked + .crack-ui-switch::after,
       #${ID.toggleLineBreak}:checked + .crack-ui-switch::after,
-      #${ID.toggleAnimatedThumbs}:checked + .crack-ui-switch::after {
+      #${ID.toggleAnimatedThumbs}:checked + .crack-ui-switch::after,
+      #${ID.toggleStatBar}:checked + .crack-ui-switch::after {
         transform: translateX(15px);
       }
 
@@ -1226,6 +1346,24 @@
     );
   }
 
+  function markStatBars() {
+    document.querySelectorAll('[data-stat-index]').forEach((statItem) => {
+      const bar = statItem.closest('[role="button"]');
+      if (!bar) return;
+
+      const wrap = bar.parentElement;
+      const wrapClass = String(wrap?.className || '');
+      const root =
+        wrap &&
+        wrapClass.includes('transition-transform') &&
+        wrapClass.includes('mt-12')
+          ? wrap
+          : bar;
+
+      root.dataset.crackUiStatBar = '1';
+    });
+  }
+
   function findHeader() {
     const byId = document.querySelector('#wrtn-custom-global-header');
     if (byId) return byId;
@@ -1391,6 +1529,66 @@
     bindMobileHandle(handle);
   }
 
+  function setPanelSectionOpen(sectionName, isOpen) {
+    const section = document.querySelector(`[data-crack-ui-section="${sectionName}"]`);
+    if (!section) return;
+
+    const button = section.querySelector(`[data-crack-ui-section-toggle="${sectionName}"]`);
+    const body = section.querySelector(`[data-crack-ui-section-body="${sectionName}"]`);
+
+    section.dataset.open = isOpen ? '1' : '0';
+
+    if (button) {
+      button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+
+    if (body) {
+      body.hidden = !isOpen;
+    }
+  }
+
+  function syncPanelSections() {
+    setPanelSectionOpen('display', displaySectionOpen);
+    setPanelSectionOpen('chat', chatSectionOpen);
+  }
+
+  function setSavedPanelSectionOpen(sectionName, isOpen) {
+    if (sectionName === 'display') {
+      displaySectionOpen = isOpen;
+      writeStorage(LS.sectionDisplayOpen, isOpen ? '1' : '0');
+    } else if (sectionName === 'chat') {
+      chatSectionOpen = isOpen;
+      writeStorage(LS.sectionChatOpen, isOpen ? '1' : '0');
+    }
+
+    setPanelSectionOpen(sectionName, isOpen);
+
+    if (panelOpen) {
+      requestAnimationFrame(() => {
+        const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
+        positionPanel(anchor);
+      });
+    }
+  }
+
+  function bindPanelSections(panel) {
+    panel.querySelectorAll('[data-crack-ui-section-toggle]').forEach((button) => {
+      if (button.dataset.crackUiBound === '1') return;
+      button.dataset.crackUiBound = '1';
+
+      button.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const sectionName = button.dataset.crackUiSectionToggle;
+        const section = panel.querySelector(`[data-crack-ui-section="${sectionName}"]`);
+        const isOpen = section?.dataset.open !== '0';
+
+        setSavedPanelSectionOpen(sectionName, !isOpen);
+      });
+    });
+  }
+
   function ensurePanel() {
     if (document.getElementById(ID.panel)) return;
 
@@ -1408,82 +1606,128 @@
       </div>
 
       <div class="crack-ui-panel-body">
-        <label class="crack-ui-row">
-          <span class="crack-ui-row-text">
-            <span class="crack-ui-row-name">상단바 자동 숨기기</span>
-            <span class="crack-ui-row-desc">
-              PC는 맨 위에 마우스, 모바일은 위쪽 손잡이를 탭하면 다시 보여줌
-            </span>
-          </span>
-
-          <span>
-            <input id="${ID.toggleHeader}" type="checkbox">
-            <span class="crack-ui-switch" aria-hidden="true"></span>
-          </span>
-        </label>
-
-        <div class="crack-ui-range-row">
-          <div class="crack-ui-range-head">
-            <span class="crack-ui-row-name">채팅 이미지 크기</span>
-            <span id="${ID.imageValue}" class="crack-ui-range-value">${formatImageSizeDisplay(imageSize)}</span>
-          </div>
-
-          <input
-            id="${ID.imageSlider}"
-            class="crack-ui-range"
-            type="range"
-            min="20"
-            max="100"
-            step="1"
-            value="${imageSize}"
-            aria-label="채팅 이미지 크기"
+        <div class="crack-ui-section" data-crack-ui-section="display" data-open="${displaySectionOpen ? '1' : '0'}">
+          <button
+            type="button"
+            class="crack-ui-section-head"
+            data-crack-ui-section-toggle="display"
+            aria-expanded="${displaySectionOpen ? 'true' : 'false'}"
           >
+            <span>
+              <span class="crack-ui-section-title">화면</span>
+            </span>
+            <span class="crack-ui-section-chevron" aria-hidden="true">›</span>
+          </button>
+
+          <div class="crack-ui-section-body" data-crack-ui-section-body="display">
+            <label class="crack-ui-row">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">상단바 자동 숨기기</span>
+                <span class="crack-ui-row-desc">
+                  PC는 맨 위에 마우스, 모바일은 위쪽 손잡이를 탭하면 다시 보여줌
+                </span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleHeader}" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">썸네일 움짤 정지</span>
+                <span class="crack-ui-row-desc">
+                  움직이는 썸네일을 정지 이미지로 바꿔 렉을 줄임
+                </span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleAnimatedThumbs}" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+          </div>
         </div>
 
-        <label class="crack-ui-row">
-          <span class="crack-ui-row-text">
-            <span class="crack-ui-row-name">줄바꿈 최적화</span>
-            <span class="crack-ui-row-desc">
-              한글 문장 중간 끊김을 줄이고 긴 문장은 자연스럽게 감싸줌
-            </span>
-          </span>
-
-          <span>
-            <input id="${ID.toggleLineBreak}" type="checkbox">
-            <span class="crack-ui-switch" aria-hidden="true"></span>
-          </span>
-        </label>
-
-        <label class="crack-ui-row">
-          <span class="crack-ui-row-text">
-            <span class="crack-ui-row-name">썸네일 움짤 정지</span>
-            <span class="crack-ui-row-desc">
-              움직이는 썸네일을 정지 이미지로 바꿔 렉을 줄임
-            </span>
-          </span>
-
-          <span>
-            <input id="${ID.toggleAnimatedThumbs}" type="checkbox">
-            <span class="crack-ui-switch" aria-hidden="true"></span>
-          </span>
-        </label>
-
-        <div class="crack-ui-range-row">
-          <div class="crack-ui-range-head">
-            <span class="crack-ui-row-name">대화창 폭 조절</span>
-            <span id="${ID.chatWidthValue}" class="crack-ui-range-value">${formatChatWidthDisplay(chatWidthPercent)}</span>
-          </div>
-
-          <input
-            id="${ID.chatWidthSlider}"
-            class="crack-ui-range"
-            type="range"
-            min="-50"
-            max="100"
-            step="1"
-            value="${chatWidthPercent}"
-            aria-label="대화창 폭 조절"
+        <div class="crack-ui-section" data-crack-ui-section="chat" data-open="${chatSectionOpen ? '1' : '0'}">
+          <button
+            type="button"
+            class="crack-ui-section-head"
+            data-crack-ui-section-toggle="chat"
+            aria-expanded="${chatSectionOpen ? 'true' : 'false'}"
           >
+            <span>
+              <span class="crack-ui-section-title">채팅</span>
+            </span>
+            <span class="crack-ui-section-chevron" aria-hidden="true">›</span>
+          </button>
+
+          <div class="crack-ui-section-body" data-crack-ui-section-body="chat">
+            <label class="crack-ui-row">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">스탯창 끄기</span>
+                <span class="crack-ui-row-desc">
+                  활성화 시 상단 스탯바를 숨김
+                </span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleStatBar}" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">줄바꿈 최적화</span>
+                <span class="crack-ui-row-desc">
+                  로그 줄바꿈이 단어 단위로 끊기게 최적화
+                </span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleLineBreak}" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <div class="crack-ui-range-row">
+              <div class="crack-ui-range-head">
+                <span class="crack-ui-row-name">대화창 폭 조절</span>
+                <span id="${ID.chatWidthValue}" class="crack-ui-range-value">${formatChatWidthDisplay(chatWidthPercent)}</span>
+              </div>
+
+              <input
+                id="${ID.chatWidthSlider}"
+                class="crack-ui-range"
+                type="range"
+                min="-50"
+                max="100"
+                step="1"
+                value="${chatWidthPercent}"
+                aria-label="대화창 폭 조절"
+              >
+            </div>
+
+            <div class="crack-ui-range-row">
+              <div class="crack-ui-range-head">
+                <span class="crack-ui-row-name">채팅 이미지 크기</span>
+                <span id="${ID.imageValue}" class="crack-ui-range-value">${formatImageSizeDisplay(imageSize)}</span>
+              </div>
+
+              <input
+                id="${ID.imageSlider}"
+                class="crack-ui-range"
+                type="range"
+                min="20"
+                max="100"
+                step="1"
+                value="${imageSize}"
+                aria-label="채팅 이미지 크기"
+              >
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1496,6 +1740,9 @@
       e.stopPropagation();
       closePanel();
     });
+
+    bindPanelSections(panel);
+    syncPanelSections();
 
     document.body.appendChild(panel);
 
@@ -1531,6 +1778,15 @@
       writeStorage(LS.pauseAnimatedThumbs, pauseAnimatedThumbs ? '1' : '0');
       applyState();
       applyAnimatedThumbState();
+    });
+
+    const statBarToggle = panel.querySelector(`#${ID.toggleStatBar}`);
+    statBarToggle.checked = hideStatBar;
+
+    statBarToggle.addEventListener('change', () => {
+      hideStatBar = statBarToggle.checked;
+      writeStorage(LS.hideStatBar, hideStatBar ? '1' : '0');
+      applyState();
     });
 
     const slider = panel.querySelector(`#${ID.imageSlider}`);
@@ -1601,6 +1857,10 @@
     const animatedThumbToggle = panel.querySelector(`#${ID.toggleAnimatedThumbs}`);
     if (animatedThumbToggle) animatedThumbToggle.checked = pauseAnimatedThumbs;
 
+    const statBarToggle = panel.querySelector(`#${ID.toggleStatBar}`);
+    if (statBarToggle) statBarToggle.checked = hideStatBar;
+
+    syncPanelSections();
     updateImageSizeUi();
     updateChatWidthUi();
     applyState();
@@ -1671,6 +1931,7 @@
     document.documentElement.classList.toggle(CLS.autoHide, autoHideHeader);
     document.documentElement.classList.toggle(CLS.lineBreak, lineBreakOptimize);
     document.documentElement.classList.toggle(CLS.pauseAnimatedThumbs, pauseAnimatedThumbs);
+    document.documentElement.classList.toggle(CLS.hideStatBar, hideStatBar);
     applyChatWidth();
     updateReveal();
   }
@@ -1742,6 +2003,7 @@
     cleanupOldStuffOnce();
     ensureRevealZone();
     ensurePanel();
+    markStatBars();
     bindGlobal();
 
     const header = findHeader();
