@@ -16,6 +16,7 @@
 ***
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
 [패치 노트](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
+
 **기능**
 > 턴수 | 응답누적수 | 사용 크래커 | 잔여 크래커 | 차감 크래커
 
