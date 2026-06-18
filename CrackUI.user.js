@@ -3,6 +3,7 @@
 // @namespace    https://github.com/Dflashh/Crack
 // @version      1.0.1
 // @description  Crack을 더 가볍고 편하게
+// @author       깡통들과 나
 // @match        *://crack.wrtn.ai/*
 // @run-at       document-start
 // @grant        GM_addStyle
