@@ -12,8 +12,7 @@ Crack UI 개선용 설정 패널
 
 **추가 예정**
 > 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 전송 버튼 옆 간단 출력모델 변경 버튼 | 빈출력 자동전송 잠금 | 기타 등등
-
-
+***
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/crack-infoD.user.js)
 
 **기능**
