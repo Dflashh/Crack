@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.10
+// @version      1.1.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -49,8 +49,8 @@
     lineBreak: 'crack-ui-line-break-optimize',
     pauseAnimatedThumbs: 'crack-ui-pause-animated-thumbs',
     hideStatBar: 'crack-ui-hide-stat-bar',
-    widthDragging: 'crack-ui-width-dragging',
     chatWidthCustom: 'crack-ui-chat-width-custom',
+    widthDragging: 'crack-ui-width-dragging',
   };
 
   function clampImageSize(value) {
@@ -152,7 +152,6 @@
   function loadChatWidthPercent() {
     const raw = readStorage(LS.chatWidthPercent);
     if (raw != null) return clampChatWidthPercent(raw);
-
     return 0;
   }
 
@@ -290,7 +289,7 @@
 
       .wrtn-markdown img,
       [class*="wrtn-markdown"] img,
-      [class*="markdown"] img {
+      .markdown-body img {
         display: block !important;
         width: var(--crack-ui-img-size, 50%) !important;
         max-width: 100% !important;
@@ -301,7 +300,7 @@
 
       .wrtn-markdown a:has(> img),
       [class*="wrtn-markdown"] a:has(> img),
-      [class*="markdown"] a:has(> img) {
+      .markdown-body a:has(> img) {
         display: block !important;
         width: 100% !important;
       }
@@ -317,11 +316,7 @@
       html.${CLS.lineBreak} .wrtn-markdown strong,
       html.${CLS.lineBreak} .wrtn-markdown span,
       html.${CLS.lineBreak} [class*="wrtn-markdown"],
-      html.${CLS.lineBreak} [class*="wrtn-markdown"] *,
-      html.${CLS.lineBreak} [class*="markdown"] p,
-      html.${CLS.lineBreak} [class*="markdown"] em,
-      html.${CLS.lineBreak} [class*="markdown"] strong,
-      html.${CLS.lineBreak} [class*="markdown"] span {
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] * {
         max-width: 100% !important;
         text-align: left !important;
         word-break: keep-all !important;
@@ -330,29 +325,47 @@
       }
 
       /*
-       * 대화창 폭 조절은 안전하게 마킹된 Crack 기본 대화 영역에만 적용한다.
-       * bottom composer / textarea / ProseMirror / 다른 확프 인라인 host는 건드리지 않는다.
-       * 라디오존데 같은 채팅창 고정 확프가 host를 다시 계산할 때 한 칸 내려가는 문제 방지용.
+       * 대화창 폭 조절
+       * - 데스크탑(PC) 환경에서만 작동하도록 미디어 쿼리로 격리
+       * - 모바일(767px 이하)에서는 타 확장프로그램(턴수, 라존데) 레이아웃 붕괴 방지를 위해 순정 폭 유지
        */
-      html.${CLS.chatWidthCustom} [data-crack-ui-chat-width-target="1"] {
-        max-width: var(--crack-ui-chat-width, 768px) !important;
-        width: 100% !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        transition: max-width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-      }
+      @media (min-width: 768px) {
+        html.${CLS.chatWidthCustom} div[class*="max-w-screen-md"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-[768px]"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-[850px]"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-3xl"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-4xl"],
+        html.${CLS.chatWidthCustom} div[class*="max-w-5xl"],
+        html.${CLS.chatWidthCustom} div[class*="bottom-0"] div[class*="max-w-"] {
+          max-width: var(--crack-ui-chat-width, 768px) !important;
+          width: 100% !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          transition: max-width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
 
-      html.${CLS.chatWidthCustom}.${CLS.widthDragging} [data-crack-ui-chat-width-target="1"] {
-        transition: none !important;
-      }
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-screen-md"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-[768px]"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-[850px]"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-3xl"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-4xl"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="max-w-5xl"],
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="bottom-0"] div[class*="max-w-"] {
+          transition: none !important;
+        }
 
-      html.${CLS.chatWidthCustom} [data-crack-ui-scroll-button-target="1"] {
-        right: max(20px, calc(50% - var(--crack-ui-scroll-button-offset, 428px))) !important;
-        transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-      }
+        html.${CLS.chatWidthCustom} div[class*="max-w-[640px]"] {
+          max-width: 100% !important;
+        }
 
-      html.${CLS.chatWidthCustom}.${CLS.widthDragging} [data-crack-ui-scroll-button-target="1"] {
-        transition: none !important;
+        html.${CLS.chatWidthCustom} div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"] {
+          right: max(20px, calc(50% - var(--crack-ui-scroll-button-offset, 428px))) !important;
+          transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        html.${CLS.chatWidthCustom}.${CLS.widthDragging} div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"] {
+          transition: none !important;
+        }
       }
 
       .crack-ui-search-cluster {
@@ -829,7 +842,6 @@
         }
       }
     `;
-
     if (typeof GM_addStyle === 'function') {
       GM_addStyle(css);
     } else {
@@ -870,25 +882,21 @@
     if (animatedThumbUrlMap) return animatedThumbUrlMap;
 
     const map = new Map();
-
     const addPair = (animatedUrl, stillUrl) => {
       if (!animatedUrl || !stillUrl) return;
       if (!isAnimatedImageUrl(animatedUrl)) return;
-
       map.set(String(animatedUrl), String(stillUrl));
       map.set(normalizeUrl(animatedUrl), normalizeUrl(stillUrl));
     };
 
     const walk = (value, depth = 0) => {
       if (!value || depth > 14) return;
-
       if (Array.isArray(value)) {
         value.forEach((item) => walk(item, depth + 1));
         return;
       }
 
       if (typeof value !== 'object') return;
-
       if (typeof value.gif600 === 'string' && typeof value.w600 === 'string') {
         addPair(value.gif600, value.w600);
       }
@@ -937,7 +945,6 @@
 
     const srcAttr = img.getAttribute('src') || '';
     if (isAnimatedImageUrl(srcAttr)) return srcAttr;
-
     const currentSrc = img.currentSrc || img.src || '';
     if (isAnimatedImageUrl(currentSrc)) return currentSrc;
 
@@ -952,7 +959,6 @@
     const result = [];
     const root = img?.parentElement;
     if (!root) return result;
-
     root.querySelectorAll('img').forEach((other) => {
       if (other === img) return;
       if (other.getAttribute('alt') === 'crack original') return;
@@ -964,7 +970,6 @@
 
       addUniqueUrl(result, src);
     });
-
     return result;
   }
 
@@ -991,7 +996,6 @@
     const suffixMatch = raw.match(/_gif(\d+)(\.[a-z0-9]+)(?=([?#]|$))/i);
     const size = suffixMatch?.[1] || '600';
     const ext = suffixMatch?.[2] || '.webp';
-
     if (suffixMatch) {
       addUniqueUrl(candidates, raw.replace(new RegExp(`(?:_q\\d+)+_gif${size}${ext.replace('.', '\\.')}(?=([?#]|$))`, 'i'), `_w${size}${ext}`));
       addUniqueUrl(candidates, raw.replace(new RegExp(`_gif${size}${ext.replace('.', '\\.')}(?=([?#]|$))`, 'i'), `_w${size}${ext}`));
@@ -1013,7 +1017,6 @@
 
   function getStillThumbCandidates(animatedUrl, img = null) {
     if (!animatedUrl) return [];
-
     const candidates = [];
 
     // 같은 카드 안에 이미 정지 이미지가 있으면 매번 다시 확인한다.
@@ -1040,16 +1043,15 @@
         animatedThumbStillUrlStatus.set(normalizeUrl(current), 'bad');
         restoreAnimatedThumbImage(img);
       }
-    }, true);
+    },
+    true);
   }
 
   function setStillThumbImage(img, stillUrl) {
     if (!pauseAnimatedThumbs || !img || !img.isConnected || !stillUrl) return;
-
     const src = img.getAttribute('src') || img.src || '';
     const srcset = img.getAttribute('srcset') || '';
     const animatedSrc = getAnimatedImageSrc(img);
-
     if (animatedSrc && img.dataset.crackUiAnimatedThumbSrc !== animatedSrc) {
       img.dataset.crackUiAnimatedThumbSrc = animatedSrc;
     }
@@ -1073,7 +1075,6 @@
 
   function applyFirstLoadableStillThumb(img, candidates, index = 0) {
     if (!pauseAnimatedThumbs || !img || !img.isConnected || !candidates?.length) return;
-
     if (index >= candidates.length) {
       img.dataset.crackUiAnimatedThumbNoStill = '1';
       return;
@@ -1082,7 +1083,6 @@
     const stillUrl = candidates[index];
     const key = normalizeUrl(stillUrl);
     const status = animatedThumbStillUrlStatus.get(key);
-
     if (status === 'ok') {
       setStillThumbImage(img, stillUrl);
       return;
@@ -1098,12 +1098,10 @@
     animatedThumbStillUrlStatus.set(key, 'loading');
 
     const probe = new Image();
-
     probe.onload = () => {
       animatedThumbStillUrlStatus.set(key, 'ok');
       scheduleAnimatedThumbState();
     };
-
     probe.onerror = () => {
       animatedThumbStillUrlStatus.set(key, 'bad');
       scheduleAnimatedThumbState();
@@ -1114,7 +1112,6 @@
 
   function isAnimatedThumbTarget(img) {
     if (!img || img.tagName !== 'IMG') return false;
-
     if (img.dataset.crackUiAnimatedThumb === '1') return true;
 
     const animatedSrc = getAnimatedImageSrc(img);
@@ -1126,7 +1123,6 @@
     if (alt === 'crack original') return false;
     if (/\/crack\/original\//i.test(src)) return false;
     if (/\/asset\/badge\//i.test(src)) return false;
-
     // 홈/목록 썸네일은 대부분 data-nimg가 있고 object-cover/object-contain을 가진다.
     // 그래도 사용자가 원한 건 “움짤이면 멈춤”이므로 animated URL이면 기본적으로 대상에 포함한다.
     return true;
@@ -1137,7 +1133,6 @@
 
     const animatedSrc = getAnimatedImageSrc(img);
     if (!animatedSrc) return;
-
     if (img.dataset.crackUiAnimatedThumbSrc !== animatedSrc) {
       img.dataset.crackUiAnimatedThumbSrc = animatedSrc;
       delete img.dataset.crackUiAnimatedThumbNoStill;
@@ -1159,7 +1154,6 @@
 
   function restoreAnimatedThumbImage(img) {
     if (!img?.dataset?.crackUiAnimatedThumb && !img?.dataset?.crackUiAnimatedThumbSrc) return;
-
     if (img.dataset.crackUiAnimatedThumbSrc) {
       img.setAttribute('src', img.dataset.crackUiAnimatedThumbSrc);
     }
@@ -1186,7 +1180,6 @@
       'img[data-crack-ui-animated-thumb="1"]',
       'img[data-crack-ui-animated-thumb-src]',
     ].join(',');
-
     document.querySelectorAll(selector).forEach((img) => {
       if (pauseAnimatedThumbs) pauseAnimatedThumbImage(img);
       else restoreAnimatedThumbImage(img);
@@ -1196,72 +1189,9 @@
   function scheduleAnimatedThumbState() {
     if (animatedThumbRafPending) return;
     animatedThumbRafPending = true;
-
     requestAnimationFrame(() => {
       animatedThumbRafPending = false;
       applyAnimatedThumbState();
-    });
-  }
-
-  const CHAT_WIDTH_TARGET_SELECTOR = [
-    'div[class*="max-w-screen-md"]',
-    'div[class*="max-w-[768px]"]',
-    'div[class*="max-w-[850px]"]',
-    'div[class*="max-w-3xl"]',
-    'div[class*="max-w-4xl"]',
-    'div[class*="max-w-5xl"]',
-  ].join(',');
-
-  const SCROLL_BUTTON_TARGET_SELECTOR =
-    'div[class*="absolute"][class*="bottom-[145px]"][class*="gap-3"][class*="min-w-[34px]"][class*="flex-col"][class*="pointer-events-none"]';
-
-  function unmarkChatWidthTargets() {
-    if (!document.body) return;
-
-    document.querySelectorAll('[data-crack-ui-chat-width-target="1"]').forEach((el) => {
-      delete el.dataset.crackUiChatWidthTarget;
-    });
-
-    document.querySelectorAll('[data-crack-ui-scroll-button-target="1"]').forEach((el) => {
-      delete el.dataset.crackUiScrollButtonTarget;
-    });
-  }
-
-  function isThirdPartyOrComposerRelated(el) {
-    if (!(el instanceof HTMLElement)) return true;
-
-    if (el.closest(`#${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.gearDesktop}, #${ID.gearMobile}`)) return true;
-    if (el.closest('#igx-live-popup, .igx-inline-overlay-host')) return true;
-    if (el.closest('[id^="igx-"], [class*="igx-"]')) return true;
-
-    const className = String(el.className || '');
-    const id = String(el.id || '');
-    if (className.includes('crack-ui-') || className.includes('igx-')) return true;
-    if (id.startsWith('crack-ui-') || id.startsWith('igx-')) return true;
-
-    // 채팅 입력창/인라인 확프가 들어가는 bottom composer 쪽은 폭 조절에서 제외한다.
-    if (el.closest('div[class*="bottom-0"]')) return true;
-    if (el.querySelector('textarea, [contenteditable="true"], .ProseMirror, #igx-live-popup, .igx-inline-overlay-host')) return true;
-
-    return false;
-  }
-
-  function markChatWidthTargets() {
-    if (!document.body) return;
-
-    unmarkChatWidthTargets();
-
-    if (clampChatWidthPercent(chatWidthPercent) === 0) return;
-
-    document.querySelectorAll(CHAT_WIDTH_TARGET_SELECTOR).forEach((el) => {
-      if (isThirdPartyOrComposerRelated(el)) return;
-      el.dataset.crackUiChatWidthTarget = '1';
-    });
-
-    document.querySelectorAll(SCROLL_BUTTON_TARGET_SELECTOR).forEach((el) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (el.closest('#igx-live-popup, .igx-inline-overlay-host, [id^="igx-"]')) return;
-      el.dataset.crackUiScrollButtonTarget = '1';
     });
   }
 
@@ -1274,7 +1204,6 @@
     document.documentElement.classList.toggle(CLS.chatWidthCustom, customWidth);
     document.documentElement.style.setProperty('--crack-ui-chat-width', getCssWidthFromPercent(chatWidthPercent));
     document.documentElement.style.setProperty('--crack-ui-scroll-button-offset', getCssScrollButtonOffsetFromPercent(chatWidthPercent));
-    markChatWidthTargets();
   }
 
   function saveImageSizeSoon() {
@@ -1322,7 +1251,6 @@
   function updateChatWidthUi() {
     const slider = document.getElementById(ID.chatWidthSlider);
     const value = document.getElementById(ID.chatWidthValue);
-
     if (slider) slider.value = String(chatWidthPercent);
     if (value) value.textContent = formatChatWidthDisplay(chatWidthPercent);
   }
@@ -1363,7 +1291,6 @@
 
   function scheduleMobileHide(delay = 3500) {
     clearMobileHideTimer();
-
     mobileHideTimer = setTimeout(() => {
       if (!panelOpen) {
         mobileReveal = false;
@@ -1383,11 +1310,9 @@
   function cleanupOldStuffOnce() {
     if (cleanedOnce) return;
     cleanedOnce = true;
-
     document.querySelectorAll(
       '#wrtn-settings-desktop, #wrtn-settings-mobile, #crack-wrtn-ui-settings-panel, #crack-wrtn-ui-reveal-zone, #wrtn-custom-settings-panel, #wrtn-img-resizer-btn, #wrtn-img-resizer-btn-mobile'
     ).forEach((el) => el.remove());
-
     document.querySelectorAll('.crack-ui-search-cluster').forEach((cluster) => {
       const searchBox = cluster.querySelector('.crack-ui-searchbox');
       if (searchBox && cluster.parentElement) {
@@ -1395,10 +1320,8 @@
       }
       cluster.remove();
     });
-
     document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panel}, #${ID.zone}, #${ID.handle}`)
       .forEach((el) => el.remove());
-
     document.documentElement.classList.remove(
       'crack-wrtn-ui-autohide',
       'crack-wrtn-ui-header-visible',
@@ -1447,7 +1370,6 @@
 
       return hasLogo && hasButtons && hasSearch;
     });
-
     if (found) found.dataset.crackUiHeader = '1';
     return found || null;
   }
@@ -1460,28 +1382,24 @@
     btn.title = 'UI 설정';
     btn.setAttribute('aria-label', 'UI 설정');
     btn.innerHTML = gearSvg;
-
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       clearMobileHideTimer();
       togglePanel(btn);
     });
-
     return btn;
   }
 
   function ensureDesktopGear(header) {
     const input = header.querySelector('input[placeholder*="검색"]');
     if (!input) return;
-
     const inputWrap =
       input.closest('span.relative, span[class*="relative"]') ||
       input.parentElement;
 
     const searchBox = inputWrap?.parentElement;
     if (!searchBox) return;
-
     let cluster = searchBox.closest('.crack-ui-search-cluster');
 
     if (!cluster) {
@@ -1495,7 +1413,6 @@
 
     let gear = document.getElementById(ID.gearDesktop);
     if (!gear) gear = makeGear(ID.gearDesktop);
-
     if (gear.parentElement !== cluster) {
       cluster.insertBefore(gear, cluster.firstChild);
     }
@@ -1508,17 +1425,14 @@
       const cls = String(el.className || '');
       return cls.includes('md:hidden') && cls.includes('justify-end') && cls.includes('items-center');
     });
-
     if (!mobileArea) return;
 
     let gear = document.getElementById(ID.gearMobile);
     if (!gear) gear = makeGear(ID.gearMobile);
-
     const searchButton = [...mobileArea.querySelectorAll('button')].find((btn) => {
       if (btn.id === ID.gearMobile) return false;
       return !!btn.querySelector('svg path[fill-rule="evenodd"], svg path[clip-rule="evenodd"]');
     });
-
     if (searchButton && gear.parentElement !== mobileArea) {
       mobileArea.insertBefore(gear, searchButton);
     } else if (!searchButton && gear.parentElement !== mobileArea) {
@@ -1535,13 +1449,11 @@
   function bindMobileHandle(handle) {
     if (!handle || handle.dataset.crackUiBound === '1') return;
     handle.dataset.crackUiBound = '1';
-
     const openFromHandle = (e) => {
       if (!isTouchLikeDevice()) return;
 
       e.preventDefault();
       e.stopPropagation();
-
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
@@ -1556,23 +1468,19 @@
 
   function ensureRevealZone() {
     let zone = document.getElementById(ID.zone);
-
     if (!zone) {
       zone = document.createElement('div');
       zone.id = ID.zone;
-
       zone.addEventListener('mouseenter', () => {
         if (isTouchLikeDevice()) return;
         pointerOnZone = true;
         updateReveal();
       });
-
       zone.addEventListener('mouseleave', () => {
         if (isTouchLikeDevice()) return;
         pointerOnZone = false;
         setTimeout(updateReveal, 80);
       });
-
       document.body.appendChild(zone);
     }
 
@@ -1599,7 +1507,6 @@
     const body = section.querySelector(`[data-crack-ui-section-body="${sectionName}"]`);
 
     section.dataset.open = isOpen ? '1' : '0';
-
     if (button) {
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
@@ -1624,7 +1531,6 @@
     }
 
     setPanelSectionOpen(sectionName, isOpen);
-
     if (panelOpen) {
       requestAnimationFrame(() => {
         const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
@@ -1654,7 +1560,6 @@
   function bindCheckbox(panel, id, checked, onChange) {
     const input = panel.querySelector(`#${id}`);
     if (!input) return null;
-
     input.checked = checked;
     input.addEventListener('change', () => {
       onChange(input.checked, input);
@@ -1670,7 +1575,6 @@
     input.addEventListener('input', (e) => {
       onInput(e.target.value, e);
     });
-
     if (onCommit) {
       input.addEventListener('change', onCommit);
       input.addEventListener('blur', onCommit);
@@ -1826,16 +1730,13 @@
         </div>
       </div>
     `;
-
     panel.addEventListener('click', (e) => e.stopPropagation());
     panel.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
-
     panel.querySelector('.crack-ui-panel-close')?.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       closePanel();
     });
-
     document.body.appendChild(panel);
 
     bindPanelSections(panel);
@@ -1852,26 +1753,22 @@
 
       applyState();
     });
-
     bindCheckbox(panel, ID.toggleAnimatedThumbs, pauseAnimatedThumbs, (checked) => {
       pauseAnimatedThumbs = checked;
       writeStorage(LS.pauseAnimatedThumbs, pauseAnimatedThumbs ? '1' : '0');
       applyState();
       applyAnimatedThumbState();
     });
-
     bindCheckbox(panel, ID.toggleStatBar, hideStatBar, (checked) => {
       hideStatBar = checked;
       writeStorage(LS.hideStatBar, hideStatBar ? '1' : '0');
       applyState();
     });
-
     bindCheckbox(panel, ID.toggleLineBreak, lineBreakOptimize, (checked) => {
       lineBreakOptimize = checked;
       writeStorage(LS.lineBreakOptimize, lineBreakOptimize ? '1' : '0');
       applyState();
     });
-
     bindRangeInput(panel, ID.imageSlider, setImageSize, flushImageSizeSave);
 
     const chatWidthSlider = bindRangeInput(panel, ID.chatWidthSlider, setChatWidthPercent);
@@ -1898,13 +1795,11 @@
     if (!panel) return;
 
     anchor ||= document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
-
     const panelWidth = Math.min(318, window.innerWidth - 16);
     panel.style.width = `${panelWidth}px`;
 
     const rect = anchor?.getBoundingClientRect();
     const panelHeight = panel.offsetHeight || 330;
-
     let left = rect ? rect.left : window.innerWidth - panelWidth - 8;
     let top = rect ? rect.bottom + 10 : 64;
 
@@ -1934,7 +1829,6 @@
     updateImageSizeUi();
     updateChatWidthUi();
     applyState();
-
     requestAnimationFrame(() => {
       positionPanel(anchor);
       panel.style.visibility = '';
@@ -1968,19 +1862,16 @@
     if (!header || header.dataset.crackUiHoverBound === '1') return;
 
     header.dataset.crackUiHoverBound = '1';
-
     header.addEventListener('mouseenter', () => {
       if (isTouchLikeDevice()) return;
       pointerOnHeader = true;
       updateReveal();
     });
-
     header.addEventListener('mouseleave', () => {
       if (isTouchLikeDevice()) return;
       pointerOnHeader = false;
       setTimeout(updateReveal, 80);
     });
-
     header.addEventListener('touchstart', () => {
       if (!isTouchLikeDevice()) return;
       clearMobileHideTimer();
@@ -1992,7 +1883,6 @@
     const shouldReveal =
       autoHideHeader &&
       (pointerOnZone || pointerOnHeader || panelOpen || mobileReveal);
-
     document.documentElement.classList.toggle(CLS.reveal, shouldReveal);
     document.documentElement.classList.toggle(CLS.panelOpen, panelOpen);
   }
@@ -2009,7 +1899,6 @@
   function bindGlobal() {
     if (document.documentElement.dataset.crackUiGlobalBound === '1') return;
     document.documentElement.dataset.crackUiGlobalBound = '1';
-
     document.addEventListener('click', (e) => {
       if (!panelOpen) return;
 
@@ -2020,7 +1909,6 @@
         closePanel();
       }
     }, true);
-
     document.addEventListener('touchstart', (e) => {
       if (!isTouchLikeDevice()) return;
       if (!autoHideHeader || !mobileReveal || panelOpen) return;
@@ -2039,30 +1927,25 @@
         scheduleMobileHide(250);
       }
     }, { passive: true });
-
     window.addEventListener('scroll', () => {
       if (!isTouchLikeDevice()) return;
       if (!autoHideHeader || !mobileReveal || panelOpen) return;
 
       scheduleMobileHide(250);
     }, { passive: true });
-
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closePanel();
     });
-
     window.addEventListener('resize', () => {
       if (!panelOpen) return;
       const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
       positionPanel(anchor);
     });
-
     window.addEventListener('pointerup', stopChatWidthDrag);
     window.addEventListener('pointercancel', stopChatWidthDrag);
     window.addEventListener('mouseup', stopChatWidthDrag);
     window.addEventListener('touchend', stopChatWidthDrag, { passive: true });
     window.addEventListener('touchcancel', stopChatWidthDrag, { passive: true });
-
     window.addEventListener('pagehide', () => {
       flushImageSizeSave();
       flushChatWidthSave();
@@ -2111,7 +1994,6 @@
         init();
       });
     });
-
     mo.observe(document.body, {
       childList: true,
       subtree: true,
