@@ -7,7 +7,7 @@
 // @author       깡통들과 나
 // @run-at       document-start
 // @grant        GM_addStyle
-// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/icon.webp
+// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UI.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/CrackUI.user.js
 // @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/CrackUI.user.js
 // ==/UserScript==
