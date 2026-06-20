@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.2.8
+// @version      1.2.9
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -259,7 +259,6 @@
   let pointerOnHeader = false;
   let mobileReveal = false;
   let mobileHideTimer = null;
-  let rafPending = false;
   let cleanedOnce = false;
   let imageSizeSaveTimer = null;
   let chatWidthSaveTimer = null;
@@ -270,6 +269,11 @@
   let animatedThumbUrlMap = null;
   let animatedThumbStillUrlStatus = new Map();
   let animatedThumbStillCandidateCache = new Map();
+  let cachedHeader = null;
+  let initScheduled = false;
+  let lastInitRun = 0;
+  let initThrottleTimer = null;
+  let pendingThemeApplied = false;
 
   if (autoHideHeader) {
     document.documentElement.classList.add(CLS.autoHide);
@@ -2155,12 +2159,19 @@
   }
 
   function findHeader() {
+    if (cachedHeader && cachedHeader.isConnected) return cachedHeader;
+    cachedHeader = null;
+
     const byId = document.querySelector('#wrtn-custom-global-header');
-    if (byId) return byId;
+    if (byId) {
+      cachedHeader = byId;
+      return byId;
+    }
 
     const byHeight = document.querySelector('div[height="56"][width="100%"]');
     if (byHeight) {
       byHeight.dataset.crackUiHeader = '1';
+      cachedHeader = byHeight;
       return byHeight;
     }
 
@@ -2175,7 +2186,10 @@
 
       return hasLogo && hasButtons && hasSearch;
     });
-    if (found) found.dataset.crackUiHeader = '1';
+    if (found) {
+      found.dataset.crackUiHeader = '1';
+      cachedHeader = found;
+    }
     return found || null;
   }
 
@@ -2861,13 +2875,40 @@
     }
   }
 
+  const INIT_THROTTLE_MS = 300;
+
+  function runInit() {
+    lastInitRun = performance.now();
+    init();
+  }
+
+  function scheduleInit() {
+    if (initScheduled) return;
+    initScheduled = true;
+
+    const elapsed = performance.now() - lastInitRun;
+    const delay = elapsed >= INIT_THROTTLE_MS ? 0 : INIT_THROTTLE_MS - elapsed;
+
+    clearTimeout(initThrottleTimer);
+    initThrottleTimer = setTimeout(() => {
+      initThrottleTimer = null;
+      requestAnimationFrame(() => {
+        initScheduled = false;
+        runInit();
+      });
+    }, delay);
+  }
+
   function init() {
     cleanupOldStuffOnce();
     ensureRevealZone();
     ensurePanel();
     markStatBars();
-    syncThemeStateFromOriginalSettings();
-    applyPendingThemeChoices();
+    if (!pendingThemeApplied) {
+      pendingThemeApplied = true;
+      syncThemeStateFromOriginalSettings();
+      applyPendingThemeChoices();
+    }
     updateThemeUi();
     bindGlobal();
 
@@ -2909,17 +2950,11 @@
         );
 
       if (onlyImageSrcChanges) {
-        scheduleAnimatedThumbState();
+        if (pauseAnimatedThumbs) scheduleAnimatedThumbState();
         return;
       }
 
-      if (rafPending) return;
-      rafPending = true;
-
-      requestAnimationFrame(() => {
-        rafPending = false;
-        init();
-      });
+      scheduleInit();
     });
     mo.observe(document.body, {
       childList: true,
@@ -2930,7 +2965,7 @@
   }
 
   ready(() => {
-    init();
+    runInit();
     observeThemeDomGuard();
     observe();
   });
