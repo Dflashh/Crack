@@ -10,8 +10,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      crack-api.wrtn.ai
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UI.webp
-// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/CrackUI.user.js
-// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/CrackUI.user.js
+// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
+// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // ==/UserScript==
 
 (() => {
