@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      0.1.38
+// @version      0.1.40
 // @description  Crack chat indicator UI
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -67,6 +67,10 @@
   let lastRemainCrackerSignature = '';
   let lastDiffCrackerSignature = '';
   let lastUsedCrackerSignature = '';
+  let sessionRemainCracker = null;
+  let lastDiffActivitySignature = '';
+  let lastDiffActivityAt = 0;
+  let remainCrackerLabelNode = null;
   let spentCache = null;
   let isCalculatingUsedCracker = false;
   let isDeepScanning = false;
@@ -1554,6 +1558,21 @@
     return Math.max(0, Math.round(numberValue)).toLocaleString('en-US');
   }
 
+  function getRemainCrackerLabelNode() {
+    if (
+      remainCrackerLabelNode &&
+      remainCrackerLabelNode.isConnected &&
+      remainCrackerLabelNode.textContent?.trim() === '나의 크래커'
+    ) {
+      return remainCrackerLabelNode;
+    }
+
+    remainCrackerLabelNode = [...document.querySelectorAll('span, div')]
+      .find((el) => el.textContent?.trim() === '나의 크래커') || null;
+
+    return remainCrackerLabelNode;
+  }
+
   function readRemainCrackerCount() {
     const topBar = document.getElementById('chasm-cracker-text');
     const topBarValue = parseCrackerCount(
@@ -1562,9 +1581,7 @@
 
     if (topBarValue !== null) return topBarValue;
 
-    const label = [...document.querySelectorAll('span, div')]
-      .find((el) => el.textContent?.trim() === '나의 크래커');
-
+    const label = getRemainCrackerLabelNode();
     const labelValue = parseCrackerCount(label?.nextElementSibling?.textContent);
     if (labelValue !== null) return labelValue;
 
@@ -1601,11 +1618,27 @@
   function normalizeSpentRecord(record) {
     if (!record || typeof record !== 'object') record = {};
 
+    const liveEvents = Array.isArray(record.liveEvents)
+      ? record.liveEvents
+        .map((event) => ({
+          at: Number(event?.at) || 0,
+          amount: Math.max(0, Math.round(Number(event?.amount) || 0)),
+        }))
+        .filter((event) => event.at > 0 && event.amount > 0)
+        .slice(-300)
+      : [];
+
     return {
       estimatedBase: Math.max(0, Number(record.estimatedBase) || 0),
       liveSpent: Math.max(0, Number(record.liveSpent) || 0),
       estimatedAt: Number(record.estimatedAt) || 0,
       liveUpdatedAt: Number(record.liveUpdatedAt) || 0,
+      estimatedScanLevel: record.estimatedScanLevel === 'deep' ? 'deep' : 'auto',
+      estimatedSignature: String(record.estimatedSignature || ''),
+      estimatedTotal: Math.max(0, Number(record.estimatedTotal) || 0),
+      lastAutoScanAt: Number(record.lastAutoScanAt) || 0,
+      lastAutoScanTotal: Math.max(0, Number(record.lastAutoScanTotal) || 0),
+      liveEvents,
     };
   }
 
@@ -1619,20 +1652,78 @@
     return normalized;
   }
 
-  function setEstimatedSpent(chatId, estimatedTotal) {
-    if (!chatId || !Number.isFinite(estimatedTotal) || estimatedTotal < 0) return;
+  function normalizeSpentScanResult(scanResult) {
+    if (scanResult && typeof scanResult === 'object') {
+      const total = Number(scanResult.total);
+      if (!Number.isFinite(total) || total < 0) return null;
+
+      return {
+        total: Math.round(total),
+        liveCoveredAmount: Math.max(0, Math.round(Number(scanResult.liveCoveredAmount) || 0)),
+        matchedCount: Math.max(0, Number(scanResult.matchedCount) || 0),
+        skippedLiveEventCount: Math.max(0, Number(scanResult.skippedLiveEventCount) || 0),
+        pagesVisited: Math.max(0, Number(scanResult.pagesVisited) || 0),
+        maxPages: Math.max(0, Number(scanResult.maxPages) || 0),
+      };
+    }
+
+    const total = Number(scanResult);
+    if (!Number.isFinite(total) || total < 0) return null;
+
+    return {
+      total: Math.round(total),
+      liveCoveredAmount: 0,
+      matchedCount: 0,
+      skippedLiveEventCount: 0,
+      pagesVisited: 0,
+      maxPages: 0,
+    };
+  }
+
+  function setEstimatedSpent(chatId, scanResult, options = {}) {
+    if (!chatId) return false;
+
+    const result = normalizeSpentScanResult(scanResult);
+    if (!result) return false;
 
     const map = getSpentMap();
     const record = getChatSpentRecord(chatId);
+    const scanLevel = options.deep ? 'deep' : 'auto';
 
-    // 히스토리 추정값은 현재 스캔 결과로 다시 계산된 값이다.
-    // 이전 추정이 넓은 시간 구간 때문에 과대 계산됐을 수 있으므로 max가 아니라 교체한다.
-    const estimatedBase = Math.max(0, Math.round(estimatedTotal) - record.liveSpent);
+    const previousTotal = record.estimatedBase + record.liveSpent;
+    const unexcludedLiveSpent = Math.max(0, record.liveSpent - result.liveCoveredAmount);
+    const estimatedBase = Math.max(0, result.total - unexcludedLiveSpent);
+    const nextTotal = estimatedBase + record.liveSpent;
+    const isDowngrade = nextTotal < previousTotal;
+
+    // 자동 500페이지 스캔은 오래된 방에서 0/부분값이 나올 수 있다.
+    // 이미 깊은스캔이나 더 높은 저장값이 있으면 자동 스캔이 그 값을 덮어내리지 못하게 한다.
+    if (scanLevel === 'auto' && isDowngrade) {
+      record.lastAutoScanAt = Date.now();
+      record.lastAutoScanTotal = result.total;
+      map[chatId] = record;
+      saveSpentMap();
+      return false;
+    }
+
     record.estimatedBase = estimatedBase;
     record.estimatedAt = Date.now();
+    record.estimatedScanLevel = scanLevel;
+    record.estimatedSignature = String(options.signature || '');
+    record.estimatedTotal = result.total;
+    record.lastScanMatchedCount = result.matchedCount;
+    record.lastScanSkippedLiveEventCount = result.skippedLiveEventCount;
+    record.lastScanPagesVisited = result.pagesVisited;
+    record.lastScanMaxPages = result.maxPages;
+
+    if (scanLevel === 'auto') {
+      record.lastAutoScanAt = record.estimatedAt;
+      record.lastAutoScanTotal = result.total;
+    }
 
     map[chatId] = record;
     saveSpentMap();
+    return true;
   }
 
   function addLiveSpent(chatId, amount) {
@@ -1640,9 +1731,17 @@
 
     const map = getSpentMap();
     const record = getChatSpentRecord(chatId);
+    const nextAmount = Math.round(amount);
 
-    record.liveSpent += Math.round(amount);
+    record.liveSpent += nextAmount;
     record.liveUpdatedAt = Date.now();
+    record.liveEvents = [
+      ...record.liveEvents,
+      {
+        at: record.liveUpdatedAt,
+        amount: nextAmount,
+      },
+    ].slice(-300);
 
     map[chatId] = record;
     saveSpentMap();
@@ -1657,6 +1756,16 @@
       liveSpent: record.liveSpent,
       estimatedAt: record.estimatedAt,
       liveUpdatedAt: record.liveUpdatedAt,
+      estimatedScanLevel: record.estimatedScanLevel,
+      estimatedSignature: record.estimatedSignature,
+      estimatedTotal: record.estimatedTotal,
+      lastAutoScanAt: record.lastAutoScanAt,
+      lastAutoScanTotal: record.lastAutoScanTotal,
+      liveEventCount: record.liveEvents.length,
+      lastScanMatchedCount: record.lastScanMatchedCount || 0,
+      lastScanSkippedLiveEventCount: record.lastScanSkippedLiveEventCount || 0,
+      lastScanPagesVisited: record.lastScanPagesVisited || 0,
+      lastScanMaxPages: record.lastScanMaxPages || 0,
     };
   }
 
@@ -1771,9 +1880,16 @@
 
     if (!allTimestamps.length) return null;
 
+    const chatId = info.chatId || getCurrentChatIdSafe();
     const chatTitle = readCurrentChatTitle();
     const normalizedChatTitle = normalizeHistoryTitle(chatTitle);
     const timestampBuckets = makeTimestampMinuteBuckets(aiTimestamps);
+    const liveEvents = chatId
+      ? getChatSpentRecord(chatId).liveEvents.map((event, index) => ({
+        ...event,
+        key: `${event.at}:${event.amount}:${index}`,
+      }))
+      : [];
 
     const aiSorted = [...new Set(aiTimestamps)].sort((a, b) => a - b);
     const userSorted = [...new Set(userTimestamps)].sort((a, b) => a - b);
@@ -1824,9 +1940,11 @@
     return {
       oldest,
       latest,
+      chatId,
       chatTitle,
       normalizedChatTitle,
       timestampBuckets,
+      liveEvents,
       intervals,
       hasIntervals: intervals.length > 0,
       aiAnchoredIntervalCount,
@@ -1848,6 +1966,21 @@
     return context.timestampBuckets.has(Math.floor(itemTime / 60000));
   }
 
+  function findCoveredLiveEvent(item, itemTime, context, coveredLiveEventKeys) {
+    if (!context?.liveEvents?.length) return null;
+
+    const amount = getConsumedAmount(item);
+
+    return context.liveEvents.find((event) => {
+      if (!event?.key || coveredLiveEventKeys.has(event.key)) return false;
+      if (Math.abs(event.at - itemTime) > LIVE_EVENT_MATCH_WINDOW_MS) return false;
+
+      // 같은 시점에 같은 금액으로 이미 PC에서 직접 기록한 차감은 히스토리 추정에서 제외한다.
+      // 금액 필드가 이상하게 비어 있으면 시간만으로도 제외할 수 있게 느슨하게 둔다.
+      return !amount || Math.abs(event.amount - amount) <= 2;
+    }) || null;
+  }
+
   async function fetchEstimatedSpentFromHistory(infoOrTimestamps, options = {}) {
     const context = makeHistoryMatchContext(infoOrTimestamps);
     const token = getAccessToken();
@@ -1859,14 +1992,20 @@
     const delayMs = options.deep ? 18 : 40;
 
     let totalCalculated = 0;
+    let liveCoveredAmount = 0;
+    let matchedCount = 0;
+    let skippedLiveEventCount = 0;
+    let pagesVisited = 0;
     let page = 1;
     let lastSafePage = 1;
     let keepGoing = true;
     let isWarping = true;
     let guard = 0;
+    const coveredLiveEventKeys = new Set();
 
     while (keepGoing && page <= maxPages && guard < maxPages) {
       guard += 1;
+      pagesVisited += 1;
 
       const response = await fetch(
         `https://crack-api.wrtn.ai/crack-cash/crackers/history?limit=10&type=all&page=${page}`,
@@ -1914,7 +2053,18 @@
           (!item.product || item.product === 'cracker') &&
           isHistoryItemMatched(item, itemTime, context)
         ) {
-          totalCalculated += getConsumedAmount(item);
+          const amount = getConsumedAmount(item);
+          const coveredLiveEvent = findCoveredLiveEvent(item, itemTime, context, coveredLiveEventKeys);
+
+          if (coveredLiveEvent) {
+            coveredLiveEventKeys.add(coveredLiveEvent.key);
+            liveCoveredAmount += coveredLiveEvent.amount;
+            skippedLiveEventCount += 1;
+            continue;
+          }
+
+          totalCalculated += amount;
+          matchedCount += 1;
         }
       }
 
@@ -1922,7 +2072,14 @@
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
-    return Math.round(totalCalculated);
+    return {
+      total: Math.round(totalCalculated),
+      liveCoveredAmount: Math.round(liveCoveredAmount),
+      matchedCount,
+      skippedLiveEventCount,
+      pagesVisited,
+      maxPages,
+    };
   }
 
   function getDeepScanButtonMarkup(state = 'idle') {
@@ -2016,17 +2173,20 @@
         return;
       }
 
-      const estimatedTotal = await fetchEstimatedSpentFromHistory(info, {
+      const scanResult = await fetchEstimatedSpentFromHistory(info, {
         maxPages: DEEP_HISTORY_PAGE_LIMIT,
         deep: true,
       });
 
-      if (!Number.isFinite(estimatedTotal)) {
+      if (!scanResult || !Number.isFinite(scanResult.total)) {
         setDeepScanButtonState(root, 'fail');
         return;
       }
 
-      setEstimatedSpent(info.chatId, estimatedTotal);
+      setEstimatedSpent(info.chatId, scanResult, {
+        deep: true,
+        signature: getUsedEstimateSignature(info),
+      });
       updateUsedCrackerDisplay(info.chatId);
       setDeepScanButtonState(root, 'done');
     } catch {
@@ -2085,12 +2245,16 @@
     fetchEstimatedSpentFromHistory(info, {
         maxPages: DEFAULT_HISTORY_PAGE_LIMIT,
       })
-      .then((estimatedTotal) => {
+      .then((scanResult) => {
         if (
-          Number.isFinite(estimatedTotal) &&
+          scanResult &&
+          Number.isFinite(scanResult.total) &&
           info.chatId === getCurrentChatIdSafe()
         ) {
-          setEstimatedSpent(info.chatId, estimatedTotal);
+          setEstimatedSpent(info.chatId, scanResult, {
+            deep: false,
+            signature,
+          });
           updateUsedCrackerDisplay(info.chatId);
         }
       })
@@ -2122,34 +2286,70 @@
     localStorage.setItem(DIFF_CRACKER_CHAT_STORE_KEY, '');
   }
 
+  function getDiffActivitySignature(info) {
+    if (!info?.chatId) return '';
+
+    return [
+      info.chatId,
+      info.userCount ?? '-',
+      info.aiCount ?? '-',
+      info.totalTurn ?? '-',
+      info.lastRole ?? '-',
+    ].join(':');
+  }
+
+  function updateDiffActivityWindow(info) {
+    const signature = getDiffActivitySignature(info);
+    if (!signature) return;
+
+    if (!lastDiffActivitySignature) {
+      lastDiffActivitySignature = signature;
+      return;
+    }
+
+    if (signature !== lastDiffActivitySignature) {
+      lastDiffActivitySignature = signature;
+      lastDiffActivityAt = Date.now();
+    }
+  }
+
+  function isDiffActivityRecent() {
+    return lastDiffActivityAt > 0 &&
+      Date.now() - lastDiffActivityAt <= DIFF_ACTIVITY_WINDOW_MS;
+  }
+
   function updateDiffCrackerCount(currentRemainCracker, chatId) {
     if (currentRemainCracker === null) {
       return getLastDiffCracker(chatId);
     }
 
-    const prevRemainCracker = getLastRemainCrackerCount();
     let diff = null;
 
-    if (
-      prevRemainCracker !== null &&
-      prevRemainCracker > currentRemainCracker
-    ) {
-      const nextDiff = prevRemainCracker - currentRemainCracker;
+    if (sessionRemainCracker === null) {
+      sessionRemainCracker = currentRemainCracker;
+      saveRemainCrackerCount(currentRemainCracker);
+      return getLastDiffCracker(chatId);
+    }
 
-      // 출력량 차감처럼 정상적인 단일 차감만 잡는다.
-      // 구매/이벤트/대량 변동 같은 건 차감 크래커로 오인하지 않게 제외한다.
-      if (nextDiff > 0 && nextDiff < MAX_SINGLE_DEDUCTION) {
+    if (sessionRemainCracker > currentRemainCracker) {
+      const nextDiff = sessionRemainCracker - currentRemainCracker;
+
+      // 차감 크래커/liveSpent는 "이번 세션에서 현재 채팅 활동이 있었던 직후"의 감소만 잡는다.
+      // 폰/앱/다른 탭에서 쓴 뒤 PC로 돌아왔을 때, 저장된 보유 크래커 차이를 현재 방 사용량으로 오인하지 않기 위함.
+      if (
+        nextDiff > 0 &&
+        nextDiff < MAX_SINGLE_DEDUCTION &&
+        isDiffActivityRecent()
+      ) {
         diff = nextDiff;
         saveDiffCracker(chatId, diff);
         addLiveSpent(chatId, diff);
       }
-    } else if (
-      prevRemainCracker !== null &&
-      prevRemainCracker < currentRemainCracker
-    ) {
+    } else if (sessionRemainCracker < currentRemainCracker) {
       clearDiffCracker();
     }
 
+    sessionRemainCracker = currentRemainCracker;
     saveRemainCrackerCount(currentRemainCracker);
 
     return diff ?? getLastDiffCracker(chatId);
@@ -2167,6 +2367,9 @@
       const totalTurnSignature = String(info?.totalTurn ?? '-');
       const remainCrackerCount = readRemainCrackerCount();
       const currentChatId = info?.chatId || getCurrentChatIdSafe();
+
+      updateDiffActivityWindow(info);
+
       const diffCrackerCount = updateDiffCrackerCount(remainCrackerCount, currentChatId);
       const spentDisplay = getSpentDisplay(currentChatId);
       const remainCrackerSignature = formatRemainCracker(
@@ -2394,6 +2597,11 @@
         currentDisplayedDiffCracker: stats.find((item) => item.key === 'diffCracker')?.value,
         currentDisplayedUsedCracker: stats.find((item) => item.key === 'usedCracker')?.value,
         isDefaultUsedCrackerScanning: isCalculatingUsedCracker,
+        diffSafety: {
+          sessionRemainCracker,
+          lastDiffActivityAt,
+          isDiffActivityRecent: isDiffActivityRecent(),
+        },
       };
     },
 
