@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Cloudflare One-Click Setup (R2 + KV + Worker Binding)
-// @version      11.2
+// @version      2.9
 // @description  R2 + KV + Worker Binding > Setup (이미지 선택 옵션 추가&운영환경 최적화)
 // @author       Gemini + 나조금
 // @match        https://dash.cloudflare.com/*
