@@ -5,9 +5,6 @@
 ## Crack UI Plus <v2.0.0> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI)
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a> <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUIdown.user.js"><img src="https://img.shields.io/badge/🔻-구버전_v1.2.9-blue?style=for-the-badge" alt="다운그레이드" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 
-[Crack UI Plus 게시글](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248)
-
-
 **기능**
 > **[ 테마 ]**
 > 
@@ -23,6 +20,12 @@
 
 **추가 예정**
 > 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 빈출력 자동전송 잠금 | 기타 등
+***
+## 클린 리롤 & 믹서 <v2.6.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CleanMix.user.js)
+## 클린 리롤 <v2.5.3> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Clean.user.js)
+<a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=222050"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
+
+UI 업데이트 예정
 ***
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
 [패치 노트 & 참고 확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
