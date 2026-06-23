@@ -27,6 +27,9 @@
 
 UI 업데이트 예정
 ***
+## SVG 워커 자동 생성기 <v2.9> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Cloudflare.user.js)
+<a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=211439"><img src="https://img.shields.io/badge/📜-기본 설정 게시글-f52887?style=for-the-badge" alt="게시글" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=211810"><img src="https://img.shields.io/badge/📜-사용 방법 게시글-f52887?style=for-the-badge" alt="게시글" /></a>
+***
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
 [패치 노트 & 참고 확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
 
