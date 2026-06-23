@@ -8,15 +8,18 @@
 [Crack UI Plus 게시글](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248)
 
 
-### 기능
+**기능**
 ```
-**[테마]**
-색상 ( 라이트모드 / 다크모드 )
-작품 ( 소설형 / 채팅형 )
+[ 테마 ]
+색상 ( 라이트모드 / 다크모드 ) | 작품 ( 소설형 / 채팅형 )
+[ 채팅 ]
+입력창 모델 변경 | 채팅방 설정 자동 숨김 | 스탯창 숨김 | 줄바꿈 최적화 | 채팅 폭 조절 (PC/태블릿 전용) | 이미지 크기
+[ 화면 ]
+상단바 자동 숨김 | 채팅 목록 자동 숨김 | 썸네일 움짤 정지
 ```
 
 **추가 예정**
-> 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 전송 버튼 옆 간단 출력모델 변경 버튼 | 빈출력 자동전송 잠금 | 기타 등
+> 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 빈출력 자동전송 잠금 | 기타 등
 ***
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
 [패치 노트 & 참고 확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
