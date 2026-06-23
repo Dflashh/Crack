@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         ✨ 클린 리롤
+// @namespace    https://github.com/Dflashh/Crack
 // @version      2.7.1
 // @description  리롤하고 싶은 내용을 삭제하고 새 응답 받기
 // @author       깡통들 & 나
 // @match        https://crack.wrtn.ai/*
 // @grant        GM_addStyle
 // @run-at       document-idle
+// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Clean.webp
+// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
+// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // ==/UserScript==
 
 (function() {
