@@ -12,7 +12,7 @@
 > 상단바 자동 숨김 | 스탯바 숨김 | 썸네일 정지 | 줄바꿈 최적화 | 채팅 이미지 크기 | 대화창 폭조절
 
 **추가 예정**
-> 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 전송 버튼 옆 간단 출력모델 변경 버튼 | 빈출력 자동전송 잠금 | 기타 등등
+> 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 전송 버튼 옆 간단 출력모델 변경 버튼 | 빈출력 자동전송 잠금 | 기타 등
 ***
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
 [패치 노트 & 참고 확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
