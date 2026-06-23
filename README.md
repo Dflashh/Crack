@@ -19,7 +19,7 @@
 ## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
 [패치 노트 & 참고 확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
 
-버그 수정중
+갤에 올라온 통합 확프로 설치하세요
 
 **기능**
 > 턴수 | 응답누적수 | 사용 크래커 | 잔여 크래커 | 차감 크래커
