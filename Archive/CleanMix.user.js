@@ -1,14 +1,17 @@
 // ==UserScript==
-// @name         크랙 클린 리롤 & 믹서 통합판 🧩✨ (모바일/자동전송 개선)
-// @namespace    http://tampermonkey.net/
+// @name         클린 리롤 & 믹서 통합판
+// @namespace    https://github.com/Dflashh/Crack
 // @version      2.6.2
 // @description  클린 리롤로 문맥 오염을 막고, 메모리 저장 및 리롤 믹서 통합
-// @author       Gemini & 나 & Assistant
+// @author       깡통들 & 나
 // @match        https://crack.wrtn.ai/*
 // @grant        GM_addStyle
 // @run-at       document-idle
 // @license      MIT
-// ==/UserScript==
+// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Clean.webp
+// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
+// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
+// ==/UserScript===
 
 (function() {
     'use strict';
