@@ -4,7 +4,9 @@
 ***
 ## Crack UI Plus <v.1.2.9> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js)
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a>
+
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md"><img src="https://img.shields.io/badge/🔻-v1.2.9-brightgreen?style=for-the-badge" alt="다운그레이드" /></a>
+
 [Crack UI Plus 게시글](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248)
 
 
