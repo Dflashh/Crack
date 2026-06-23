@@ -7,7 +7,7 @@
 
 [Crack UI Plus 게시글](https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=224248)
 
-<a href="[[https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md]]"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a>
+<a href="[https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md]"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a>
 
 **기능**
 > 상단바 자동 숨김 | 스탯바 숨김 | 썸네일 정지 | 줄바꿈 최적화 | 채팅 이미지 크기 | 대화창 폭조절
