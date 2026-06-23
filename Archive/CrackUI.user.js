@@ -3300,10 +3300,46 @@
           </button>
 
           <div class="crack-ui-section-body" data-crack-ui-section-body="chat">
+            <div class="crack-ui-range-row" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
+              <div class="crack-ui-range-head">
+                <span class="crack-ui-row-name">대화창 폭 조절</span>
+                <span id="${ID.chatWidthValue}" class="crack-ui-range-value">${formatChatWidthDisplay(chatWidthPercent)}</span>
+              </div>
+              <input
+                id="${ID.chatWidthSlider}"
+                class="crack-ui-range"
+                type="range"
+                min="-50"
+                max="100"
+                step="1"
+                value="${chatWidthPercent}"
+                aria-label="대화창 폭 조절"
+              >
+            </div>
+
+            <div class="crack-ui-range-row">
+              <div class="crack-ui-range-head">
+                <span class="crack-ui-row-name">이미지 사이즈 조절</span>
+                <span id="${ID.imageValue}" class="crack-ui-range-value">${formatImageSizeDisplay(imageSize)}</span>
+              </div>
+
+              <input
+                id="${ID.imageSlider}"
+                class="crack-ui-range"
+                type="range"
+                min="20"
+                max="100"
+                step="1"
+                value="${imageSize}"
+                aria-label="이미지 사이즈 조절"
+              >
+            </div>
+
             <div class="crack-ui-model-settings-card">
               <label class="crack-ui-row crack-ui-model-toggle-row">
                 <span class="crack-ui-row-text">
                   <span class="crack-ui-row-name">입력창 모델 변경 버튼</span>
+                  <span class="crack-ui-row-desc">전송 버튼 옆에 활성화됨</span>
                 </span>
 
                 <span>
@@ -3351,7 +3387,7 @@
 
             <label class="crack-ui-row">
               <span class="crack-ui-row-text">
-                <span class="crack-ui-row-name">스탯창 숨기기</span>
+                <span class="crack-ui-row-name">스탯창 숨김</span>
               </span>
 
               <span>
@@ -3373,41 +3409,6 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
-
-            <div class="crack-ui-range-row" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
-              <div class="crack-ui-range-head">
-                <span class="crack-ui-row-name">대화창 폭 조절</span>
-                <span id="${ID.chatWidthValue}" class="crack-ui-range-value">${formatChatWidthDisplay(chatWidthPercent)}</span>
-              </div>
-              <input
-                id="${ID.chatWidthSlider}"
-                class="crack-ui-range"
-                type="range"
-                min="-50"
-                max="100"
-                step="1"
-                value="${chatWidthPercent}"
-                aria-label="대화창 폭 조절"
-              >
-            </div>
-
-            <div class="crack-ui-range-row">
-              <div class="crack-ui-range-head">
-                <span class="crack-ui-row-name">채팅 이미지 크기</span>
-                <span id="${ID.imageValue}" class="crack-ui-range-value">${formatImageSizeDisplay(imageSize)}</span>
-              </div>
-
-              <input
-                id="${ID.imageSlider}"
-                class="crack-ui-range"
-                type="range"
-                min="20"
-                max="100"
-                step="1"
-                value="${imageSize}"
-                aria-label="채팅 이미지 크기"
-              >
-            </div>
           </div>
         </div>
 
@@ -3427,10 +3428,7 @@
           <div class="crack-ui-section-body" data-crack-ui-section-body="display">
             <label class="crack-ui-row">
               <span class="crack-ui-row-text">
-                <span class="crack-ui-row-name">상단바 자동 숨기기</span>
-                <span class="crack-ui-row-desc">
-                  PC는 맨 위에 마우스, 모바일은 위쪽 손잡이를 탭하면 다시 보여줌
-                </span>
+                <span class="crack-ui-row-name">상단바 자동 숨김</span>
               </span>
 
               <span>
