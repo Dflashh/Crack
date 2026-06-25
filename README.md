@@ -21,6 +21,11 @@
 **추가 예정**
 > 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 빈출력 자동전송 잠금 | 기타 등
 ***
+## Crack Shortcut Customizer <v2.6.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Shortcut.user.js)
+<a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/Shortcut.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a>
+
+크랙 채팅방에서 사용 가능한 단축키를 유저마음대로 커스텀
+***
 ## 클린 리롤 & 믹서 <v2.6.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CleanMix.user.js)
 ## 클린 리롤 <v2.5.3> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Clean.user.js)
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/Clean.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=222050"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
