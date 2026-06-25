@@ -23,6 +23,7 @@
 ***
 ## Crack Shortcut Customizer <v1.0.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Shortcut.user.js)
 크랙 채팅방에서 사용 가능한 단축키를 유저마음대로 커스텀
+> Ctrl + Shift + , 또는 채팅방 설정에서 단축키 커스텀 버튼
 
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/Shortcut.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a>
 ***
