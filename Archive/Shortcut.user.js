@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Shortcut Customizer
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.1
+// @version      1.0.2
 // @description  Crack 단축키를 내 마음대로 커스텀
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -67,12 +67,14 @@
   let relaying = false;
   let lastAnchor = null;
   let domEnhanceScheduled = false;
+  let domEnhanceTimer = null;
   let helpPatchScheduled = false;
+  let helpPatchTimer = null;
 
   addStyle();
 
   if (typeof GM_registerMenuCommand === 'function') {
-    GM_registerMenuCommand('Crack 단축어 커스텀 열기', () => openPanel(null));
+    GM_registerMenuCommand('Crack 단축키 커스텀 열기', () => openPanel(null));
   }
 
   document.addEventListener('keydown', onKeyDownCapture, true);
@@ -83,7 +85,7 @@
 
   ready(() => {
     ensurePanel();
-    scheduleDomEnhance();
+    scheduleDomEnhance(0);
     observeDom();
   });
 
@@ -535,6 +537,8 @@
         overflow-x: hidden;
         overflow-y: auto;
         overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(120, 120, 128, .38) transparent;
         display: none;
         box-sizing: border-box;
         padding: 8px;
@@ -553,6 +557,34 @@
 
       #${ID.panel}[data-open="1"] {
         display: block;
+      }
+
+      @media (min-width: 521px) {
+        #${ID.panel}::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+
+        #${ID.panel}::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        #${ID.panel}::-webkit-scrollbar-thumb {
+          border-radius: 999px;
+          background: rgba(120, 120, 128, .32);
+          border: 2px solid transparent;
+          background-clip: padding-box;
+        }
+
+        #${ID.panel}::-webkit-scrollbar-thumb:hover {
+          background: rgba(120, 120, 128, .52);
+          border: 2px solid transparent;
+          background-clip: padding-box;
+        }
+
+        #${ID.panel}::-webkit-scrollbar-corner {
+          background: transparent;
+        }
       }
 
       #${ID.panel}[data-centered="1"] {
@@ -844,15 +876,15 @@
       }
 
       .crack-sc-btn[data-disabled="1"] {
-        border-color: rgba(52, 199, 89, .34);
-        background: rgba(52, 199, 89, .12);
-        color: rgba(220, 255, 228, .92);
+        border-color: rgba(255, 255, 255, .085);
+        background: rgba(255, 255, 255, .055);
+        color: rgba(255, 255, 255, .88);
       }
 
       .crack-sc-btn[data-disabled="1"]:hover {
-        border-color: rgba(52, 199, 89, .48);
-        background: rgba(52, 199, 89, .18);
-        color: rgba(245, 255, 248, .98);
+        background: rgba(255, 255, 255, .10);
+        border-color: rgba(255, 255, 255, .16);
+        color: rgba(255, 255, 255, .94);
       }
 
       .crack-sc-key-btn[data-recording="1"] {
@@ -1264,7 +1296,7 @@
     const panel = document.createElement('div');
     panel.id = ID.panel;
     panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', 'Crack 단축어 커스텀');
+    panel.setAttribute('aria-label', 'Crack 단축키 커스텀');
     panel.addEventListener('click', (e) => e.stopPropagation());
     panel.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
     document.body.appendChild(panel);
@@ -1286,8 +1318,8 @@
     panel.innerHTML = `
       <div class="crack-sc-panel-head">
         <div class="crack-sc-title-wrap">
-          <div class="crack-sc-panel-title">단축어 커스텀</div>
-          <div class="crack-sc-panel-subtitle"><span class="crack-sc-desktop-hint">설정창: ${escapeHtml(humanCombo(PANEL_SHORTCUT))} · </span>키 버튼 누르고 원하는 조합 입력</div>
+          <div class="crack-sc-panel-title">단축키 커스텀</div>
+          <div class="crack-sc-panel-subtitle"><span class="crack-sc-desktop-hint">커스텀 창 열기: ${escapeHtml(humanCombo(PANEL_SHORTCUT))}</span></div>
         </div>
         <button type="button" class="crack-sc-panel-close" data-crack-sc-close aria-label="닫기">×</button>
       </div>
@@ -1489,22 +1521,79 @@
     panel.style.transform = '';
   }
 
-  function scheduleDomEnhance() {
-    if (domEnhanceScheduled) return;
+  function scheduleDomEnhance(delay = 220) {
+    if (!document.body) return;
+
     domEnhanceScheduled = true;
-    requestAnimationFrame(() => {
-      domEnhanceScheduled = false;
-      injectRoomSettingsButton();
-      patchShortcutHelpLabels();
-    });
+    clearTimeout(domEnhanceTimer);
+    domEnhanceTimer = setTimeout(() => {
+      requestAnimationFrame(() => {
+        domEnhanceScheduled = false;
+
+        if (shouldScanRoomSettings()) {
+          injectRoomSettingsButton();
+        }
+
+        if (shouldPatchShortcutHelp()) {
+          patchShortcutHelpLabels();
+        }
+      });
+    }, delay);
   }
 
   function observeDom() {
     const mo = new MutationObserver((mutations) => {
-      if (mutations.length > 0 && mutations.every((m) => m.type === 'attributes')) return;
+      if (!mutations.some(isRelevantMutation)) return;
       scheduleDomEnhance();
     });
+
     mo.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function isRelevantMutation(mutation) {
+    if (mutation.type !== 'childList') return false;
+
+    const nodes = [...mutation.addedNodes];
+    if (!nodes.length) return false;
+
+    return nodes.some((node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      if (node.id === ID.panel || node.id === ID.backdrop || node.id === ID.toast) return false;
+      if (node.closest?.('#' + ID.panel + ', #' + ID.backdrop + ', #' + ID.toast)) return false;
+
+      const text = normalizeText(node.textContent || '');
+      if (
+        text.includes('전체 설정') ||
+        text.includes('키보드 단축키') ||
+        text.includes('대화 내역 열기/닫기') ||
+        text.includes('추천 답변 선택하기')
+      ) {
+        return true;
+      }
+
+      return Boolean(
+        node.matches?.('[role="dialog"], [data-crack-ui-room-panel="1"], code') ||
+        node.querySelector?.('[role="dialog"], [data-crack-ui-room-panel="1"], code')
+      );
+    });
+  }
+
+  function shouldScanRoomSettings() {
+    if (document.querySelector('[data-crack-sc-settings-entry="1"]')) return false;
+
+    return [...document.querySelectorAll('p, span')].some((el) => {
+      if (el.closest?.('[data-crack-sc-settings-entry="1"], #' + ID.panel)) return false;
+      return normalizeText(el.textContent) === '전체 설정';
+    });
+  }
+
+  function shouldPatchShortcutHelp() {
+    const dialog = [...document.querySelectorAll('[role="dialog"]')].find((el) =>
+      normalizeText(el.textContent || '').includes('키보드 단축키')
+    );
+
+    if (!dialog) return false;
+    return Boolean(dialog.querySelector('code'));
   }
 
   function injectRoomSettingsButton() {
@@ -1535,7 +1624,7 @@
             <path fill-rule="evenodd" d="M4.05 4.7h15.9c.86 0 1.55.7 1.55 1.55v11.5c0 .86-.69 1.55-1.55 1.55H4.05c-.86 0-1.55-.69-1.55-1.55V6.25c0-.85.69-1.55 1.55-1.55m.05 1.7v11.2h15.8V6.4z" clip-rule="evenodd"></path>
             <path d="M5.8 8.05h2.25v2.05H5.8zm3.25 0h2.25v2.05H9.05zm3.25 0h2.25v2.05H12.3zm3.25 0h2.65v2.05h-2.65zM5.8 11.05h2.25v2.05H5.8zm3.25 0h2.25v2.05H9.05zm3.25 0h5.9v2.05h-5.9zM5.8 14.05h12.4v2.05H5.8z"></path>
           </svg>
-          <span class="whitespace-nowrap overflow-hidden text-ellipsis typo-text-sm_leading-none_medium">단축어 커스텀</span>
+          <span class="whitespace-nowrap overflow-hidden text-ellipsis typo-text-sm_leading-none_medium">단축키 커스텀</span>
         </span>
       </div>
     `;
@@ -1556,17 +1645,27 @@
     return row;
   }
 
-  function scheduleHelpPatch() {
-    if (helpPatchScheduled) return;
+  function scheduleHelpPatch(delay = 120) {
     helpPatchScheduled = true;
-    requestAnimationFrame(() => {
-      helpPatchScheduled = false;
-      patchShortcutHelpLabels();
-    });
+    clearTimeout(helpPatchTimer);
+    helpPatchTimer = setTimeout(() => {
+      requestAnimationFrame(() => {
+        helpPatchScheduled = false;
+        if (shouldPatchShortcutHelp()) {
+          patchShortcutHelpLabels();
+        }
+      });
+    }, delay);
   }
 
   function patchShortcutHelpLabels() {
-    const codeNodes = [...document.querySelectorAll('code')];
+    const dialog = [...document.querySelectorAll('[role="dialog"]')].find((el) =>
+      normalizeText(el.textContent || '').includes('키보드 단축키')
+    );
+
+    if (!dialog) return;
+
+    const codeNodes = [...dialog.querySelectorAll('code')];
     if (!codeNodes.length) return;
 
     const byName = new Map();
