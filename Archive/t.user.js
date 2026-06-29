@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.0.26
+// @version      2.0.35
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,9 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.0.26';
-  const CRACK_UI_SAFE_QUERY = 'crack_ui_safe';
-  const CRACK_UI_DISABLED_KEY = 'crack_ui_disabled';
+  const CRACK_UI_VERSION = '2.0.35';
 
   function getCrackUiPublicWindow() {
     try {
@@ -47,75 +45,6 @@
     }
   }
 
-  function readRawStorage(key) {
-    try {
-      return localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  }
-
-  function writeRawStorage(key, value) {
-    try {
-      localStorage.setItem(key, String(value));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function removeRawStorage(key) {
-    try {
-      localStorage.removeItem(key);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function isCrackUiSafeModeEnabled() {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get(CRACK_UI_SAFE_QUERY) === '1') return true;
-    } catch {
-    }
-
-    return readRawStorage(CRACK_UI_DISABLED_KEY) === '1';
-  }
-
-  function installCrackUiSafeModeApi() {
-    const api = {
-      version: CRACK_UI_VERSION,
-      safeMode: true,
-      debug() {
-        return {
-          version: CRACK_UI_VERSION,
-          safeMode: true,
-          url: window.location.href,
-          disabledStorage: readRawStorage(CRACK_UI_DISABLED_KEY),
-          hint: 'Safe mode is active. Remove ?crack_ui_safe=1 or run CrackUIPlus.enable() and refresh.',
-        };
-      },
-      disable() {
-        return writeRawStorage(CRACK_UI_DISABLED_KEY, '1');
-      },
-      enable() {
-        return removeRawStorage(CRACK_UI_DISABLED_KEY);
-      },
-    };
-
-    try {
-      exposeCrackUiPublicApi(api);
-    } catch {
-    }
-  }
-
-  if (isCrackUiSafeModeEnabled()) {
-    installCrackUiSafeModeApi();
-    console.warn('[Crack UI Plus] Safe mode is active. Crack UI Plus did not start.');
-    return;
-  }
-
   // =====================================================
   // Core: constants / storage / state
   // =====================================================
@@ -132,6 +61,7 @@
     toggleStatBar: 'crack-ui-toggle-stat-bar',
     toggleBottomModelPicker: 'crack-ui-toggle-bottom-model-picker',
     toggleEmptySendGuard: 'crack-ui-toggle-empty-send-guard',
+    toggleHideSituationImage: 'crack-ui-toggle-hide-situation-image',
     themeModeValue: 'crack-ui-theme-mode-value',
     episodeUiModeValue: 'crack-ui-episode-ui-mode-value',
     imageSlider: 'crack-ui-image-size-slider',
@@ -167,6 +97,7 @@
     sectionChatOpen: 'crack_ui_section_chat_open',
     bottomModelPicker: 'crack_ui_bottom_model_picker',
     emptySendGuard: 'crack_ui_empty_send_guard',
+    hideSituationImage: 'crack_ui_hide_situation_image',
     bottomModelVisibleModels: 'crack_ui_bottom_model_visible_models',
     bottomModelVisibleModelsOpen: 'crack_ui_bottom_model_visible_models_open',
     roomMenuHandle: 'crack_ui_room_menu_handle',
@@ -180,12 +111,14 @@
     lineBreak: 'crack-ui-line-break-optimize',
     pauseAnimatedThumbs: 'crack-ui-pause-animated-thumbs',
     hideStatBar: 'crack-ui-hide-stat-bar',
+    hideSituationImage: 'crack-ui-hide-situation-image',
     chatWidthCustom: 'crack-ui-chat-width-custom',
     widthDragging: 'crack-ui-width-dragging',
     roomMenuEnabled: 'crack-ui-room-menu-enabled',
     roomMenuReveal: 'crack-ui-room-menu-reveal',
     chatListEnabled: 'crack-ui-chat-list-enabled',
     chatListMobilePopoverOpen: 'crack-ui-chat-list-mobile-popover-open',
+    chatListMobileHeaderGapCompensated: 'crack-ui-chat-list-mobile-header-gap-compensated',
     roomTopBarHidden: 'crack-ui-room-top-bar-hidden',
     phoneViewport: 'crack-ui-phone-viewport',
     tabletViewport: 'crack-ui-tablet-viewport',
@@ -347,6 +280,12 @@
     return raw === '1';
   }
 
+  function loadHideSituationImage() {
+    const raw = readStorage(LS.hideSituationImage);
+    if (raw == null) return false;
+    return raw === '1';
+  }
+
   function loadChatWidthPercent() {
     const raw = readStorage(LS.chatWidthPercent);
     if (raw != null) return clampChatWidthPercent(raw);
@@ -382,6 +321,7 @@
   let hideStatBar = loadHideStatBar();
   let bottomModelPicker = loadBottomModelPicker();
   let emptySendGuard = loadEmptySendGuard();
+  let hideSituationImage = loadHideSituationImage();
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
   let chatWidthPercent = loadChatWidthPercent();
@@ -428,6 +368,9 @@
   let cachedMobileChatListToggle = null;
   let cachedRoomPanel = null;
   let cachedRoomPanelToggle = null;
+  let situationImageMarkTimer = null;
+  let situationImageMarkRaf = 0;
+  let situationImageLastScanAt = 0;
   let cachedRoomTopBar = null;
   let lastRoomTopBarInputInteractionAt = 0;
   let roomPanelCloseTimer = null;
@@ -619,7 +562,15 @@
         opacity: 0 !important;
       }
 
-      /* Mobile chat list popover is native Crack UI. Crack UI Plus only proxies the hidden hamburger button on phones. */
+      /* Mobile chat list popover is native Crack UI. Crack UI Plus only proxies the hidden hamburger button on phones.
+         When the global header is hidden, Crack's popover can keep the native height calc(100dvh - 56px)
+         while starting at y=0, which leaves a header-sized blank area at the bottom. Only compensate height. */
+      html.${CLS.autoHide}.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"].md\:hidden:has([role="tablist"]),
+      html.${CLS.autoHide}.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"].md\:hidden:has([data-testid="virtuoso-scroller"]),
+      html.${CLS.autoHide}.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"].md\:hidden:has([data-virtuoso-scroller="true"]) {
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+      }
 
       html.${CLS.roomTopBarHidden} [data-crack-ui-room-top-bar="1"] {
         opacity: 0 !important;
@@ -881,8 +832,9 @@
 
       .crack-ui-title-wrap {
         display: flex;
-        flex-direction: column;
-        gap: 0;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
         min-width: 0;
       }
 
@@ -891,6 +843,16 @@
         font-weight: 800;
         line-height: 1;
         letter-spacing: -.02em;
+      }
+
+      .crack-ui-panel-version {
+        flex: 0 0 auto;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -.01em;
+        color: rgba(255, 255, 255, .42);
+        user-select: none;
       }
 
       .crack-ui-panel-body {
@@ -1052,23 +1014,33 @@
         border-color: rgba(255, 255, 255, .12);
       }
 
+      .crack-ui-row[data-disabled="1"],
       .crack-ui-range-row[data-disabled="1"] {
-        opacity: .52;
-        filter: grayscale(.35);
+        opacity: .58;
+        filter: grayscale(.70);
       }
 
+      .crack-ui-row[data-disabled="1"],
+      .crack-ui-row[data-disabled="1"] *,
       .crack-ui-range-row[data-disabled="1"],
       .crack-ui-range-row[data-disabled="1"] * {
         cursor: not-allowed !important;
       }
 
+      .crack-ui-row[data-disabled="1"]:hover,
       .crack-ui-range-row[data-disabled="1"]:hover {
         background: rgba(0, 0, 0, .42);
         border-color: rgba(255, 255, 255, .07);
       }
 
+      .crack-ui-row[data-disabled="1"] .crack-ui-row-name,
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-row-name,
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range-value {
+        color: rgba(255, 255, 255, .48) !important;
+      }
+
       .crack-ui-range:disabled {
-        opacity: .42;
+        opacity: .46;
       }
 
       .crack-ui-row-text {
@@ -1416,7 +1388,7 @@
         max-width: 28px !important;
         box-sizing: border-box !important;
         padding: 0 !important;
-        margin-left: auto !important;
+        margin-left: 0 !important;
         margin-right: 8px !important;
         border-radius: 999px !important;
         border: 1px solid var(--border, rgba(120, 120, 128, .28)) !important;
@@ -1435,6 +1407,19 @@
           background-color 130ms ease,
           border-color 130ms ease,
           opacity 130ms ease !important;
+      }
+
+
+      #${ID.bottomModelButton}[data-crack-ui-placement="cooperative-group"] {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        flex: 0 0 auto !important;
+      }
+
+      #${ID.bottomModelButton}[data-crack-ui-placement="send-sibling"] {
+        margin-left: 0 !important;
+        margin-right: 8px !important;
+        flex: 0 0 auto !important;
       }
 
       #${ID.bottomModelButton}:hover {
@@ -1658,6 +1643,10 @@
         display: none !important;
       }
 
+      html.${CLS.hideSituationImage} [data-crack-ui-situation-image-button="1"] {
+        display: none !important;
+      }
+
       .crack-ui-toggle {
         position: absolute;
         opacity: 0;
@@ -1708,6 +1697,44 @@
         transform: translateX(15px);
       }
 
+      .crack-ui-row[data-disabled="1"] .crack-ui-switch,
+      .crack-ui-row[data-disabled="1"] .crack-ui-toggle:checked + .crack-ui-switch,
+      .crack-ui-row[data-disabled="1"] .crack-ui-toggle:disabled:checked + .crack-ui-switch {
+        background: rgba(120, 120, 128, .34) !important;
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, .07),
+          inset 0 1px 2px rgba(0, 0, 0, .18) !important;
+      }
+
+      .crack-ui-row[data-disabled="1"] .crack-ui-switch::after {
+        background: rgba(245, 245, 247, .92) !important;
+        box-shadow:
+          0 1px 3px rgba(0, 0, 0, .24),
+          0 0 1px rgba(0, 0, 0, .12) !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-webkit-slider-runnable-track {
+        background: rgba(120, 120, 128, .24) !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-webkit-slider-thumb {
+        background: rgba(245, 245, 247, .88) !important;
+        box-shadow:
+          0 1px 4px rgba(0, 0, 0, .22),
+          0 0 1px rgba(0, 0, 0, .12) !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-moz-range-track {
+        background: rgba(120, 120, 128, .24) !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-moz-range-thumb {
+        background: rgba(245, 245, 247, .88) !important;
+        box-shadow:
+          0 1px 4px rgba(0, 0, 0, .22),
+          0 0 1px rgba(0, 0, 0, .12) !important;
+      }
+
 
       body[data-theme="light"] #${ID.panel},
       html[data-theme="light"] #${ID.panel} {
@@ -1728,6 +1755,11 @@
       body[data-theme="light"] #${ID.panel} .crack-ui-choice-title,
       html[data-theme="light"] #${ID.panel} .crack-ui-choice-title {
         color: rgba(17, 24, 39, .94);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-panel-version,
+      html[data-theme="light"] #${ID.panel} .crack-ui-panel-version {
+        color: rgba(75, 85, 99, .54);
       }
 
       body[data-theme="light"] #${ID.panel} .crack-ui-row-desc,
@@ -1877,6 +1909,27 @@
         box-shadow:
           inset 0 0 0 1px rgba(255, 255, 255, .08),
           inset 0 1px 2px rgba(0, 0, 0, .08);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-switch,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-switch,
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:checked + .crack-ui-switch,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:checked + .crack-ui-switch,
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:disabled:checked + .crack-ui-switch,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:disabled:checked + .crack-ui-switch {
+        background: rgba(120, 120, 128, .30) !important;
+        box-shadow:
+          inset 0 0 0 1px rgba(17, 24, 39, .07),
+          inset 0 1px 2px rgba(0, 0, 0, .06) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-row-name,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-row-name,
+      body[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-row-name,
+      html[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-row-name,
+      body[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-range-value,
+      html[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-range-value {
+        color: rgba(17, 24, 39, .40) !important;
       }
 
       body[data-theme="light"] #${ID.panel} .crack-ui-choice-row[data-selected="1"] .crack-ui-choice-mark,
@@ -3489,6 +3542,7 @@
       <div class="crack-ui-panel-head">
         <div class="crack-ui-title-wrap">
           <div class="crack-ui-panel-title">Crack UI Plus</div>
+          <div class="crack-ui-panel-version" aria-label="버전 ${CRACK_UI_VERSION}">v${CRACK_UI_VERSION}</div>
         </div>
         <button type="button" class="crack-ui-panel-close" aria-label="닫기">×</button>
       </div>
@@ -3677,6 +3731,17 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
+
+            <label class="crack-ui-row">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">상황 이미지 끄기</span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleHideSituationImage}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
           </div>
         </div>
 
@@ -3705,7 +3770,7 @@
               </span>
             </label>
 
-            <label class="crack-ui-row" data-crack-ui-chat-list-auto-hide-row data-disabled="0" aria-disabled="false">
+            <label class="crack-ui-row" data-crack-ui-chat-list-auto-hide-row data-disabled="${isChatListAutoHideSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatListAutoHideSupportedViewport() ? 'false' : 'true'}">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅 목록 자동 숨김</span>
               </span>
@@ -3787,6 +3852,12 @@
       writeStorage(LS.emptySendGuard, emptySendGuard ? '1' : '0');
       applyEmptySendGuardState();
     });
+
+    bindCheckbox(panel, ID.toggleHideSituationImage, hideSituationImage, (checked) => {
+      hideSituationImage = checked;
+      writeStorage(LS.hideSituationImage, hideSituationImage ? '1' : '0');
+      applyState();
+    });
     bindCheckbox(panel, ID.toggleRoomMenuHandle, roomMenuHandle, (checked) => {
       roomMenuHandle = checked;
       writeStorage(LS.roomMenuHandle, roomMenuHandle ? '1' : '0');
@@ -3866,6 +3937,7 @@
     syncCheckbox(ID.toggleLineBreak, lineBreakOptimize);
     syncCheckbox(ID.toggleBottomModelPicker, bottomModelPicker);
     syncCheckbox(ID.toggleEmptySendGuard, emptySendGuard);
+    syncCheckbox(ID.toggleHideSituationImage, hideSituationImage);
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
     updateVisibleModelChoicesUi();
@@ -3938,10 +4010,12 @@
   function applyState() {
     updateDeviceViewportClasses();
     markStatBars();
+    scheduleSituationImageButtonMark({ immediate: hideSituationImage });
     document.documentElement.classList.toggle(CLS.autoHide, autoHideHeader);
     document.documentElement.classList.toggle(CLS.lineBreak, lineBreakOptimize);
     document.documentElement.classList.toggle(CLS.pauseAnimatedThumbs, pauseAnimatedThumbs);
     document.documentElement.classList.toggle(CLS.hideStatBar, hideStatBar);
+    document.documentElement.classList.toggle(CLS.hideSituationImage, hideSituationImage);
     document.documentElement.classList.toggle(CLS.roomMenuEnabled, roomMenuHandle && crackUiIsChatRoute());
     document.documentElement.classList.toggle(CLS.chatListEnabled, chatListAutoHide && isChatListAutoHideSupportedViewport());
     markMobileChatListOpenState();
@@ -3953,6 +4027,107 @@
     updateReveal();
   }
 
+
+  // =====================================================
+  // Feature: situation image button hide
+  // =====================================================
+
+  function getSvgPathText(root) {
+    if (!root?.querySelectorAll) return '';
+    return [...root.querySelectorAll('path')]
+      .map((path) => String(path.getAttribute('d') || ''))
+      .join(' ')
+      .replace(/\s+/g, ' ');
+  }
+
+  function scoreSituationImageButton(button) {
+    if (!button || !button.isConnected) return -1;
+    if (button.id && button.id.startsWith('crack-ui-')) return -1;
+    if (button.closest?.(`#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.chatListZone}`)) return -1;
+
+    const r = crackUiEdgeRect(button);
+    if (!r || r.width < 20 || r.width > 48 || r.height < 20 || r.height > 48) return -1;
+
+    const pathText = getSvgPathText(button);
+    if (!pathText) return -1;
+
+    let score = 0;
+    if (pathText.includes('m17.01 2.2') && pathText.includes('M18.63 1.44')) score += 28;
+    if (pathText.includes('clip-rule') || pathText.includes('m13.8 2.58')) score += 4;
+
+    const classes = `${String(button.className || '')} ${String(button.parentElement?.className || '')} ${String(button.parentElement?.parentElement?.className || '')}`;
+    if (classes.includes('size-7')) score += 4;
+    if (classes.includes('bg-secondary')) score += 3;
+    if (classes.includes('space-x-3')) score += 3;
+    if (classes.includes('justify-between')) score += 2;
+    if (classes.includes('mt-2')) score += 2;
+
+    const actionRow = button.closest?.('div.flex.items-center.justify-between');
+    if (actionRow) {
+      const rowRect = crackUiEdgeRect(actionRow);
+      if (rowRect && rowRect.top > 40 && rowRect.bottom <= (window.innerHeight || 0) + 120) score += 2;
+      if (actionRow.querySelector('button[aria-label="메시지 옵션"]')) score += 8;
+      if (actionRow.textContent && actionRow.textContent.length < 80) score += 1;
+    }
+
+    return score;
+  }
+
+  function findSituationImageButtons() {
+    const result = [];
+    for (const button of document.querySelectorAll('button')) {
+      if (scoreSituationImageButton(button) >= 30) result.push(button);
+    }
+    return result;
+  }
+
+  function clearSituationImageButtonMarks() {
+    for (const old of document.querySelectorAll('[data-crack-ui-situation-image-button="1"]')) {
+      old.removeAttribute('data-crack-ui-situation-image-button');
+      old.removeAttribute('aria-hidden');
+      old.removeAttribute('tabindex');
+    }
+  }
+
+  function markSituationImageButtons() {
+    situationImageLastScanAt = performance.now();
+    clearSituationImageButtonMarks();
+
+    if (!hideSituationImage) return;
+
+    for (const button of findSituationImageButtons()) {
+      button.dataset.crackUiSituationImageButton = '1';
+      button.setAttribute('aria-hidden', 'true');
+      button.tabIndex = -1;
+    }
+  }
+
+  function scheduleSituationImageButtonMark({ immediate = false } = {}) {
+    if (!hideSituationImage && !document.querySelector('[data-crack-ui-situation-image-button="1"]')) return;
+
+    if (immediate) {
+      clearTimeout(situationImageMarkTimer);
+      situationImageMarkTimer = null;
+      if (situationImageMarkRaf) cancelAnimationFrame(situationImageMarkRaf);
+      situationImageMarkRaf = requestAnimationFrame(() => {
+        situationImageMarkRaf = 0;
+        markSituationImageButtons();
+      });
+      return;
+    }
+
+    if (situationImageMarkTimer || situationImageMarkRaf) return;
+
+    const elapsed = performance.now() - situationImageLastScanAt;
+    const delay = Math.max(120, 500 - elapsed);
+    situationImageMarkTimer = setTimeout(() => {
+      situationImageMarkTimer = null;
+      situationImageMarkRaf = requestAnimationFrame(() => {
+        situationImageMarkRaf = 0;
+        markSituationImageButtons();
+      });
+    }, delay);
+  }
 
   // =====================================================
   // Feature: empty composer send guard
@@ -4744,6 +4919,53 @@
     btn.setAttribute('aria-label', `채팅 모델 변경: ${info.name}`);
   }
 
+  function isNodeBeforeInSameParent(node, target) {
+    if (!node || !target || node.parentElement !== target.parentElement) return false;
+    let cur = node;
+    while ((cur = cur.nextElementSibling)) {
+      if (cur === target) return true;
+    }
+    return false;
+  }
+
+  function findBottomModelCooperativeGroup(sendButton) {
+    const parent = sendButton?.parentElement;
+    if (!parent) return null;
+
+    // Crack Muse Writer / 자동메모장 계열은 이 그룹을 전송 버튼 바로 앞으로
+    // 계속 되돌리므로, 우리 모델 버튼은 형제 자리를 다투지 않고 이 그룹 안으로 합류한다.
+    const pureGroup = document.getElementById('crack-pure-send-left-group');
+    if (pureGroup?.isConnected && pureGroup.parentElement === parent) return pureGroup;
+
+    return null;
+  }
+
+  function placeBottomModelButton(btn, sendButton) {
+    const parent = sendButton?.parentElement;
+    if (!btn || !parent) return false;
+
+    const cooperativeGroup = findBottomModelCooperativeGroup(sendButton);
+
+    if (cooperativeGroup) {
+      if (btn.parentElement !== cooperativeGroup) {
+        cooperativeGroup.appendChild(btn);
+      }
+      btn.dataset.crackUiPlacement = 'cooperative-group';
+      parent.dataset.crackUiBottomModelGroup = '1';
+      parent.dataset.crackUiBottomModelCooperative = '1';
+      return true;
+    }
+
+    if (btn.parentElement !== parent || !isNodeBeforeInSameParent(btn, sendButton)) {
+      parent.insertBefore(btn, sendButton);
+    }
+
+    btn.dataset.crackUiPlacement = 'send-sibling';
+    parent.dataset.crackUiBottomModelGroup = '1';
+    delete parent.dataset.crackUiBottomModelCooperative;
+    return true;
+  }
+
   function ensureBottomModelButton() {
     const sendButton = DOM.sendButton();
     let btn = document.getElementById(ID.bottomModelButton);
@@ -4758,11 +4980,7 @@
 
     if (!btn) btn = createBottomModelButton();
 
-    if (btn.parentElement !== sendButton.parentElement || btn.nextElementSibling !== sendButton) {
-      sendButton.parentElement.insertBefore(btn, sendButton);
-    }
-
-    sendButton.parentElement.dataset.crackUiBottomModelGroup = '1';
+    placeBottomModelButton(btn, sendButton);
     syncBottomModelButton();
   }
 
@@ -5619,6 +5837,7 @@
     chatListToggle: (panel) => findChatListToggle(panel),
     mobileChatListToggle: () => findMobileChatListToggle(),
     mobileChatListPopover: () => getMobileChatListPopover(),
+    situationImageButtons: () => findSituationImageButtons(),
   };
 
   const DOM_LOCATORS = {
@@ -5636,6 +5855,7 @@
     chatListToggle: DOM.chatListToggle,
     mobileChatListToggle: DOM.mobileChatListToggle,
     mobileChatListPopover: DOM.mobileChatListPopover,
+    situationImageButtons: DOM.situationImageButtons,
   };
 
   function getDomLocatorDebugSnapshot() {
@@ -5757,19 +5977,51 @@
   }
 
   function forceMobileChatListPopoverLayout() {
-    // 2.0.26: phone chat list is native Crack UI. Do not change Radix popover layout.
-    return false;
-  }
+    // Phone chat list is native Crack UI. Do not touch width, overflow, pointer-events, or auto-close.
+    // Only compensate the header-sized bottom gap caused by hidden global header + native 100dvh - 56px height.
+    if (!isPhoneLikeViewport() || !autoHideHeader) {
+      document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+      return false;
+    }
 
-  function scheduleMobileChatListPopoverLayoutSettle() {
-    // 2.0.26: no forced mobile popover layout. Only keep the handle visibility state in sync.
-    if (!isPhoneLikeViewport()) return;
-    for (const delay of [0, 80, 240]) {
-      setTimeout(markMobileChatListOpenState, delay);
+    const panel = DOM.mobileChatListPopover();
+    if (!panel) {
+      document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+      return false;
+    }
+
+    try {
+      const top = Math.max(0, Math.round(panel.getBoundingClientRect().top || 0));
+      const viewportHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+      const targetHeight = viewportHeight ? Math.max(320, viewportHeight - top) : 0;
+
+      if (targetHeight) {
+        panel.style.setProperty('height', `${targetHeight}px`, 'important');
+        panel.style.setProperty('max-height', `${targetHeight}px`, 'important');
+      } else {
+        panel.style.setProperty('height', '100dvh', 'important');
+        panel.style.setProperty('max-height', '100dvh', 'important');
+      }
+
+      document.documentElement.classList.add(CLS.chatListMobileHeaderGapCompensated);
+      return true;
+    } catch {
+      return false;
     }
   }
 
+  function scheduleMobileChatListPopoverLayoutSettle() {
+    // Keep phone popover native; only settle the height compensation right after the proxy click.
+    if (!isPhoneLikeViewport()) return;
+    for (const delay of [0, 16, 48, 120, 260, 520]) {
+      setTimeout(() => {
+        markMobileChatListOpenState();
+        forceMobileChatListPopoverLayout();
+      }, delay);
+    }
+  }
 
+  
 function markMobileChatListOpenState() {
     if (!isPhoneLikeViewport()) {
       document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
@@ -5778,6 +6030,7 @@ function markMobileChatListOpenState() {
 
     const open = !!DOM.mobileChatListPopover();
     document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, open);
+    if (!open) document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
     return open;
   }
 
@@ -5786,7 +6039,9 @@ function markMobileChatListOpenState() {
   }
 
   function releaseMobileChatListPopoverForcedStyles() {
-    document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, !!DOM.mobileChatListPopover());
+    const mobilePopover = DOM.mobileChatListPopover();
+    document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, !!mobilePopover);
+    if (!mobilePopover) document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
     // Cleanup stale markers/styles from 2.0.20~2.0.24 without changing native Crack popover layout.
     for (const panel of document.querySelectorAll('[data-crack-ui-mobile-chat-list-popover="1"], [data-crack-ui-chat-list-panel="1"][role="dialog"]')) {
       if (!(panel instanceof HTMLElement)) continue;
@@ -5970,6 +6225,7 @@ function markMobileChatListOpenState() {
       cachedChatListPanel = null;
       cachedChatListToggle = null;
       markMobileChatListOpenState();
+      forceMobileChatListPopoverLayout();
       return;
     }
 
@@ -6161,7 +6417,6 @@ function markMobileChatListOpenState() {
   function getCrackUiDebugSnapshot() {
     return {
       version: CRACK_UI_VERSION,
-      safeMode: false,
       url: window.location.href,
       route: window.location.pathname,
       viewport: {
@@ -6177,10 +6432,14 @@ function markMobileChatListOpenState() {
         lineBreakOptimize,
         pauseAnimatedThumbs,
         hideStatBar,
+        hideSituationImage,
+        situationImageMarkScheduled: !!situationImageMarkTimer || !!situationImageMarkRaf,
         chatWidthPercent,
         themeMode,
         episodeUiMode,
         bottomModelPicker,
+        bottomModelPlacement: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement || 'none',
+        bottomModelCooperativeGroup: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement === 'cooperative-group',
         emptySendGuard,
         roomMenuHandle,
         chatListAutoHide,
@@ -6190,6 +6449,7 @@ function markMobileChatListOpenState() {
         chatListAutoHideTabletBlocked: chatListAutoHide && isTabletLikeViewport(),
         chatListMobileProxyOnly: chatListAutoHide && isPhoneLikeViewport(),
         chatListMobilePopoverOpen: !!DOM.mobileChatListPopover(),
+        chatListMobileHeaderGapCompensation: document.documentElement.classList.contains(CLS.chatListMobileHeaderGapCompensated),
         panelOpen,
         mobileReveal,
         roomMenuReveal,
@@ -6202,23 +6462,12 @@ function markMobileChatListOpenState() {
   function installCrackUiDebugApi() {
     const api = {
       version: CRACK_UI_VERSION,
-      safeMode: false,
       debug: getCrackUiDebugSnapshot,
       locators: DOM_LOCATORS,
       resetCache() {
         resetDomLocatorCache();
         scheduleInit();
         return true;
-      },
-      disable() {
-        const ok = writeRawStorage(CRACK_UI_DISABLED_KEY, '1');
-        if (ok) console.warn('[Crack UI Plus] Disabled. Refresh the page to enter safe mode.');
-        return ok;
-      },
-      enable() {
-        const ok = removeRawStorage(CRACK_UI_DISABLED_KEY);
-        if (ok) console.info('[Crack UI Plus] Enabled. Refresh the page to start normally.');
-        return ok;
       },
     };
 
