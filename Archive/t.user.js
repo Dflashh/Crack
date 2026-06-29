@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.0.21
+// @version      2.0.25
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.0.21';
+  const CRACK_UI_VERSION = '2.0.25';
   const CRACK_UI_SAFE_QUERY = 'crack_ui_safe';
   const CRACK_UI_DISABLED_KEY = 'crack_ui_disabled';
 
@@ -185,6 +185,7 @@
     roomMenuEnabled: 'crack-ui-room-menu-enabled',
     roomMenuReveal: 'crack-ui-room-menu-reveal',
     chatListEnabled: 'crack-ui-chat-list-enabled',
+    chatListMobilePopoverOpen: 'crack-ui-chat-list-mobile-popover-open',
     roomTopBarHidden: 'crack-ui-room-top-bar-hidden',
     phoneViewport: 'crack-ui-phone-viewport',
     tabletViewport: 'crack-ui-tablet-viewport',
@@ -274,13 +275,6 @@
     return `${p}%`;
   }
 
-  function formatThemeModeDisplay(mode) {
-    return THEME_MODE_LABEL[normalizeThemeMode(mode)] || THEME_MODE_LABEL.dark;
-  }
-
-  function formatEpisodeUiModeDisplay(mode) {
-    return EPISODE_UI_MODE_LABEL[normalizeEpisodeUiMode(mode)] || EPISODE_UI_MODE_LABEL.novel;
-  }
 
   function readStorage(key, fallback = null) {
     try {
@@ -617,6 +611,70 @@
       body[data-theme="light"] #${ID.chatListHandle}::after {
         background: rgba(120, 120, 128, .44);
         box-shadow: none;
+      }
+
+      html.${CLS.chatListMobilePopoverOpen} #${ID.chatListZone},
+      html.${CLS.chatListMobilePopoverOpen} #${ID.chatListHandle} {
+        pointer-events: none !important;
+        opacity: 0 !important;
+      }
+
+      /* Phone menu opens through Radix first, then our JS marks it.
+         Apply full-height positioning immediately at mount time so it does not show
+         a temporary bottom gap before the later JS reflow catches up. */
+      html.${CLS.phoneViewport} [data-radix-popper-content-wrapper]:has([role="dialog"][data-state="open"][class*="md:hidden"][class*="bg-sidebar"]) {
+        top: 0 !important;
+        left: 0 !important;
+        transform: translate(0px, 0px) !important;
+        z-index: 1300 !important;
+        pointer-events: auto !important;
+      }
+
+      html.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"][class*="md:hidden"][class*="bg-sidebar"] {
+        width: min(260px, 86vw) !important;
+        min-width: min(260px, 86vw) !important;
+        max-width: min(260px, 86vw) !important;
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow: hidden !important;
+        pointer-events: auto !important;
+        touch-action: pan-y !important;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      html.${CLS.phoneViewport} [data-crack-ui-mobile-chat-list-wrapper="1"] {
+        top: 0 !important;
+        left: 0 !important;
+        transform: translate(0px, 0px) !important;
+        z-index: 1300 !important;
+        pointer-events: auto !important;
+      }
+
+      html.${CLS.phoneViewport} [data-crack-ui-mobile-chat-list-popover="1"] {
+        width: min(260px, 86vw) !important;
+        min-width: min(260px, 86vw) !important;
+        max-width: min(260px, 86vw) !important;
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow: hidden !important;
+        pointer-events: auto !important;
+        touch-action: pan-y !important;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      html.${CLS.phoneViewport} [data-crack-ui-mobile-chat-list-popover="1"] * {
+        pointer-events: auto;
+      }
+
+      html.${CLS.phoneViewport} [data-crack-ui-mobile-chat-list-popover="1"] [data-testid="virtuoso-scroller"],
+      html.${CLS.phoneViewport} [data-crack-ui-mobile-chat-list-popover="1"] [data-virtuoso-scroller="true"],
+      html.${CLS.phoneViewport} [data-crack-ui-mobile-chat-list-popover="1"] .scrollbar {
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        touch-action: pan-y !important;
+        -webkit-overflow-scrolling: touch;
       }
 
       html.${CLS.roomTopBarHidden} [data-crack-ui-room-top-bar="1"] {
@@ -3900,6 +3958,7 @@
     document.documentElement.classList.toggle(CLS.hideStatBar, hideStatBar);
     document.documentElement.classList.toggle(CLS.roomMenuEnabled, roomMenuHandle && crackUiIsChatRoute());
     document.documentElement.classList.toggle(CLS.chatListEnabled, chatListAutoHide && isChatListAutoHideSupportedViewport());
+    applyMobileChatListPopoverInteractionFix();
     updateRoomMenuRevealClass();
     applyEmptySendGuardState();
     applyThemeModeHint();
@@ -5389,6 +5448,7 @@
   }
 
   function findChatListPanel() {
+    if (isPhoneLikeViewport()) return null;
     if (cachedChatListPanel?.isConnected && crackUiIsChatListPanel(cachedChatListPanel)) return cachedChatListPanel;
     if (!crackUiIsChatListAutoHideRoute()) return null;
 
@@ -5633,6 +5693,7 @@
     chatListPanel: () => findChatListPanel(),
     chatListToggle: (panel) => findChatListToggle(panel),
     mobileChatListToggle: () => findMobileChatListToggle(),
+    mobileChatListPopover: () => getMobileChatListPopover(),
   };
 
   const DOM_LOCATORS = {
@@ -5649,6 +5710,7 @@
     chatListPanel: DOM.chatListPanel,
     chatListToggle: DOM.chatListToggle,
     mobileChatListToggle: DOM.mobileChatListToggle,
+    mobileChatListPopover: DOM.mobileChatListPopover,
   };
 
   function getDomLocatorDebugSnapshot() {
@@ -5695,7 +5757,6 @@
 
   function isCrackUiWidthControlledChatListPanel(panel) {
     if (!panel) return false;
-    if (isMobileChatListPopoverElement(panel)) return false;
     const cls = String(panel.className || '');
     return (
       panel.dataset.crackUiChatListPanel === '1' ||
@@ -5742,23 +5803,147 @@
     return true;
   }
 
-  function isMobileChatListPopoverElement(el) {
-    if (!el || !(el instanceof HTMLElement)) return false;
-    const cls = String(el.className || '');
-    const role = String(el.getAttribute('role') || '');
-    return (
-      role === 'dialog' &&
-      (cls.includes('md:hidden') || !!el.closest('[data-radix-popper-content-wrapper]')) &&
-      !!el.querySelector?.('[data-testid="virtuoso-scroller"], [data-virtuoso-scroller="true"], [role="tablist"]')
-    );
+
+
+  function getMobileChatListPopover() {
+    if (!isPhoneLikeViewport()) return null;
+
+    const candidates = document.querySelectorAll('[data-radix-popper-content-wrapper] [role="dialog"], [role="dialog"][data-state], [data-side][data-state]');
+    for (const panel of candidates) {
+      if (!(panel instanceof HTMLElement)) continue;
+      const role = String(panel.getAttribute('role') || '');
+      const dataState = String(panel.getAttribute('data-state') || '');
+      const cls = String(panel.className || '');
+      const txt = crackUiEdgeText(panel).slice(0, 500);
+      const hasList = !!panel.querySelector?.('[data-testid="virtuoso-scroller"], [data-virtuoso-scroller="true"], [role="tablist"]');
+      const looksLikeMobileChatList =
+        role === 'dialog' &&
+        dataState === 'open' &&
+        (cls.includes('md:hidden') || !!panel.closest('[data-radix-popper-content-wrapper]')) &&
+        hasList &&
+        txt.includes('에피소드') &&
+        (txt.includes('보관함') || txt.includes('파티챗'));
+      if (looksLikeMobileChatList) return panel;
+    }
+
+    return null;
+  }
+
+  function forceMobileChatListPopoverLayout(panel = DOM.mobileChatListPopover()) {
+    if (!isPhoneLikeViewport() || !panel) return false;
+
+    try {
+      delete panel.dataset.crackUiChatListPanel;
+      delete panel.dataset.crackUiChatListForced;
+      panel.dataset.crackUiMobileChatListPopover = '1';
+
+      const wrapper = panel.closest('[data-radix-popper-content-wrapper]');
+      if (wrapper instanceof HTMLElement) {
+        wrapper.dataset.crackUiMobileChatListWrapper = '1';
+        wrapper.style.setProperty('top', '0px', 'important');
+        wrapper.style.setProperty('left', '0px', 'important');
+        wrapper.style.setProperty('transform', 'translate(0px, 0px)', 'important');
+        wrapper.style.setProperty('z-index', '1300', 'important');
+        wrapper.style.setProperty('pointer-events', 'auto', 'important');
+      }
+
+      panel.style.setProperty('width', 'min(260px, 86vw)', 'important');
+      panel.style.setProperty('min-width', 'min(260px, 86vw)', 'important');
+      panel.style.setProperty('max-width', 'min(260px, 86vw)', 'important');
+      panel.style.setProperty('height', '100dvh', 'important');
+      panel.style.setProperty('min-height', '100dvh', 'important');
+      panel.style.setProperty('max-height', '100dvh', 'important');
+      panel.style.setProperty('overflow', 'hidden', 'important');
+      panel.style.setProperty('pointer-events', 'auto', 'important');
+      panel.style.setProperty('touch-action', 'pan-y', 'important');
+      panel.style.setProperty('-webkit-overflow-scrolling', 'touch');
+
+      const scrollTarget = panel.querySelector?.('[data-testid="virtuoso-scroller"], [data-virtuoso-scroller="true"], .scrollbar');
+      if (scrollTarget instanceof HTMLElement) {
+        scrollTarget.style.setProperty('height', '100%', 'important');
+        scrollTarget.style.setProperty('overflow-y', 'auto', 'important');
+        scrollTarget.style.setProperty('touch-action', 'pan-y', 'important');
+        scrollTarget.style.setProperty('-webkit-overflow-scrolling', 'touch');
+      }
+
+      try { window.dispatchEvent(new Event('resize')); } catch {}
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function scheduleMobileChatListPopoverLayoutSettle() {
+    if (!isPhoneLikeViewport()) return;
+
+    const settle = () => {
+      applyMobileChatListPopoverInteractionFix();
+      forceMobileChatListPopoverLayout();
+    };
+
+    try {
+      requestAnimationFrame(() => {
+        settle();
+        requestAnimationFrame(settle);
+      });
+    } catch {
+    }
+
+    for (const delay of [0, 16, 48, 120, 260, 520]) {
+      setTimeout(settle, delay);
+    }
+  }
+
+  function applyMobileChatListPopoverInteractionFix() {
+    if (!isPhoneLikeViewport()) {
+      document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
+      for (const el of document.querySelectorAll('[data-crack-ui-mobile-chat-list-popover="1"], [data-crack-ui-mobile-chat-list-wrapper="1"]')) {
+        try {
+          delete el.dataset.crackUiMobileChatListPopover;
+          delete el.dataset.crackUiMobileChatListWrapper;
+        } catch {
+        }
+      }
+      return false;
+    }
+
+    const panel = DOM.mobileChatListPopover();
+    const open = !!panel;
+    document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, open);
+
+    if (!panel) {
+      for (const el of document.querySelectorAll('[data-crack-ui-mobile-chat-list-popover="1"], [data-crack-ui-mobile-chat-list-wrapper="1"]')) {
+        try {
+          delete el.dataset.crackUiMobileChatListPopover;
+          delete el.dataset.crackUiMobileChatListWrapper;
+        } catch {
+        }
+      }
+      return false;
+    }
+
+    forceMobileChatListPopoverLayout(panel);
+
+    return true;
   }
 
   function releaseMobileChatListPopoverForcedStyles() {
+    // Cleanup scanner intentionally bypasses DOM facade so it can remove stale 2.0.20/2.0.21 inline styles
+    // even if a stale popover no longer matches the current open-popover locator.
     for (const panel of document.querySelectorAll('[data-radix-popper-content-wrapper] [role="dialog"], [role="dialog"][data-state], [data-side][data-state]')) {
-      if (!isMobileChatListPopoverElement(panel)) continue;
+      if (!(panel instanceof HTMLElement)) continue;
+      const role = String(panel.getAttribute('role') || '');
+      const cls = String(panel.className || '');
+      const looksLikeMobileChatList = role === 'dialog'
+        && (cls.includes('md:hidden') || !!panel.closest('[data-radix-popper-content-wrapper]'))
+        && !!panel.querySelector?.('[data-testid="virtuoso-scroller"], [data-virtuoso-scroller="true"], [role="tablist"]');
+      if (!looksLikeMobileChatList) continue;
       try {
         delete panel.dataset.crackUiChatListPanel;
         delete panel.dataset.crackUiChatListForced;
+        delete panel.dataset.crackUiMobileChatListPopover;
+        const wrapper = panel.closest('[data-radix-popper-content-wrapper]');
+        if (wrapper instanceof HTMLElement) delete wrapper.dataset.crackUiMobileChatListWrapper;
         panel.style.removeProperty('width');
         panel.style.removeProperty('min-width');
         panel.style.removeProperty('max-width');
@@ -5769,142 +5954,45 @@
       } catch {
       }
     }
-  }
-
-  function findMobileChatListPopoverPanel() {
-    if (!isPhoneLikeViewport()) return null;
-
-    const candidates = [
-      ...document.querySelectorAll('[data-radix-popper-content-wrapper] [role="dialog"], [role="dialog"][data-state="open"], [data-side][data-state="open"]'),
-    ];
-
-    let best = null;
-    let bestScore = -1;
-    for (const el of candidates) {
-      if (!(el instanceof HTMLElement)) continue;
-      if (el.closest?.(`#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}`)) continue;
-
-      const r = crackUiEdgeRect(el);
-      if (!r || r.height < 240 || r.width > 330) continue;
-      const txt = crackUiEdgeText(el).slice(0, 900);
-      const hasCoreText = txt.includes('에피소드') && txt.includes('파티챗') && txt.includes('보관함');
-      const hasForcedZeroWidth = r.width <= 80 && isMobileChatListPopoverElement(el);
-      if (r.width < 200 && !hasForcedZeroWidth) continue;
-      if (r.left < -24 || r.left > 80 || r.top < -8 || r.top > 120) continue;
-      if (hasForcedZeroWidth && hasCoreText) releaseMobileChatListPopoverForcedStyles();
-
-      const cls = String(el.className || '');
-      let score = 0;
-      if (txt.includes('에피소드')) score += 4;
-      if (txt.includes('파티챗')) score += 4;
-      if (txt.includes('보관함')) score += 4;
-      if (/\d+개/.test(txt)) score += 3;
-      if (el.querySelector('[data-testid="virtuoso-scroller"], [data-virtuoso-scroller="true"]')) score += 8;
-      if (el.querySelector('[role="tablist"], button[role="tab"]')) score += 4;
-      if (cls.includes('md:hidden')) score += 5;
-      if (cls.includes('slide-in-from-left') || cls.includes('slide-out-to-left')) score += 5;
-      if (cls.includes('bg-sidebar')) score += 2;
-
-      if (score > bestScore) {
-        best = el;
-        bestScore = score;
-      }
+    if (isPhoneLikeViewport() && !DOM.mobileChatListPopover()) {
+      document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
     }
-
-    return bestScore >= 12 ? best : null;
-  }
-
-  function isMobileChatListPopoverOpen() {
-    return !!findMobileChatListPopoverPanel();
-  }
-
-  function closeMobileChatListPopover() {
-    const panel = findMobileChatListPopoverPanel();
-    if (!panel) return true;
-
-    try {
-      panel.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Escape',
-        code: 'Escape',
-        keyCode: 27,
-        which: 27,
-        bubbles: true,
-        cancelable: true,
-      }));
-      document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Escape',
-        code: 'Escape',
-        keyCode: 27,
-        which: 27,
-        bubbles: true,
-        cancelable: true,
-      }));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function openMobileChatListPopoverFromHandle() {
-    const open = isMobileChatListPopoverOpen();
-    if (open) return true;
-
-    const now = Date.now();
-    if (now - lastChatListClickAt < 260) return false;
-    lastChatListClickAt = now;
-
-    // The native mobile hamburger lives inside the auto-hidden global header.
-    // Reveal the header for one frame before clicking it; otherwise Radix may
-    // calculate the popover from an off-screen trigger and the menu appears invisible.
-    if (autoHideHeader) {
-      mobileReveal = true;
-      updateReveal();
-      clearMobileHideTimer();
-    }
-
-    setTimeout(() => {
-      resetDomLocatorCache();
-      const toggle = DOM.mobileChatListToggle();
-      if (!toggle) return;
-
-      lastChatListClickAt = Date.now();
-      try {
-        toggle.click();
-      } catch {
-        dispatchSyntheticClick(toggle);
-      }
-
-      setTimeout(() => {
-        releaseMobileChatListPopoverForcedStyles();
-        const panel = findMobileChatListPopoverPanel();
-        if (panel) bindChatListPanelHover(panel);
-      }, 180);
-
-      if (autoHideHeader) scheduleMobileHide(1800);
-    }, autoHideHeader ? 90 : 0);
-
-    return true;
-  }
-
-  function clickMobileChatListToggle(want, reason = '') {
-    const open = isMobileChatListPopoverOpen();
-    if (open === want) return true;
-
-    if (want) return openMobileChatListPopoverFromHandle();
-    return closeMobileChatListPopover();
   }
 
   function isChatListOpen(panel = DOM.chatListPanel()) {
-    if (isPhoneLikeViewport()) return isMobileChatListPopoverOpen();
-
     const r = crackUiEdgeRect(panel);
     if (!r) return false;
     if (isCrackUiWidthControlledChatListPanel(panel)) return r.width > 80;
     return r.left > -70 && r.right > 170;
   }
 
+  function clickMobileChatListNativeButton(reason = 'handle') {
+    const now = Date.now();
+    if (now - lastChatListClickAt < 240) return false;
+    lastChatListClickAt = now;
+
+    releaseMobileChatListPopoverForcedStyles();
+    resetDomLocatorCache();
+    const toggle = DOM.mobileChatListToggle();
+    if (!toggle) return false;
+
+    try {
+      toggle.click();
+      scheduleMobileChatListPopoverLayoutSettle();
+      return true;
+    } catch {
+      try {
+        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        scheduleMobileChatListPopoverLayoutSettle();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   function clickChatListToggle(want, reason = '') {
-    if (isPhoneLikeViewport()) return clickMobileChatListToggle(want, reason);
+    if (isPhoneLikeViewport()) return clickMobileChatListNativeButton(reason);
 
     const panel = DOM.chatListPanel();
     const open = panel ? isChatListOpen(panel) : false;
@@ -5914,7 +6002,7 @@
     if (now - lastChatListClickAt < 220) return false;
     lastChatListClickAt = now;
 
-    const toggle = DOM.chatListToggle(panel);
+    const toggle = DOM.chatListToggle(panel) || DOM.mobileChatListToggle();
     if (toggle) {
       if (panel && isCrackUiWidthControlledChatListPanel(panel)) {
         releaseChatListPanelForcedOpen(panel);
@@ -5948,8 +6036,8 @@
     clearChatListCloseTimer();
     chatListCloseTimer = setTimeout(() => {
       chatListCloseTimer = null;
-      if (!chatListAutoHide || !isChatListAutoHideSupportedViewport()) return;
-      const panel = isPhoneLikeViewport() ? findMobileChatListPopoverPanel() : DOM.chatListPanel();
+      if (!chatListAutoHide || !isChatListAutoHideSupportedViewport() || isPhoneLikeViewport()) return;
+      const panel = DOM.chatListPanel();
       const zone = document.getElementById(ID.chatListZone);
       const hovered = panel?.matches?.(':hover') || zone?.matches?.(':hover');
       if (hovered && !isTouchLikeDevice()) return;
@@ -5959,11 +6047,16 @@
 
   function openChatListFromHandle() {
     clearChatListCloseTimer();
+
+    if (isPhoneLikeViewport()) {
+      return clickMobileChatListNativeButton('handle');
+    }
+
     const opened = clickChatListToggle(true, 'handle');
     setTimeout(() => {
-      const panel = isPhoneLikeViewport() ? findMobileChatListPopoverPanel() : DOM.chatListPanel();
+      const panel = DOM.chatListPanel();
       if (panel) bindChatListPanelHover(panel);
-    }, isPhoneLikeViewport() ? 220 : 80);
+    }, 80);
     return opened;
   }
 
@@ -6051,7 +6144,9 @@
 
     if (isPhoneLikeViewport()) {
       releaseMobileChatListPopoverForcedStyles();
+      applyMobileChatListPopoverInteractionFix();
       cachedChatListPanel = null;
+      cachedChatListToggle = null;
       return;
     }
 
@@ -6065,7 +6160,7 @@
       }
     } else {
       setTimeout(() => {
-        if (!chatListAutoHide || !isChatListAutoHideSupportedViewport()) return;
+        if (!chatListAutoHide || !isChatListAutoHideSupportedViewport() || isPhoneLikeViewport()) return;
         resetDomLocatorCache();
         const delayedPanel = DOM.chatListPanel();
         if (!delayedPanel) return;
@@ -6081,7 +6176,7 @@
     if (lastChatListBootCloseHref !== location.href) {
       lastChatListBootCloseHref = location.href;
       setTimeout(() => {
-        if (chatListAutoHide && isChatListAutoHideSupportedViewport() && !document.getElementById(ID.chatListZone)?.matches(':hover')) {
+        if (chatListAutoHide && isChatListAutoHideSupportedViewport() && !isPhoneLikeViewport() && !document.getElementById(ID.chatListZone)?.matches(':hover')) {
           clickChatListToggle(false, 'boot-delay-2000');
         }
       }, 2000);
@@ -6133,15 +6228,13 @@
         }
       }
 
-      if (chatListAutoHide && isPhoneLikeViewport()) {
-        const chatListPanel = findMobileChatListPopoverPanel();
-        const nativeChatListToggle = DOM.mobileChatListToggle();
-        const safeChatList =
-          e.target.closest?.(`#${ID.chatListZone}, #${ID.chatListHandle}`) ||
-          chatListPanel?.contains(e.target) ||
-          nativeChatListToggle === e.target ||
-          nativeChatListToggle?.contains?.(e.target);
-        if (!safeChatList && chatListPanel) scheduleChatListClose(160);
+      if (chatListAutoHide && isTouchLikeDevice()) {
+        applyMobileChatListPopoverInteractionFix();
+        if (!isPhoneLikeViewport()) {
+          const chatListPanel = DOM.chatListPanel();
+          const safeChatList = e.target.closest?.(`#${ID.chatListZone}, #${ID.chatListHandle}`) || chatListPanel?.contains(e.target);
+          if (!safeChatList) scheduleChatListClose(120);
+        }
       }
 
       if (!panelOpen) return;
@@ -6266,8 +6359,9 @@
         chatListAutoHideActive: chatListAutoHide && isChatListAutoHideSupportedViewport(),
         chatListAutoHidePhone: chatListAutoHide && isPhoneLikeViewport(),
         chatListAutoHideTabletBlocked: chatListAutoHide && isTabletLikeViewport(),
-        chatListMobilePopoverOpen: isMobileChatListPopoverOpen(),
-        chatListMobilePopoverForcedZero: chatListAutoHide && isPhoneLikeViewport() && !![...document.querySelectorAll('[data-radix-popper-content-wrapper] [role="dialog"], [role="dialog"][data-state], [data-side][data-state]')].find((el) => isMobileChatListPopoverElement(el) && crackUiEdgeRect(el)?.width <= 80),
+        chatListMobileProxyOnly: chatListAutoHide && isPhoneLikeViewport(),
+        chatListMobilePopoverUsableFix: document.documentElement.classList.contains(CLS.chatListMobilePopoverOpen),
+        chatListMobileInstantLayoutFix: chatListAutoHide && isPhoneLikeViewport(),
         panelOpen,
         mobileReveal,
         roomMenuReveal,
