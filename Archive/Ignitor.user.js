@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name       🔷 Chasm Ignitor
 // @namespace   https://github.com/milkyway0308/crystallized-chasm
-// @version     CRAK-IGNT-v1.6.5+
+// @version     CRAK-IGNT-v1.6.6+
 // @description 캐즘 버너의 기능 계승. 이 기능은 결정화 캐즘 오리지널 패치입니다. **기존 캐즘 버너 및 결정화 캐즘 버너+와 호환되지 않습니다. 버너 모듈을 제거하고 사용하세요.**
 // @author      milkyway0308
 // @match       https://crack.wrtn.ai/*
@@ -92,7 +92,7 @@ GM_addStyle(`
 
 !(async function () {
   const PLATFORM_SAVE_KEY = "chasm-ignt-settings";
-  const VERSION = "v1.6.5+";
+  const VERSION = "v1.6.6+";
 
   const { initializeApp } = await import(
     // @ts-ignore
@@ -2291,52 +2291,85 @@ let lastSelected = [];
     return undefined;
   }
 
-  function createIgnitorSidebarEntry() {
-    const row = document.createElement("div");
-    row.className = "px-2.5 h-4 box-content py-[18px]";
+  /**
+   * 실제 사이드바 메뉴 항목의 DOM 구조를 복제해서 이그나이터 버튼을 만듭니다.
+   * 위치는 기존처럼 "키보드 단축키" 바로 아래를 유지합니다.
+   *
+   * @param {HTMLElement} templateEntry
+   * @returns {HTMLElement}
+   */
+  function createIgnitorSidebarEntry(templateEntry) {
+    const row = GenericUtil.refine(templateEntry.cloneNode(true));
+    row.removeAttribute("id");
     row.setAttribute("data-chasm-ignt-settings-entry", "1");
 
-    const button = document.createElement("div");
+    // 복제한 원본 안에 id가 있으면 중복 id가 되어 DOM 탐색/클릭이 꼬일 수 있어 제거합니다.
+    for (const node of Array.from(row.querySelectorAll("[id]"))) {
+      node.removeAttribute("id");
+    }
+
+    const button = GenericUtil.refine(row.querySelector('[role="button"]'));
     button.setAttribute("role", "button");
     button.setAttribute("tabindex", "0");
-    button.className = "w-full flex h-4 items-center justify-between typo-text-base_leading-none_medium space-x-2 [&_svg]:fill-icon_tertiary ring-offset-4 ring-offset-sidebar cursor-pointer";
-    button.innerHTML = `
-      <span class="flex space-x-2 items-center min-w-0">
+    button.setAttribute("data-chasm-ignt-open-button", "1");
+
+    const icon = button.querySelector("svg");
+    if (icon) {
+      icon.outerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="var(--icon_secondary)" viewBox="0 0 24 24" width="24" height="24" color="icon_secondary" aria-hidden="true">
           <path d="M11.51 2.14 10.25 1.39l-.24 1.45c-.38 2.29-1.94 4.41-3.67 5.9-3.37 2.93-4.11 6.1-3.07 8.73 1 2.51 3.54 4.23 6.12 4.52l.6.07c-1.48-.9-2.42-3.01-2.09-4.58.32-1.55 1.44-2.99 3.57-4.33l1.08-.67.4 1.2c.24.72.65 1.29 1.06 1.87.2.28.4.56.59.86.64 1.05.81 2.21.4 3.36-.38 1.05-1 1.87-1.86 2.33l.97-.1c2.42-.27 4.19-1.1 5.35-2.48C20.6 18.14 21 16.38 21 14.5c0-1.75-.72-3.55-1.57-5.05-.99-1.76-2.29-3.22-3.7-4.64-.25.49-.23.69-.73 1.48-.59-1.56-1.7-3.08-3.49-4.15Z"></path>
-        </svg>
-        <span class="whitespace-nowrap overflow-hidden text-ellipsis typo-text-sm_leading-none_medium">이그나이터</span>
-      </span>`;
+        </svg>`;
+    }
 
-    button.addEventListener("click", (event) => {
+    // 중요: 바깥 span이 아니라 실제 텍스트만 가진 leaf span만 바꿉니다.
+    // 바깥 span.textContent를 바꾸면 SVG 아이콘까지 통째로 삭제되어 디자인이 깨집니다.
+    const label = Array.from(button.querySelectorAll("span")).find((node) => {
+      const text = node.textContent?.replace(/\s+/g, " ").trim();
+      return text === "키보드 단축키" && node.children.length === 0;
+    });
+    if (label) {
+      label.textContent = "이그나이터";
+    }
+
+    const openFromMenu = (event) => {
       event.preventDefault();
       event.stopPropagation();
       openIgnitorModal();
-    });
+    };
+
+    // 행의 패딩 영역을 눌러도 동작하도록 row에도 이벤트를 겁니다.
+    row.addEventListener("click", openFromMenu, true);
+    button.addEventListener("click", openFromMenu, true);
     button.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      event.stopPropagation();
-      openIgnitorModal();
-    });
+      openFromMenu(event);
+    }, true);
 
-    row.append(button);
     return row;
   }
 
   async function injectSettingsMenuButton() {
-    const existing = Array.from(document.querySelectorAll('[data-chasm-ignt-settings-entry="1"]'));
     const keyboardShortcutEntry = findSidebarMenuEntryByLabel("키보드 단축키");
 
     if (!keyboardShortcutEntry) {
       return;
     }
 
+    // 이미 "키보드 단축키" 바로 아래에 붙어 있으면 다시 만들지 않습니다.
+    // 이 조건이 없으면 MutationObserver가 자기 자신의 삽입/삭제를 감지해서
+    // 버튼을 계속 갈아끼우고, 그 결과 검사/클릭이 불안정해집니다.
+    const nextEntry = keyboardShortcutEntry.nextElementSibling;
+    if (nextEntry?.getAttribute("data-chasm-ignt-settings-entry") === "1") {
+      return;
+    }
+
+    // 위치가 틀어진 이전 이그나이터 버튼만 정리합니다.
+    const existing = Array.from(document.querySelectorAll('[data-chasm-ignt-settings-entry="1"]'));
     for (const node of existing) {
       node.remove();
     }
 
-    const ignitorEntry = createIgnitorSidebarEntry();
+    const ignitorEntry = createIgnitorSidebarEntry(keyboardShortcutEntry);
     keyboardShortcutEntry.insertAdjacentElement("afterend", ignitorEntry);
   }
 
