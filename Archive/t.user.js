@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.0.37
+// @version      2.0.38
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.0.37';
+  const CRACK_UI_VERSION = '2.0.38';
 
   function getCrackUiPublicWindow() {
     try {
@@ -1420,6 +1420,28 @@
         margin-left: 0 !important;
         margin-right: 8px !important;
         flex: 0 0 auto !important;
+      }
+
+      /* Bottom composer row can be justify-between. If our model button is inserted as a
+         separate sibling before the send button, justify-between may spread it into the
+         middle of the composer. Keep the native left toolbar on the left and pack our
+         model button + send button on the right without wrapping/moving the send button. */
+      [data-crack-ui-bottom-model-group="1"] {
+        justify-content: flex-start !important;
+        gap: 0 !important;
+      }
+
+      [data-crack-ui-bottom-model-group="1"] > :first-child:not(#${ID.bottomModelButton}) {
+        margin-right: auto !important;
+      }
+
+      [data-crack-ui-bottom-model-group="1"] > #${ID.bottomModelButton}[data-crack-ui-placement="send-sibling"] {
+        margin-left: 0 !important;
+        margin-right: 8px !important;
+      }
+
+      [data-crack-ui-bottom-model-group="1"] > #crack-pure-send-left-group[data-crack-ui-pure-group-right="1"] {
+        margin-left: 0 !important;
       }
 
       #${ID.bottomModelButton}:hover {
@@ -4951,6 +4973,7 @@
         cooperativeGroup.appendChild(btn);
       }
       btn.dataset.crackUiPlacement = 'cooperative-group';
+      cooperativeGroup.dataset.crackUiPureGroupRight = '1';
       parent.dataset.crackUiBottomModelGroup = '1';
       parent.dataset.crackUiBottomModelCooperative = '1';
       return true;
