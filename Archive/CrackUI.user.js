@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.1.0
+// @version      2.1.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.1.0';
+  const CRACK_UI_VERSION = '2.1.1';
 
   function getCrackUiPublicWindow() {
     try {
@@ -375,6 +375,7 @@
   let lastRoomTopBarInputInteractionAt = 0;
   let roomPanelCloseTimer = null;
   let lastRoomPanelClickAt = 0;
+  let lastRoomPanelToggleAttempt = null;
   let lastRoomPanelBootCloseHref = '';
   let lastCrackUiError = null;
 
@@ -2341,6 +2342,89 @@
         return false;
       }
     }
+  }
+
+  function getActivationPoint(target) {
+    try {
+      const r = target?.getBoundingClientRect?.();
+      if (!r) return { clientX: 0, clientY: 0 };
+      return {
+        clientX: Math.max(0, Math.round(r.left + r.width / 2)),
+        clientY: Math.max(0, Math.round(r.top + r.height / 2)),
+      };
+    } catch {
+      return { clientX: 0, clientY: 0 };
+    }
+  }
+
+  function dispatchSingleClickOnly(target, methodLabel = 'single-click') {
+    if (!target) return '';
+    const point = getActivationPoint(target);
+
+    try {
+      if (typeof target.click === 'function') {
+        target.click();
+        return `${methodLabel}:native-click`;
+      }
+    } catch {
+    }
+
+    try {
+      target.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        buttons: 0,
+        ...point,
+      }));
+      return `${methodLabel}:mouse-click`;
+    } catch {
+      return '';
+    }
+  }
+
+  function dispatchTouchLikeActivation(target, methodLabel = 'touch-activation') {
+    if (!target) return '';
+    const point = getActivationPoint(target);
+
+    // iPad Safari can accept both a synthetic click and HTMLElement.click(), which can toggle Radix twice.
+    // For touch-like devices, use exactly one activation first, then delayed fallback if the panel still did not open.
+    const singleClick = dispatchSingleClickOnly(target, methodLabel);
+    if (singleClick) return singleClick;
+
+    try {
+      const pointerOptions = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        pointerId: 1,
+        pointerType: 'touch',
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        ...point,
+      };
+      target.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+      target.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
+      target.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        buttons: 0,
+        ...point,
+      }));
+      return `${methodLabel}:touch-pointer-click`;
+    } catch {
+      return '';
+    }
+  }
+
+  function dispatchRoomPanelToggleActivation(toggle, reason = '') {
+    if (!toggle) return '';
+    if (isTouchLikeDevice()) return dispatchTouchLikeActivation(toggle, reason || 'room-panel-touch');
+    return dispatchSyntheticClick(toggle) ? (reason ? `${reason}:synthetic-click` : 'synthetic-click') : '';
   }
 
   function clickOriginalSettingRow(label) {
@@ -5481,26 +5565,105 @@
     return cachedRoomPanelToggle;
   }
 
+  function getRoomPanelToggleForActivation() {
+    if (isTouchLikeDevice()) return DOM.chatRoomSettingsButton() || DOM.roomToggle();
+    return DOM.roomToggle() || DOM.chatRoomSettingsButton();
+  }
+
   function clickRoomPanelToggle(want, reason = '') {
     const panel = DOM.roomPanel();
     const open = panel ? isRoomPanelOpen(panel) : false;
-    if (open === want) return true;
+    if (open === want) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        skipped: 'already-matched',
+        touchLike: isTouchLikeDevice(),
+        at: Date.now(),
+      };
+      return true;
+    }
 
     const now = Date.now();
-    if (now - lastRoomPanelClickAt < 180) return false;
+    if (now - lastRoomPanelClickAt < 180) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        skipped: 'throttled',
+        touchLike: isTouchLikeDevice(),
+        at: now,
+      };
+      return false;
+    }
     lastRoomPanelClickAt = now;
 
-    const toggle = DOM.roomToggle();
-    if (!toggle) return false;
+    const toggle = getRoomPanelToggleForActivation();
+    if (!toggle) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        error: 'toggle-not-found',
+        touchLike: isTouchLikeDevice(),
+        at: now,
+      };
+      return false;
+    }
 
     if (want) setRoomTopBarHidden(false);
 
     try {
-      const clicked = dispatchSyntheticClick(toggle);
-      if (!clicked && typeof toggle.click === 'function') toggle.click();
+      const method = dispatchRoomPanelToggleActivation(toggle, reason || 'room-panel-toggle');
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        method: method || 'failed',
+        toggle: getElementDebugInfo(toggle),
+        touchLike: isTouchLikeDevice(),
+        openBefore: open,
+        at: now,
+      };
+
+      if (!method && !isTouchLikeDevice() && typeof toggle.click === 'function') {
+        toggle.click();
+        lastRoomPanelToggleAttempt.method = 'native-click-fallback';
+      }
+
+      if (isTouchLikeDevice()) {
+        setTimeout(() => {
+          const afterPanel = DOM.roomPanel();
+          const openAfter = afterPanel ? isRoomPanelOpen(afterPanel) : false;
+          if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.openAfter = openAfter;
+
+          if (openAfter !== want) {
+            cachedRoomPanelToggle = null;
+            cachedRoomMenuButton = null;
+            const fallbackToggle = getRoomPanelToggleForActivation();
+            const fallbackMethod = dispatchTouchLikeActivation(fallbackToggle, `${reason || 'room-panel-toggle'}:fallback`);
+            if (lastRoomPanelToggleAttempt) {
+              lastRoomPanelToggleAttempt.fallbackMethod = fallbackMethod || 'failed';
+              lastRoomPanelToggleAttempt.fallbackToggle = getElementDebugInfo(fallbackToggle);
+            }
+
+            setTimeout(() => {
+              const finalPanel = DOM.roomPanel();
+              const finalOpen = finalPanel ? isRoomPanelOpen(finalPanel) : false;
+              if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.finalOpen = finalOpen;
+              if (!want) setTimeout(() => pulseRoomTopBarHidden(), 120);
+            }, 180);
+          }
+        }, 220);
+      }
+
       if (!want) setTimeout(() => pulseRoomTopBarHidden(), 180);
-      return true;
-    } catch {
+      return !!method || !isTouchLikeDevice();
+    } catch (error) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        error: String(error?.message || error || 'unknown'),
+        touchLike: isTouchLikeDevice(),
+        at: Date.now(),
+      };
       return false;
     }
   }
@@ -6484,6 +6647,7 @@ function markMobileChatListOpenState() {
         panelOpen,
         mobileReveal,
         roomMenuReveal,
+        roomPanelToggleAttempt: lastRoomPanelToggleAttempt,
       },
       locators: getDomLocatorDebugSnapshot(),
       lastError: lastCrackUiError,
