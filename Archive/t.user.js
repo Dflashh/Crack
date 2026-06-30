@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.0.35
+// @version      2.0.37
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.0.35';
+  const CRACK_UI_VERSION = '2.0.37';
 
   function getCrackUiPublicWindow() {
     try {
@@ -5838,6 +5838,8 @@
     mobileChatListToggle: () => findMobileChatListToggle(),
     mobileChatListPopover: () => getMobileChatListPopover(),
     situationImageButtons: () => findSituationImageButtons(),
+    loreEntryButton: () => findLoreEntryButton(),
+    loreRoomTopBar: () => findLoreRoomTopBar(),
   };
 
   const DOM_LOCATORS = {
@@ -5856,6 +5858,8 @@
     mobileChatListToggle: DOM.mobileChatListToggle,
     mobileChatListPopover: DOM.mobileChatListPopover,
     situationImageButtons: DOM.situationImageButtons,
+    loreEntryButton: DOM.loreEntryButton,
+    loreRoomTopBar: DOM.loreRoomTopBar,
   };
 
   function getDomLocatorDebugSnapshot() {
@@ -6021,7 +6025,7 @@
     }
   }
 
-  
+
 function markMobileChatListOpenState() {
     if (!isPhoneLikeViewport()) {
       document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
@@ -6440,6 +6444,7 @@ function markMobileChatListOpenState() {
         bottomModelPicker,
         bottomModelPlacement: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement || 'none',
         bottomModelCooperativeGroup: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement === 'cooperative-group',
+        loreEntryButtonPlacement: getLoreEntryButtonPlacementState(),
         emptySendGuard,
         roomMenuHandle,
         chatListAutoHide,
@@ -6529,6 +6534,107 @@ function markMobileChatListOpenState() {
     }, delay);
   }
 
+  // === Lore(에리로어) 진입 버튼 위치 보호 ===
+  // UI+가 글로벌 헤더를 접으면 로어가 자리를 못 찾고 버튼을 하단 입력창에 붙이는 문제 방지.
+  // 로어 버튼의 원래 집은 헤더 한 칸 아래 '채팅방 상단바'(모델명·방설정 버튼 줄)다.
+  // 외부 확프 호환용 보정도 DOM facade / locator에 등록해서 debug로 위치를 확인할 수 있게 둔다.
+  function findLoreEntryButton() {
+    return document.getElementById('lore-inj-entry-button');
+  }
+
+  function findLoreRoomTopBar() {
+    let seed = document.querySelector('svg path[d^="M11 11h2v2h-2"]')?.closest('button') || null;
+
+    if (!seed) {
+      for (const img of document.querySelectorAll('img[src*="model-icon"]')) {
+        if (img.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}`)) continue;
+        seed = img.closest('button');
+        if (seed) break;
+      }
+    }
+    if (!seed) return null;
+
+    let node = seed.parentElement;
+    for (let i = 0; node && i < 6; i += 1) {
+      const cls = String(node.className || '');
+      if (
+        cls.includes('h-12') &&
+        cls.includes('justify-between') &&
+        (cls.includes('bg-bg_screen') || cls.includes('border-b'))
+      ) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function getLoreStableSiblingState(loreButton) {
+    if (!loreButton?.parentElement) return 'found-unplaced';
+
+    const siblings = [...loreButton.parentElement.children];
+    const next = loreButton.nextElementSibling;
+    const afterNext = next?.nextElementSibling || null;
+    const settingsButton = siblings.find((el) => el.id === 'crack-pure-settings-btn') || null;
+
+    if (
+      next?.id === 'crack-pure-settings-btn' &&
+      afterNext?.getAttribute?.('aria-haspopup') === 'menu'
+    ) {
+      return 'before-ai-settings';
+    }
+
+    if (
+      !settingsButton &&
+      next?.getAttribute?.('aria-haspopup') === 'menu'
+    ) {
+      return 'before-model';
+    }
+
+    return loreButton.dataset.crackUiLorePlaced || 'found-unplaced';
+  }
+
+  function getLoreEntryButtonPlacementState() {
+    const loreButton = DOM.loreEntryButton?.() || null;
+    if (!loreButton) return 'none';
+    return getLoreStableSiblingState(loreButton);
+  }
+
+  function ensureLoreEntryButtonInRoomTopBar() {
+    const loreButton = DOM.loreEntryButton();
+    if (!loreButton) return;
+
+    // 외부 확프(문장 다듬기)는 #crack-pure-settings-btn을 모델 버튼 바로 앞에 고정한다.
+    // Lore를 모델 버튼 바로 앞에 고정하면 두 확프가 서로 insertBefore를 반복하므로,
+    // AI 설정 버튼이 있으면 Lore는 그 왼쪽으로 양보한다: [Lore][AI 설정][모델].
+    const currentState = getLoreStableSiblingState(loreButton);
+    if (currentState === 'before-ai-settings' || currentState === 'before-model') return;
+
+    const topBar = DOM.loreRoomTopBar();
+    if (!topBar) return;
+
+    // 모델 표시 버튼(프로챗 2.5 …)을 찾아 그 주변의 안정 슬롯을 고른다.
+    const modelButton =
+      topBar.querySelector('button[aria-haspopup="menu"]') ||
+      topBar.querySelector('img[src*="model-icon"]')?.closest('button');
+
+    if (!modelButton?.parentElement) return;
+
+    const siblingSettingsButton = [...modelButton.parentElement.children]
+      .find((el) => el.id === 'crack-pure-settings-btn') || null;
+    const topBarSettingsButton = topBar.querySelector('#crack-pure-settings-btn');
+    const settingsButton =
+      siblingSettingsButton ||
+      (topBarSettingsButton?.parentElement === modelButton.parentElement ? topBarSettingsButton : null);
+    const anchor = settingsButton || modelButton;
+
+    if (anchor.previousElementSibling !== loreButton) {
+      anchor.parentElement.insertBefore(loreButton, anchor);
+    }
+
+    loreButton.dataset.crackUiLorePlaced = settingsButton ? 'before-ai-settings' : 'before-model';
+  }
+
   function init() {
     cleanupOldStuffOnce();
     ensureRevealZone();
@@ -6547,6 +6653,7 @@ function markMobileChatListOpenState() {
       bindHeaderHover(header);
       ensureGearButtons(header);
     }
+    ensureLoreEntryButtonInRoomTopBar();
 
     ensureBottomModelPicker();
     applyEmptySendGuardState();
