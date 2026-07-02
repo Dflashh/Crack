@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Alibi
 // @namespace    https://github.com/Dflashh/Crack
-// @version      ALIBI-v0.3.7
+// @version      ALIBI-v0.3.8
 // @description  선택한 기간의 크랙 사용 알리바이만 빠르게 조회합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  const ALIBI_VERSION = "v0.3.7";
+  const ALIBI_VERSION = "v0.3.8";
   const POINT = "#FE4532";
   const API = "https://crack-api.wrtn.ai/crack-cash/crackers/history";
   // 이 API는 실제로 한 페이지에 10개만 주는 것으로 보여서 limit은 10 유지.
@@ -175,10 +175,13 @@
       }
       body[data-theme="dark"] .ca-field label,
       body[data-theme="dark"] .ca-speed-title { color: rgba(245,245,247,.50); }
+      .ca-field { min-width: 0; }
       .ca-date {
         width: 100%;
         height: 46px;
         box-sizing: border-box;
+        min-width: 0;
+        max-width: 100%;
         border: 0;
         outline: none;
         border-radius: 16px;
@@ -188,6 +191,16 @@
         font-size: 15px;
         font-weight: 800;
         letter-spacing: -0.02em;
+        appearance: none;
+        -webkit-appearance: none;
+      }
+      .ca-date::-webkit-date-and-time-value {
+        min-height: 1.2em;
+        text-align: center;
+      }
+      .ca-date::-webkit-calendar-picker-indicator {
+        margin: 0;
+        padding: 0;
       }
       body[data-theme="dark"] .ca-date { background: rgba(255,255,255,.10); color-scheme: dark; }
       .ca-speed {
@@ -590,6 +603,15 @@
         }
         .ca-top { padding: 17px 17px 11px; }
         .ca-body { padding: 0 17px 17px; }
+        .ca-card { padding: 14px; }
+        .ca-field label { font-size: 11px; }
+        .ca-date {
+          height: 42px;
+          border-radius: 14px;
+          padding: 0 10px;
+          font-size: 13px;
+          letter-spacing: -0.04em;
+        }
         .ca-title { font-size: 22px; }
         .ca-logo {
           width: 44px;
@@ -682,6 +704,7 @@
           white-space: nowrap;
         }
         .ca-day-money .gain { margin-top: 1px; }
+        .ca-day-money .ca-money-sign { display: none; }
         .ca-day-money .spent,
         .ca-day-money .gain {
           overflow: hidden;
@@ -703,8 +726,16 @@
       }
 
       @media (max-width: 380px) {
-        .ca-body { padding: 0 14px 14px; }
-        .ca-top { padding: 15px 14px 10px; }
+        .ca-body { padding: 0 12px 12px; }
+        .ca-top { padding: 15px 12px 10px; }
+        .ca-card { padding: 12px; }
+        .ca-grid { gap: 9px; }
+        .ca-date {
+          height: 40px;
+          border-radius: 13px;
+          padding: 0 8px;
+          font-size: 12.5px;
+        }
         .ca-stat-grid { gap: 6px; }
         .ca-stat {
           min-height: 62px;
@@ -726,6 +757,17 @@
           min-height: 24px;
           font-size: 8.7px;
           letter-spacing: -0.065em;
+        }
+      }
+
+      @media (max-width: 340px) {
+        .ca-body { padding: 0 10px 10px; }
+        .ca-top { padding: 13px 10px 9px; }
+        .ca-card { padding: 10px; }
+        .ca-date {
+          height: 38px;
+          font-size: 12px;
+          padding: 0 7px;
         }
       }
     `);
@@ -1054,10 +1096,10 @@
     if (!(consumed > 0) && !(acquired > 0)) return "";
 
     const spentHTML = consumed > 0
-      ? `<div class="spent">-${formatNumber(consumed)}</div>`
+      ? `<div class="spent"><span class="ca-money-sign">-</span>${formatNumber(consumed)}</div>`
       : `<div class="spent is-placeholder">0</div>`;
     const gainHTML = acquired > 0
-      ? `<div class="gain">+${formatNumber(acquired)}</div>`
+      ? `<div class="gain"><span class="ca-money-sign">+</span>${formatNumber(acquired)}</div>`
       : `<div class="gain is-placeholder">0</div>`;
 
     return `<div class="ca-day-money">${spentHTML}${gainHTML}</div>`;
