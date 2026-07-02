@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Alibi
 // @namespace    https://github.com/Dflashh/Crack
-// @version      ALIBI-v0.3.3
+// @version      ALIBI-v0.3.7
 // @description  선택한 기간의 크랙 사용 알리바이만 빠르게 조회합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  const ALIBI_VERSION = "v0.3.3";
+  const ALIBI_VERSION = "v0.3.7";
   const POINT = "#FE4532";
   const API = "https://crack-api.wrtn.ai/crack-cash/crackers/history";
   // 이 API는 실제로 한 페이지에 10개만 주는 것으로 보여서 limit은 10 유지.
@@ -546,6 +546,7 @@
         white-space: nowrap;
       }
       .ca-day-money {
+        min-height: 27px;
         margin-top: 7px;
         font-size: 11px;
         line-height: 1.18;
@@ -553,6 +554,9 @@
         letter-spacing: -0.03em;
       }
       .ca-day-money .gain { margin-top: 2px; }
+      .ca-day-money .is-placeholder {
+        visibility: hidden;
+      }
       .ca-detail-card {
         padding: 14px;
       }
@@ -575,12 +579,154 @@
         font-weight: 800;
       }
       @media (max-width: 620px) {
-        .ca-top { padding: 18px 18px 12px; }
-        .ca-body { padding: 0 18px 18px; }
-        .ca-grid, .ca-stat-grid { grid-template-columns: 1fr; }
-        .ca-day { min-height: 68px; padding: 7px; }
-        .ca-day-money { font-size: 10px; }
-        .ca-sheet { border-radius: 26px; }
+        .ca-overlay {
+          align-items: stretch;
+          padding: 8px;
+        }
+        .ca-sheet {
+          width: calc(100vw - 16px);
+          max-height: calc(100vh - 16px);
+          border-radius: 24px;
+        }
+        .ca-top { padding: 17px 17px 11px; }
+        .ca-body { padding: 0 17px 17px; }
+        .ca-title { font-size: 22px; }
+        .ca-logo {
+          width: 44px;
+          height: 44px;
+          border-radius: 15px;
+        }
+        .ca-result-head h3 { font-size: 17px; }
+        .ca-download {
+          padding: 9px 11px;
+          white-space: nowrap;
+        }
+        .ca-grid { grid-template-columns: 1fr; }
+        .ca-stat-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .ca-stat {
+          min-height: 66px;
+          border-radius: 18px;
+          padding: 11px 8px;
+        }
+        .ca-stat span {
+          font-size: 10px;
+          white-space: nowrap;
+        }
+        .ca-stat strong {
+          margin-top: 7px;
+          font-size: 18px;
+          letter-spacing: -0.055em;
+        }
+        .ca-calendar-stack { gap: 10px; }
+        .ca-calendar-nav {
+          grid-template-columns: 38px 1fr 38px;
+          gap: 6px;
+          border-radius: 18px;
+          padding: 6px;
+        }
+        .ca-month-nav {
+          width: 38px;
+          height: 38px;
+          border-radius: 14px;
+          font-size: 22px;
+        }
+        .ca-calendar-current strong { font-size: 16px; }
+        .ca-calendar-current span { font-size: 10px; }
+        .ca-month-card {
+          padding: 9px 7px;
+          border-radius: 18px;
+        }
+        .ca-weekdays,
+        .ca-calendar-grid { gap: 4px; }
+        .ca-weekday { font-size: 10px; }
+        .ca-day,
+        .ca-day-placeholder {
+          min-height: 68px;
+          border-radius: 13px;
+        }
+        .ca-day {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 6px 2px;
+          text-align: center;
+        }
+        .ca-day-top {
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 2px;
+        }
+        .ca-day-num { font-size: 15px; }
+        .ca-day-count {
+          display: none;
+        }
+        .ca-day.has-rows .ca-day-num::after {
+          content: none;
+          display: none;
+        }
+        .ca-day-money {
+          display: block;
+          width: 100%;
+          min-height: 26px;
+          margin-top: 4px;
+          font-size: 9.5px;
+          line-height: 1.18;
+          font-weight: 950;
+          letter-spacing: -0.055em;
+          text-align: center;
+          white-space: nowrap;
+        }
+        .ca-day-money .gain { margin-top: 1px; }
+        .ca-day-money .spent,
+        .ca-day-money .gain {
+          overflow: hidden;
+          text-overflow: clip;
+        }
+        .ca-detail-card {
+          border-radius: 18px;
+          padding: 12px;
+        }
+        .ca-detail-title { font-size: 15px; }
+        .ca-detail-meta { font-size: 11px; }
+        .ca-row {
+          border-radius: 16px;
+          padding: 12px;
+        }
+        .ca-row-title { font-size: 14px; }
+        .ca-row-sub { font-size: 11px; }
+        .ca-row-num { font-size: 14px; }
+      }
+
+      @media (max-width: 380px) {
+        .ca-body { padding: 0 14px 14px; }
+        .ca-top { padding: 15px 14px 10px; }
+        .ca-stat-grid { gap: 6px; }
+        .ca-stat {
+          min-height: 62px;
+          padding: 10px 6px;
+          border-radius: 16px;
+        }
+        .ca-stat span { font-size: 9px; }
+        .ca-stat strong { font-size: 16px; }
+        .ca-month-card { padding: 8px 6px; }
+        .ca-weekdays,
+        .ca-calendar-grid { gap: 3px; }
+        .ca-day,
+        .ca-day-placeholder {
+          min-height: 62px;
+          border-radius: 12px;
+        }
+        .ca-day-num { font-size: 14px; }
+        .ca-day-money {
+          min-height: 24px;
+          font-size: 8.7px;
+          letter-spacing: -0.065em;
+        }
       }
     `);
   }
@@ -905,8 +1051,16 @@
   }
 
   function buildCompactAmountHTML(consumed, acquired) {
-    const amountHTML = buildAmountHTML(consumed, acquired, "");
-    return amountHTML ? `<div class="ca-day-money">${amountHTML}</div>` : "";
+    if (!(consumed > 0) && !(acquired > 0)) return "";
+
+    const spentHTML = consumed > 0
+      ? `<div class="spent">-${formatNumber(consumed)}</div>`
+      : `<div class="spent is-placeholder">0</div>`;
+    const gainHTML = acquired > 0
+      ? `<div class="gain">+${formatNumber(acquired)}</div>`
+      : `<div class="gain is-placeholder">0</div>`;
+
+    return `<div class="ca-day-money">${spentHTML}${gainHTML}</div>`;
   }
 
   function buildSummaryRowsHTML(summaryRows) {
