@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Alibi
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.3
+// @version      1.0.4
 // @description  선택한 기간의 크랙 사용 알리바이만 빠르게 조회합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  const ALIBI_VERSION = "v1.0.3";
+  const ALIBI_VERSION = "v1.0.4";
   const POINT = "#FE4532";
   const API = "https://crack-api.wrtn.ai/crack-cash/crackers/history";
   // 이 API는 실제로 한 페이지에 10개만 주는 것으로 보여서 limit은 10 유지.
@@ -1560,27 +1560,52 @@
       .replace(/'/g, "&#039;");
   }
 
-  function downloadCSV() {
-    const header = ["KST Date", "KST Time", "Title", "IsConsumed", "Quantity", "Product", "ConsumedType", "OriginalDate"];
-    const lines = [header.map(csvEscape).join(",")];
+  function sortRowsForCSV(rows) {
+    return [...rows].sort((a, b) => {
+      const ad = String(a.date || "");
+      const bd = String(b.date || "");
+      return ad.localeCompare(bd);
+    });
+  }
 
-    for (const row of lastRawRows) {
+  function pushCsvSection(lines, title, quantityLabel, rows) {
+    const header = ["KST Date(날짜)", "KST Time(시간)", "Title(항목)", quantityLabel];
+    const sortedRows = sortRowsForCSV(rows);
+    const total = sortedRows.reduce((sum, row) => {
+      const quantity = row.alibiQuantity != null ? Number(row.alibiQuantity) || 0 : extractQuantity(row);
+      return sum + quantity;
+    }, 0);
+
+    lines.push([title].map(csvEscape).join(","));
+    lines.push(header.map(csvEscape).join(","));
+
+    for (const row of sortedRows) {
+      const quantity = row.alibiQuantity != null ? Number(row.alibiQuantity) || 0 : extractQuantity(row);
       lines.push([
-        row.kstDate,
-        row.kstTime,
-        row.title || "",
-        row.isConsumed,
-        row.alibiQuantity,
-        row.product || "",
-        row.consumedType || "",
-        row.date || "",
+        row.kstDate || safeKstDateString(row.date) || "",
+        row.kstTime || kstTimeString(row.date),
+        row.title || "제목 없음",
+        quantity,
       ].map(csvEscape).join(","));
     }
+
+    lines.push(["", "", "총합", total].map(csvEscape).join(","));
+  }
+
+  function downloadCSV() {
+    const consumedRows = lastRawRows.filter((row) => row.isConsumed);
+    const acquiredRows = lastRawRows.filter((row) => !row.isConsumed);
+    const lines = [];
+
+    pushCsvSection(lines, "소비 내역", "Quantity(소비 크래커)", consumedRows);
+    lines.push("");
+    pushCsvSection(lines, "획득 내역", "Quantity(획득 크래커)", acquiredRows);
 
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `crack_alibi_${Date.now()}.csv`;
+    const period = lastRangeStart && lastRangeEnd ? `${lastRangeStart}_${lastRangeEnd}` : Date.now();
+    a.download = `crack_alibi_${period}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
