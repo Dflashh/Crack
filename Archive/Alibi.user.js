@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Alibi
 // @namespace    https://github.com/Dflashh/Crack
-// @version      ALIBI-v0.3.8
+// @version      1.0.3
 // @description  선택한 기간의 크랙 사용 알리바이만 빠르게 조회합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
 
-  const ALIBI_VERSION = "v0.3.8";
+  const ALIBI_VERSION = "v1.0.3";
   const POINT = "#FE4532";
   const API = "https://crack-api.wrtn.ai/crack-cash/crackers/history";
   // 이 API는 실제로 한 페이지에 10개만 주는 것으로 보여서 limit은 10 유지.
@@ -35,9 +35,9 @@
   let selectedCalendarDate = "";
 
   const SPEEDS = {
-    safe: { label: "안전", jump: 25, delay: 220, desc: "천천히" },
-    express: { label: "급행", jump: 80, delay: 90, desc: "추천" },
-    madness: { label: "광기", jump: 160, delay: 35, desc: "빠름" },
+    safe: { label: "기본", jump: 25, delay: 220, desc: "최근 내역 조회시" },
+    express: { label: "급행", jump: 80, delay: 90, desc: "기본 추천" },
+    madness: { label: "광기", jump: 160, delay: 35, desc: "오래된 내역 조회시" },
   };
 
   function addStyles() {
@@ -206,6 +206,14 @@
       .ca-speed {
         margin-top: 14px;
       }
+      .ca-speed-help {
+        margin: -3px 0 9px;
+        color: rgba(30,30,32,.42);
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: -0.02em;
+      }
+      body[data-theme="dark"] .ca-speed-help { color: rgba(245,245,247,.38); }
       .ca-segment {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -218,7 +226,7 @@
       .ca-speed-btn {
         min-height: 46px;
         border: 0;
-        border-radius: 14px;
+        border-radius: 12px;
         cursor: pointer;
         background: transparent;
         color: inherit;
@@ -244,9 +252,9 @@
       }
       .ca-primary,
       .ca-ghost {
-        height: 48px;
+        height: 42px;
         border: 0;
-        border-radius: 17px;
+        border-radius: 15px;
         cursor: pointer;
         padding: 0 16px;
         font-size: 15px;
@@ -394,15 +402,15 @@
       .ca-view-tabs {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 6px;
-        padding: 5px;
-        border-radius: 18px;
+        gap: 5px;
+        padding: 4px;
+        border-radius: 16px;
         background: rgba(118,118,128,.13);
         margin-bottom: 12px;
       }
       body[data-theme="dark"] .ca-view-tabs { background: rgba(255,255,255,.08); }
       .ca-view-tab {
-        min-height: 40px;
+        min-height: 34px;
         border: 0;
         border-radius: 14px;
         cursor: pointer;
@@ -605,6 +613,10 @@
         .ca-body { padding: 0 17px 17px; }
         .ca-card { padding: 14px; }
         .ca-field label { font-size: 11px; }
+        .ca-speed-help {
+          font-size: 10px;
+          margin-bottom: 8px;
+        }
         .ca-date {
           height: 42px;
           border-radius: 14px;
@@ -612,6 +624,24 @@
           font-size: 13px;
           letter-spacing: -0.04em;
         }
+        .ca-actions { margin-top: 12px; }
+        .ca-primary,
+        .ca-ghost {
+          height: 40px;
+          border-radius: 14px;
+          font-size: 14px;
+        }
+        .ca-view-tabs {
+          padding: 4px;
+          border-radius: 15px;
+          margin-bottom: 10px;
+        }
+        .ca-view-tab {
+          min-height: 32px;
+          border-radius: 11px;
+          font-size: 13px;
+        }
+
         .ca-title { font-size: 22px; }
         .ca-logo {
           width: 44px;
@@ -623,7 +653,10 @@
           padding: 9px 11px;
           white-space: nowrap;
         }
-        .ca-grid { grid-template-columns: 1fr; }
+        .ca-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
         .ca-stat-grid {
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 8px;
@@ -729,13 +762,16 @@
         .ca-body { padding: 0 12px 12px; }
         .ca-top { padding: 15px 12px 10px; }
         .ca-card { padding: 12px; }
-        .ca-grid { gap: 9px; }
+        .ca-grid { gap: 7px; }
         .ca-date {
-          height: 40px;
-          border-radius: 13px;
-          padding: 0 8px;
-          font-size: 12.5px;
+          height: 38px;
+          border-radius: 12px;
+          padding: 0 5px;
+          font-size: 11.5px;
         }
+        .ca-primary,
+        .ca-ghost { height: 38px; }
+        .ca-view-tab { min-height: 30px; }
         .ca-stat-grid { gap: 6px; }
         .ca-stat {
           min-height: 62px;
@@ -765,9 +801,9 @@
         .ca-top { padding: 13px 10px 9px; }
         .ca-card { padding: 10px; }
         .ca-date {
-          height: 38px;
-          font-size: 12px;
-          padding: 0 7px;
+          height: 36px;
+          font-size: 11px;
+          padding: 0 4px;
         }
       }
     `);
@@ -1620,7 +1656,7 @@
             <div class="ca-logo">🧾</div>
             <div>
               <h2 class="ca-title">Alibi</h2>
-              <div class="ca-subtitle">내가 그때 뭘 했고 얼마 썼는지 까보기 · ${ALIBI_VERSION}</div>
+              <div class="ca-subtitle">${ALIBI_VERSION}</div>
             </div>
           </div>
           <button type="button" class="ca-close" aria-label="닫기">×</button>
@@ -1638,7 +1674,7 @@
               </div>
             </div>
             <div class="ca-speed">
-              <div class="ca-speed-title">탐색 속도</div>
+              <div class="ca-speed-title">조회 속도</div>
               <div class="ca-segment">
                 ${Object.entries(SPEEDS).map(([key, speed]) => `
                   <button type="button" class="ca-speed-btn ${key === currentSpeed ? "is-on" : ""}" data-speed="${key}">
