@@ -34,6 +34,9 @@
 
 UI 업데이트 예정
 ***
+## Crack Alibi <v1.0.5> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Alibi.user.js)
+유사 빨간약 / 이용 내역 상세조회
+***
 ## SVG 워커 자동 생성기 <v2.9> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Cloudflare.user.js)
 <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=211439"><img src="https://img.shields.io/badge/📜-기본 설정 게시글-f52887?style=for-the-badge" alt="게시글" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=211810"><img src="https://img.shields.io/badge/📜-사용 방법 게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 ***
