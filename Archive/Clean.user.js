@@ -2,7 +2,7 @@
 // @name         클린 리롤
 // @version      1.0.0
 // @description  리롤하고 싶은 내용을 삭제하고 새 응답 받기
-// @author       로봇 & 나
+// @author       ChatGPT & 나
 // @match        https://crack.wrtn.ai/*
 // @grant        GM_addStyle
 // @run-at       document-idle
@@ -13,13 +13,13 @@
     'use strict';
 
     /******************************************************************
-     * Clean Reroll v0.3.4
+     * Clean Reroll v1.0.0
      * - 유저 턴 기준으로 연결된 AI 후보 답변들을 전부 삭제
      * - 유저 메시지를 입력창에 복원
      * - 자동 전송 토글 지원
      ******************************************************************/
 
-    const SCRIPT_ID = 'cr-clean-reroll-v034';
+    const SCRIPT_ID = 'cr-clean-reroll-v100';
     const AUTO_SEND_KEY = 'wrtn_clean_reroll_autosend';
     const API_BASE = 'https://crack-api.wrtn.ai/crack-gen/v3';
     const CLIPBOARD_RESTORE_TTL = 1000 * 60 * 10;
@@ -847,7 +847,7 @@
                         <div class="cr-clip-logo">${createCleanRerollIconSVG()}</div>
                         <div>
                             <h2 class="cr-clip-title">Clean Clipboard</h2>
-                            <div class="cr-clip-version">v0.3.4</div>
+                            <div class="cr-clip-version">v1.0.0</div>
                         </div>
                     </div>
                     <button type="button" class="cr-clip-close" aria-label="닫기">×</button>
