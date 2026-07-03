@@ -28,7 +28,7 @@
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/Shortcut.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=227109"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 
 ***
-## 클린 리롤 & 믹서 <v2.6.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CleanMix.user.js)
+## 클린 리롤 & 믹서 <v1.1.0> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CleanMix.user.js)
 ## 클린 리롤 <v1.0.0> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Clean.user.js)
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/Clean.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=222050"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 
