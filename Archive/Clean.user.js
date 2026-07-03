@@ -2,7 +2,7 @@
 // @name         클린 리롤
 // @version      1.0.0
 // @description  리롤하고 싶은 내용을 삭제하고 새 응답 받기
-// @author       ChatGPT & 나
+// @author       로봇 & 나
 // @match        https://crack.wrtn.ai/*
 // @grant        GM_addStyle
 // @run-at       document-idle
