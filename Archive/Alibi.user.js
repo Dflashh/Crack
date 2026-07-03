@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Alibi
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.4
+// @version      1.0.5
 // @description  선택한 기간의 크랙 사용 알리바이만 빠르게 조회합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -15,13 +15,14 @@
 (function () {
   "use strict";
 
-  const ALIBI_VERSION = "v1.0.4";
+  const ALIBI_VERSION = "v1.0.5";
   const POINT = "#FE4532";
   const API = "https://crack-api.wrtn.ai/crack-cash/crackers/history";
   // 이 API는 실제로 한 페이지에 10개만 주는 것으로 보여서 limit은 10 유지.
   // 속도 개선은 limit을 올리는 게 아니라, 오래된 날짜 위치를 더 똑똑하게 찾는 방식으로 처리.
   const PAGE_LIMIT = 10;
   const MAX_PAGE = 20000;
+  const LOOKBACK_YEARS = 1;
 
   let currentAborter = null;
   let isSearching = false;
@@ -134,6 +135,13 @@
         letter-spacing: -0.02em;
       }
       body[data-theme="dark"] .ca-subtitle { color: rgba(245,245,247,.52); }
+      .ca-subtitle .ca-version {
+        font-weight: 900;
+      }
+      .ca-subtitle .ca-limit-copy {
+        margin-left: 7px;
+        opacity: .86;
+      }
       .ca-close {
         width: 36px;
         height: 36px;
@@ -396,6 +404,20 @@
         letter-spacing: -0.02em;
       }
       body[data-theme="dark"] .ca-toast { color: rgba(245,245,247,.45); }
+      .ca-limit-notice {
+        margin: -2px 0 12px;
+        border-radius: 16px;
+        padding: 11px 12px;
+        background: rgba(254,69,50,.10);
+        color: ${POINT};
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: -0.02em;
+        line-height: 1.38;
+      }
+      body[data-theme="dark"] .ca-limit-notice {
+        background: rgba(254,69,50,.14);
+      }
 
       .ca-result .spent { color: ${POINT}; }
       .ca-result .gain { color: #2C9F60; }
@@ -643,6 +665,11 @@
         }
 
         .ca-title { font-size: 22px; }
+        .ca-subtitle .ca-limit-copy {
+          display: block;
+          margin-left: 0;
+          margin-top: 2px;
+        }
         .ca-logo {
           width: 44px;
           height: 44px;
@@ -888,11 +915,15 @@
     if (sub) sub.textContent = subMessage;
   }
 
+  function formatMessageHTML(message) {
+    return escapeHTML(message).replace(/\n/g, "<br>");
+  }
+
   function setEmpty(message = "날짜를 고르고 검사하면 여기에 알리바이가 뜸") {
     setResultHTML(`
       <div class="ca-empty">
         <div style="font-size:34px; line-height:1;">🧾</div>
-        <div>${message}</div>
+        <div>${formatMessageHTML(message)}</div>
       </div>
     `);
   }
@@ -983,6 +1014,55 @@
 
   function makeYMD(year, month, day) {
     return `${year}-${pad2(month)}-${pad2(day)}`;
+  }
+
+  function addYearsToYMD(ymd, delta) {
+    const { year, month, day } = parseYMD(ymd);
+    const nextYear = year + delta;
+    const nextDay = Math.min(day, daysInMonth(nextYear, month));
+    return makeYMD(nextYear, month, nextDay);
+  }
+
+  function getLookupCutoffDate() {
+    return addYearsToYMD(kstDateString(new Date()), -LOOKBACK_YEARS);
+  }
+
+  function resolveLookupRange(start, end) {
+    const cutoff = getLookupCutoffDate();
+
+    if (end < cutoff) {
+      return {
+        ok: false,
+        cutoff,
+        start,
+        end,
+        message: `현재 크랙 API에서는 최근 1년 내역만 조회할 수 있어요.\n${cutoff} 이전 내역은 사이트에서 제공되지 않아 Alibi로 확인할 수 없습니다.`,
+      };
+    }
+
+    if (start < cutoff) {
+      return {
+        ok: true,
+        clipped: true,
+        cutoff,
+        originalStart: start,
+        originalEnd: end,
+        start: cutoff,
+        end,
+        notice: `선택한 기간 중 ${cutoff} 이전 내역은 조회할 수 없어, ${cutoff} 이후 내역만 보여줘요.`,
+      };
+    }
+
+    return {
+      ok: true,
+      clipped: false,
+      cutoff,
+      originalStart: start,
+      originalEnd: end,
+      start,
+      end,
+      notice: "",
+    };
   }
 
   function getDayOfWeek(ymd) {
@@ -1511,7 +1591,7 @@
     return found;
   }
 
-  function renderResults(rawRows, start, end) {
+  function renderResults(rawRows, start, end, notice = "") {
     lastRawRows = rawRows;
     lastSummaryRows = summarizeRows(rawRows);
     lastRangeStart = start;
@@ -1524,7 +1604,7 @@
     const period = start === end ? start : `${start} ~ ${end}`;
 
     if (rawRows.length === 0) {
-      setEmpty(`${period} 알리바이 없음`);
+      setEmpty(notice ? `${notice}\n\n${period} 알리바이 없음` : `${period} 알리바이 없음`);
       return;
     }
 
@@ -1533,6 +1613,7 @@
         <h3>${period}</h3>
         <button type="button" class="ca-download" id="ca-download-csv">CSV 저장</button>
       </div>
+      ${notice ? `<div class="ca-limit-notice">${formatMessageHTML(notice)}</div>` : ""}
       <div class="ca-view-tabs" role="tablist" aria-label="결과 보기 방식">
         <button type="button" class="ca-view-tab is-on" data-view="summary" role="tab">전체</button>
         <button type="button" class="ca-view-tab" data-view="calendar" role="tab">달력</button>
@@ -1639,23 +1720,34 @@
       return;
     }
 
+    const lookupRange = resolveLookupRange(range.start, range.end);
+
+    if (!lookupRange.ok) {
+      setEmpty(lookupRange.message);
+      return;
+    }
+
     currentAborter = new AbortController();
     setSearchingUI(true);
-    setLoading();
+    if (lookupRange.clipped) {
+      setLoading("조회 가능한 범위로 조정 중...", `${lookupRange.cutoff} 이후 내역만 확인할게요`);
+    } else {
+      setLoading();
+    }
 
     try {
       const rows = await searchAlibi({
-        start: range.start,
-        end: range.end,
+        start: lookupRange.start,
+        end: lookupRange.end,
         speedKey: currentSpeed,
         signal: currentAborter.signal,
       });
-      renderResults(rows, range.start, range.end);
+      renderResults(rows, lookupRange.start, lookupRange.end, lookupRange.notice);
     } catch (error) {
       if (error.name === "AbortError") {
         setEmpty("검사 중지됨");
       } else {
-        setEmpty(`오류: ${escapeHTML(error.message)}`);
+        setEmpty(`오류: ${error.message}`);
         console.error("[Crack Alibi]", error);
       }
     } finally {
@@ -1681,7 +1773,7 @@
             <div class="ca-logo">🧾</div>
             <div>
               <h2 class="ca-title">Alibi</h2>
-              <div class="ca-subtitle">${ALIBI_VERSION}</div>
+              <div class="ca-subtitle"><span class="ca-version">${ALIBI_VERSION}</span><span class="ca-limit-copy">최근 1년 내역만 조회 가능</span></div>
             </div>
           </div>
           <button type="button" class="ca-close" aria-label="닫기">×</button>
