@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         Crack Shortcut Customizer
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.2
-// @description  Crack 단축키를 내 마음대로 커스텀
+// @version      1.2.0
+// @description  Crack 단축키를 내 마음대로 커스텀 + 로어 인젝터/대화 프로필/플레이 가이드/모델 선택
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
-// @connect      crack-api.wrtn.ai
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Shortcut.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/Shortcut.user.js
 // @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/Shortcut.user.js
@@ -28,10 +27,12 @@
     disabledBackup: 'crack_shortcut_customizer_disabled_backup_v1',
     sectionGeneralOpen: 'crack_shortcut_customizer_section_general_open',
     sectionChatOpen: 'crack_shortcut_customizer_section_chat_open',
+    sectionModelOpen: 'crack_shortcut_customizer_section_model_open',
   };
 
   const CLS = {
     panelOpen: 'crack-sc-panel-open',
+    suppressModelHeader: 'crack-sc-suppress-model-header',
   };
 
   const PANEL_SHORTCUT = 'ctrl+shift+,';
@@ -40,6 +41,7 @@
   const ACTIONS = [
     { id: 'history', group: '일반', name: '대화 내역 열기/닫기', original: 'ctrl+shift+s' },
     { id: 'help', group: '일반', name: '도움말', original: 'ctrl+shift+/' },
+    { id: 'lore_injector', group: '일반', name: '로어 인젝터', original: '', customAction: 'toggle_lore', targetSelector: '#lore-inj-entry-button, button[title="로어 인젝터 열기"], button[aria-label="로어 인젝터 열기"]' },
 
     { id: 'focus_input', group: '채팅방', name: '인풋 창 포커스', original: 'enter' },
     { id: 'blur_input', group: '채팅방', name: '인풋 창 포커스 해제', original: 'esc' },
@@ -54,27 +56,48 @@
     { id: 'add_situation', group: '채팅방', name: '상황 추가하기', original: 'ctrl+shift+e' },
     { id: 'regenerate', group: '채팅방', name: '답변 재생성하기', original: 'ctrl+alt+r' },
     { id: 'room_settings', group: '채팅방', name: '채팅방 설정 열기/닫기', original: 'ctrl+0' },
+    { id: 'conversation_profile', group: '채팅방', name: '대화 프로필', original: '', customAction: 'toggle_native_text', targetText: '대화 프로필' },
+    { id: 'play_guide', group: '채팅방', name: '플레이 가이드', original: '', customAction: 'toggle_native_text', targetText: '플레이 가이드' },
+
+    { id: 'model_hyperchat_20', group: '모델 선택', name: '하이퍼챗 2.0', original: '', customAction: 'select_model', modelName: '하이퍼챗 2.0' },
+    { id: 'model_hyperchat_15', group: '모델 선택', name: '하이퍼챗 1.5', original: '', customAction: 'select_model', modelName: '하이퍼챗 1.5' },
+    { id: 'model_hyperchat_10', group: '모델 선택', name: '하이퍼챗 1.0', original: '', customAction: 'select_model', modelName: '하이퍼챗 1.0' },
+    { id: 'model_prochat_25', group: '모델 선택', name: '프로챗 2.5', original: '', customAction: 'select_model', modelName: '프로챗 2.5' },
+    { id: 'model_prochat_10', group: '모델 선택', name: '프로챗 1.0', original: '', customAction: 'select_model', modelName: '프로챗 1.0' },
+    { id: 'model_superchat_30', group: '모델 선택', name: '슈퍼챗 3.0', original: '', customAction: 'select_model', modelName: '슈퍼챗 3.0' },
+    { id: 'model_superchat_25', group: '모델 선택', name: '슈퍼챗 2.5', original: '', customAction: 'select_model', modelName: '슈퍼챗 2.5' },
+    { id: 'model_superchat_20', group: '모델 선택', name: '슈퍼챗 2.0', original: '', customAction: 'select_model', modelName: '슈퍼챗 2.0' },
+    { id: 'model_powerchat', group: '모델 선택', name: '파워챗', original: '', customAction: 'select_model', modelName: '파워챗' },
   ];
+
+  const KNOWN_MODEL_NAMES = Object.freeze(
+    ACTIONS
+      .filter((action) => action.customAction === 'select_model')
+      .map((action) => action.modelName)
+  );
+  const KNOWN_MODEL_NAME_SET = new Set(KNOWN_MODEL_NAMES);
 
   const GROUP_STORAGE = {
     일반: LS.sectionGeneralOpen,
     채팅방: LS.sectionChatOpen,
+    '모델 선택': LS.sectionModelOpen,
   };
 
   let config = loadConfig();
   let disabledBackup = loadDisabledBackup();
   let recordingActionId = null;
   let relaying = false;
-  let lastAnchor = null;
-  let domEnhanceScheduled = false;
   let domEnhanceTimer = null;
-  let helpPatchScheduled = false;
   let helpPatchTimer = null;
+  let modelSelectionSeq = 0;
+  let modelSelectionGuard = null;
+  const modelSelectionTimers = new Set();
 
+  sanitizeReservedShortcutAssignments();
   addStyle();
 
   if (typeof GM_registerMenuCommand === 'function') {
-    GM_registerMenuCommand('Crack 단축키 커스텀 열기', () => openPanel(null));
+    GM_registerMenuCommand('Crack 단축키 커스텀 열기', openPanel);
   }
 
   document.addEventListener('keydown', onKeyDownCapture, true);
@@ -102,6 +125,9 @@
       if (combo === 'backspace') {
         setCustomShortcut(recordingActionId, '');
         showToast('단축키를 껐음');
+      } else if (combo === normalizeCombo(PANEL_SHORTCUT)) {
+        showToast('커스텀 창 열기 단축키라 사용할 수 없음');
+        return;
       } else {
         setCustomShortcut(recordingActionId, combo);
         showToast(`${getActionName(recordingActionId)} → ${humanCombo(combo)}`);
@@ -113,10 +139,17 @@
       return;
     }
 
+    if (combo === 'esc' && isLoreInjectorOpen()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeLoreInjector();
+      return;
+    }
+
     if (combo === normalizeCombo(PANEL_SHORTCUT)) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      togglePanel(null);
+      togglePanel();
       return;
     }
 
@@ -124,11 +157,16 @@
     if (actionByCustom && !shouldIgnoreShortcut(e, actionByCustom, combo)) {
       const original = normalizeCombo(actionByCustom.original);
 
-      if (combo === original) return;
+      if (!actionByCustom.customAction && combo === original) return;
 
       e.preventDefault();
       e.stopImmediatePropagation();
-      relayOriginalShortcut(original);
+
+      if (actionByCustom.customAction) {
+        runCustomAction(actionByCustom);
+      } else {
+        relayOriginalShortcut(original);
+      }
       return;
     }
 
@@ -172,6 +210,581 @@
     }
   }
 
+  function runCustomAction(action) {
+    if (!action) return;
+
+    if (action.customAction === 'toggle_lore') {
+      toggleLoreInjector(action);
+      return;
+    }
+
+    if (action.customAction === 'toggle_native_text') {
+      toggleNativePanelByText(action.targetText, action.name);
+      return;
+    }
+
+    if (action.customAction === 'select_model') {
+      selectModel(action.modelName);
+    }
+  }
+
+  function simulateClick(element) {
+    if (!element) return false;
+
+    const common = { bubbles: true, cancelable: true, composed: true, view: window };
+
+    try {
+      element.dispatchEvent(new PointerEvent('pointerdown', { ...common, pointerType: 'mouse', isPrimary: true }));
+    } catch (_) {}
+
+    try {
+      element.dispatchEvent(new MouseEvent('mousedown', common));
+    } catch (_) {}
+
+    try {
+      element.dispatchEvent(new PointerEvent('pointerup', { ...common, pointerType: 'mouse', isPrimary: true }));
+    } catch (_) {}
+
+    try {
+      element.dispatchEvent(new MouseEvent('mouseup', common));
+      element.dispatchEvent(new MouseEvent('click', common));
+      return true;
+    } catch (_) {
+      try {
+        element.click();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  function isVisibleElement(element) {
+    if (!element || !element.isConnected) return false;
+    const rect = element.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+
+    const style = getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) > 0;
+  }
+
+  function clickVisibleButtonBySelector(selector, shortcutName, options = {}) {
+    const target = [...document.querySelectorAll(selector || '')]
+      .filter((element) => !element.closest?.('#' + ID.panel))
+      .find(isVisibleElement);
+
+    if (!target) {
+      showToast(`${shortcutName} 버튼을 찾지 못했음`);
+      console.log(`[Crack Shortcut Customizer] '${shortcutName}' 버튼을 찾지 못했습니다. 대상 확장프로그램이 실행 중인지 확인하세요.`);
+      return false;
+    }
+
+    simulateClick(target);
+    if (!options.silentSuccess) showToast(`${shortcutName} 열기`);
+    return true;
+  }
+
+
+  function isLoreInjectorOpen() {
+    return Boolean(document.getElementById('decentral-container-c2'));
+  }
+
+  function closeLoreInjector() {
+    if (!isLoreInjectorOpen()) return false;
+
+    // 로어 인젝터가 실제로 제공하는 닫기 버튼을 눌러 내부 상태까지 정상 정리함.
+    const closeButton =
+      document.getElementById('decentral-content-c2-close') ||
+      document.querySelector('#decentral-container-c2 .decentral-close-button');
+
+    if (closeButton && simulateClick(closeButton)) {
+      return true;
+    }
+
+    // 혹시 DOM 구조가 달라져도 ModalManager가 노출돼 있으면 정상 close()를 시도함.
+    try {
+      const modalManager = document.__modalManager?.get?.('c2');
+      if (modalManager && typeof modalManager.close === 'function') {
+        modalManager.close();
+        return true;
+      }
+    } catch (_) {}
+
+    showToast('로어 인젝터 닫기 실패');
+    return false;
+  }
+
+  function toggleLoreInjector(action) {
+    if (isLoreInjectorOpen()) {
+      return closeLoreInjector();
+    }
+
+    return clickVisibleButtonBySelector(
+      action?.targetSelector,
+      action?.name || '로어 인젝터',
+      { silentSuccess: true }
+    );
+  }
+
+  function clickVisibleButtonByText(targetText, shortcutName, options = {}) {
+    const cleanTarget = compactText(targetText);
+    const candidates = [...document.querySelectorAll('button, [role="button"]')]
+      .filter((element) => !element.closest?.('#' + ID.panel))
+      .filter(isVisibleElement)
+      .filter((element) => compactText(element.textContent || '').includes(cleanTarget))
+      .sort((a, b) => compactText(a.textContent || '').length - compactText(b.textContent || '').length);
+
+    const target = candidates[0];
+    if (!target) {
+      showToast(`${shortcutName} 버튼을 찾지 못했음`);
+      console.log(`[Crack Shortcut Customizer] '${targetText}' 버튼을 찾지 못했습니다.`);
+      return false;
+    }
+
+    simulateClick(target);
+    if (!options.silentSuccess) showToast(`${shortcutName} 열기`);
+    return true;
+  }
+
+  function findOpenNativePanelByText(targetText) {
+    const cleanTarget = compactText(targetText);
+    if (!cleanTarget) return null;
+
+    const candidates = [...document.querySelectorAll(
+      '[role="dialog"], [aria-modal="true"], [data-state="open"]'
+    )]
+      .filter((element) => !element.closest?.('#' + ID.panel))
+      .filter((element) => !element.closest?.('#decentral-container-c2'))
+      .filter(isVisibleElement)
+      .filter((element) => compactText(element.textContent || '').includes(cleanTarget))
+      .sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
+
+    return candidates[0] || null;
+  }
+
+  function dispatchNativeEscape() {
+    const parsed = parseCombo('esc');
+    const keyInfo = getKeyInfo('esc');
+    const target = document.activeElement || document.body || document.documentElement || document;
+
+    relaying = true;
+    try {
+      dispatchKeyboardEvent(target, 'keydown', parsed, keyInfo);
+      dispatchKeyboardEvent(target, 'keyup', parsed, keyInfo);
+    } finally {
+      relaying = false;
+    }
+  }
+
+  function toggleNativePanelByText(targetText, shortcutName) {
+    if (findOpenNativePanelByText(targetText)) {
+      dispatchNativeEscape();
+      return true;
+    }
+
+    return clickVisibleButtonByText(targetText, shortcutName, { silentSuccess: true });
+  }
+
+  const MODEL_ICON_NAME_MAP = {
+    'hyperchat2_0.webp': '하이퍼챗 2.0',
+    'hyperchat1_5.webp': '하이퍼챗 1.5',
+    'hyperchat.webp': '하이퍼챗 1.0',
+    'prochat2_5.webp': '프로챗 2.5',
+    'prochat1_0.webp': '프로챗 1.0',
+    'superchat3_0.webp': '슈퍼챗 3.0',
+    'superchat2_5.webp': '슈퍼챗 2.5',
+    'superchat2_0.webp': '슈퍼챗 2.0',
+    'powerchat.webp': '파워챗',
+  };
+
+  function isKnownModelName(value) {
+    return KNOWN_MODEL_NAME_SET.has(normalizeText(value));
+  }
+
+  function modelSleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function getModelNameFromNode(node) {
+    if (!node) return '';
+
+    const imgAlt = normalizeText(node.querySelector?.('img[alt]')?.getAttribute('alt'));
+    if (isKnownModelName(imgAlt)) return imgAlt;
+
+    const src = String(node.querySelector?.('img[src*="model-icon"]')?.getAttribute('src') || '');
+    const fromSrc = Object.entries(MODEL_ICON_NAME_MAP).find(([file]) => src.includes(file));
+    if (fromSrc?.[1]) return fromSrc[1];
+
+    const spanText = [...(node.querySelectorAll?.('span') || [])]
+      .map((span) => normalizeText(span.textContent))
+      .find(isKnownModelName);
+    if (spanText) return spanText;
+
+    const text = normalizeText(node.textContent);
+    return KNOWN_MODEL_NAMES.find((name) => text.includes(name)) || '';
+  }
+
+  function isOfficialModelButtonCandidate(button) {
+    if (!button || !button.isConnected) return false;
+    if (button.closest?.('#' + ID.panel + ', [role="menu"], [role="menuitem"]')) return false;
+
+    const image = button.querySelector?.('img[alt], img[src*="model-icon"]');
+    if (!image) return false;
+
+    const modelName = getModelNameFromNode(button);
+    const imageSrc = String(image.getAttribute('src') || image.src || '');
+    return Boolean(modelName || imageSrc.includes('model-icon'));
+  }
+
+  function findOfficialModelButton() {
+    const candidates = [...document.querySelectorAll('button[aria-haspopup="menu"], button[id^="radix-"]')]
+      .filter(isOfficialModelButtonCandidate)
+      .sort((a, b) => {
+        const aName = getModelNameFromNode(a);
+        const bName = getModelNameFromNode(b);
+        const aScore = (aName ? 0 : 10) + (a.getAttribute('aria-haspopup') === 'menu' ? 0 : 2);
+        const bScore = (bName ? 0 : 10) + (b.getAttribute('aria-haspopup') === 'menu' ? 0 : 2);
+        return aScore - bScore;
+      });
+
+    return candidates[0] || null;
+  }
+
+  function getOfficialModelMenu() {
+    return [...document.querySelectorAll('[role="menu"]')].find((menu) => {
+      if (menu.closest?.('#' + ID.panel)) return false;
+      const text = normalizeText(menu.textContent || '');
+      const matchedCount = KNOWN_MODEL_NAMES.reduce(
+        (count, model) => count + (text.includes(model) ? 1 : 0),
+        0
+      );
+      return matchedCount >= 2;
+    }) || null;
+  }
+
+  function createModelMenuAutoHider() {
+    const hiddenWrappers = new Map();
+
+    const hideWrapper = (wrapper) => {
+      if (!(wrapper instanceof HTMLElement)) return;
+      if (wrapper.closest?.('#' + ID.panel)) return;
+
+      const menu = wrapper.querySelector('[role="menu"]');
+      if (!menu) return;
+
+      const wrapperText = normalizeText(wrapper.textContent || '');
+      if (!KNOWN_MODEL_NAMES.some((model) => wrapperText.includes(model))) return;
+
+      if (!hiddenWrappers.has(wrapper)) {
+        hiddenWrappers.set(wrapper, {
+          visibility: wrapper.style.visibility,
+          opacity: wrapper.style.opacity,
+          pointerEvents: wrapper.style.pointerEvents,
+        });
+      }
+
+      wrapper.style.visibility = 'hidden';
+      wrapper.style.opacity = '0';
+      wrapper.style.pointerEvents = 'none';
+    };
+
+    document.querySelectorAll('[data-radix-popper-content-wrapper]').forEach(hideWrapper);
+
+    const menuObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (node.matches?.('[data-radix-popper-content-wrapper]')) hideWrapper(node);
+          node.querySelectorAll?.('[data-radix-popper-content-wrapper]').forEach(hideWrapper);
+        }
+      }
+    });
+
+    if (document.body) {
+      menuObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
+    return () => {
+      menuObserver.disconnect();
+      for (const [wrapper, oldStyle] of hiddenWrappers.entries()) {
+        wrapper.style.visibility = oldStyle.visibility;
+        wrapper.style.opacity = oldStyle.opacity;
+        wrapper.style.pointerEvents = oldStyle.pointerEvents;
+      }
+    };
+  }
+
+  function takeHeaderRevealSnapshotForModelPicker() {
+    const root = document.documentElement;
+    return {
+      autoHide: root.classList.contains('crack-ui-autohide-header'),
+      reveal: root.classList.contains('crack-ui-header-reveal'),
+    };
+  }
+
+  function suppressHeaderRevealForInvisibleModelSelect(snapshot) {
+    if (!snapshot?.autoHide || snapshot.reveal) return;
+    document.documentElement.classList.add(CLS.suppressModelHeader);
+  }
+
+  function blurInvisibleModelPickerFocus() {
+    const officialButton = findOfficialModelButton();
+    const active = document.activeElement;
+
+    try {
+      officialButton?.blur?.();
+    } catch (_) {}
+
+    if (!(active instanceof HTMLElement)) return;
+
+    const shouldBlur =
+      active === officialButton ||
+      officialButton?.contains?.(active) ||
+      Boolean(active.closest?.('[data-radix-popper-content-wrapper], [role="menu"], [role="menuitem"]'));
+
+    if (shouldBlur) {
+      try {
+        active.blur();
+      } catch (_) {}
+    }
+  }
+
+  function enforceModelPickerHeaderSnapshot(snapshot) {
+    blurInvisibleModelPickerFocus();
+
+    if (snapshot?.autoHide && !snapshot.reveal) {
+      document.documentElement.classList.remove('crack-ui-header-reveal');
+    }
+  }
+
+  function clearModelSelectionTimers() {
+    for (const timer of modelSelectionTimers) {
+      clearTimeout(timer);
+    }
+    modelSelectionTimers.clear();
+  }
+
+  function scheduleModelSelectionTimer(seq, callback, delay) {
+    const timer = setTimeout(() => {
+      modelSelectionTimers.delete(timer);
+      if (seq !== modelSelectionSeq) return;
+      callback();
+    }, delay);
+
+    modelSelectionTimers.add(timer);
+    return timer;
+  }
+
+  function ensureModelSelectionGuard() {
+    if (modelSelectionGuard) return modelSelectionGuard;
+
+    const headerSnapshot = takeHeaderRevealSnapshotForModelPicker();
+    suppressHeaderRevealForInvisibleModelSelect(headerSnapshot);
+
+    modelSelectionGuard = {
+      headerSnapshot,
+      stopHidingModelMenu: createModelMenuAutoHider(),
+    };
+
+    return modelSelectionGuard;
+  }
+
+  function finalizeModelSelectionGuard(seq) {
+    if (seq !== modelSelectionSeq || !modelSelectionGuard) return;
+
+    clearModelSelectionTimers();
+    const guard = modelSelectionGuard;
+    const settle = () => {
+      closeOfficialModelMenuIfOpen();
+      enforceModelPickerHeaderSnapshot(guard.headerSnapshot);
+    };
+
+    const releaseWhenMenuIsGone = (startedAt = performance.now()) => {
+      if (seq !== modelSelectionSeq || modelSelectionGuard !== guard) return;
+
+      settle();
+      const menuStillMounted = Boolean(getOfficialModelMenu());
+      if (menuStillMounted && performance.now() - startedAt < 700) {
+        scheduleModelSelectionTimer(seq, () => releaseWhenMenuIsGone(startedAt), 60);
+        return;
+      }
+
+      try {
+        guard.stopHidingModelMenu?.();
+      } catch (_) {}
+
+      if (modelSelectionGuard === guard) {
+        modelSelectionGuard = null;
+      }
+
+      document.documentElement.classList.remove(CLS.suppressModelHeader);
+      enforceModelPickerHeaderSnapshot(guard.headerSnapshot);
+    };
+
+    settle();
+    scheduleModelSelectionTimer(seq, settle, 60);
+    scheduleModelSelectionTimer(seq, () => releaseWhenMenuIsGone(), 260);
+  }
+
+  function fireModelClickSequence(element) {
+    if (!element) return false;
+
+    try {
+      element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    } catch (_) {}
+
+    try {
+      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    } catch (_) {}
+
+    try {
+      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    } catch (_) {}
+
+    try {
+      if (typeof element.click === 'function') {
+        element.click();
+      } else {
+        element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+      return true;
+    } catch (_) {
+      try {
+        element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  async function waitForOfficialModelMenu(timeout = 1200, seq = modelSelectionSeq) {
+    const startedAt = performance.now();
+
+    while (performance.now() - startedAt < timeout) {
+      if (seq !== modelSelectionSeq) return null;
+
+      const menu = getOfficialModelMenu();
+      if (menu) return menu;
+
+      await modelSleep(35);
+    }
+
+    return null;
+  }
+
+  function closeOfficialModelMenuIfOpen() {
+    const trigger = findOfficialModelButton();
+    const expanded = trigger?.getAttribute('aria-expanded') === 'true' || trigger?.dataset?.state === 'open';
+    if (!expanded) return;
+
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        keyCode: 27,
+        which: 27,
+        bubbles: true,
+        cancelable: true,
+      }));
+    } catch (_) {}
+  }
+
+  function getCurrentModelName() {
+    return getModelNameFromNode(findOfficialModelButton());
+  }
+
+  async function selectModel(modelName) {
+    const targetName = normalizeText(modelName);
+    if (!isKnownModelName(targetName)) return;
+
+    const currentBefore = getCurrentModelName();
+    if (!modelSelectionGuard && currentBefore === targetName) return;
+
+    const seq = ++modelSelectionSeq;
+    clearModelSelectionTimers();
+    ensureModelSelectionGuard();
+
+    if (getCurrentModelName() === targetName) {
+      finalizeModelSelectionGuard(seq);
+      return;
+    }
+
+    let officialButton = findOfficialModelButton();
+
+    if (!officialButton) {
+      showToast('모델 선택 버튼을 찾지 못했음');
+      console.log('[Crack Shortcut Customizer] 공식 모델 선택 버튼을 찾지 못했습니다.');
+      finalizeModelSelectionGuard(seq);
+      return;
+    }
+
+    const clickTargetFromOfficialMenu = async () => {
+      if (seq !== modelSelectionSeq) return false;
+
+      const alreadyOpen =
+        officialButton.getAttribute('aria-expanded') === 'true' ||
+        officialButton.dataset.state === 'open';
+
+      if (alreadyOpen) {
+        closeOfficialModelMenuIfOpen();
+        await modelSleep(70);
+        if (seq !== modelSelectionSeq) return false;
+        officialButton = findOfficialModelButton();
+        if (!officialButton) return false;
+      }
+
+      fireModelClickSequence(officialButton);
+      await modelSleep(90);
+
+      const modelMenu = await waitForOfficialModelMenu(1200, seq);
+      if (!modelMenu || seq !== modelSelectionSeq) return false;
+
+      const targetItem = [...modelMenu.querySelectorAll('[role="menuitem"]')]
+        .find((item) => {
+          const itemName = getModelNameFromNode(item);
+          return itemName === targetName || normalizeText(item.textContent || '').includes(targetName);
+        });
+
+      if (!targetItem) {
+        console.log(`[Crack Shortcut Customizer] 공식 모델 메뉴에서 '${targetName}' 항목을 찾지 못했습니다.`);
+        return false;
+      }
+
+      fireModelClickSequence(targetItem);
+      await modelSleep(300);
+
+      return getCurrentModelName() === targetName;
+    };
+
+    try {
+      let ok = await clickTargetFromOfficialMenu();
+
+      if (!ok && seq === modelSelectionSeq) {
+        closeOfficialModelMenuIfOpen();
+        await modelSleep(120);
+        if (seq !== modelSelectionSeq) return;
+
+        officialButton = findOfficialModelButton();
+        if (officialButton) ok = await clickTargetFromOfficialMenu();
+      }
+
+      if (seq !== modelSelectionSeq) return;
+
+      scheduleModelSelectionTimer(seq, closeOfficialModelMenuIfOpen, 120);
+
+      if (ok || getCurrentModelName() === targetName) {
+        showToast(`${targetName} 선택`);
+      } else {
+        showToast(`${targetName} 변경 실패`);
+      }
+    } finally {
+      if (seq === modelSelectionSeq) {
+        scheduleModelSelectionTimer(seq, () => finalizeModelSelectionGuard(seq), 180);
+      }
+    }
+  }
+
   function dispatchKeyboardEvent(target, type, parsed, keyInfo) {
     const event = new KeyboardEvent(type, {
       key: keyInfo.key,
@@ -191,6 +804,27 @@
     } catch (_) {}
 
     target.dispatchEvent(event);
+  }
+
+  function sanitizeReservedShortcutAssignments() {
+    const reserved = normalizeCombo(PANEL_SHORTCUT);
+    let configChanged = false;
+    let backupChanged = false;
+
+    for (const action of ACTIONS) {
+      if (Object.prototype.hasOwnProperty.call(config, action.id) && normalizeCombo(config[action.id] || '') === reserved) {
+        config[action.id] = '';
+        configChanged = true;
+      }
+
+      if (normalizeCombo(disabledBackup[action.id] || '') === reserved) {
+        delete disabledBackup[action.id];
+        backupChanged = true;
+      }
+    }
+
+    if (configChanged) saveConfig();
+    if (backupChanged) saveDisabledBackup();
   }
 
   function loadConfig() {
@@ -259,7 +893,7 @@
 
   function toggleShortcutEnabled(actionId) {
     const action = ACTIONS.find((item) => item.id === actionId);
-    if (!action) return false;
+    if (!action) return null;
 
     const current = getCustomShortcut(action);
     if (current) {
@@ -271,6 +905,8 @@
     }
 
     const restore = normalizeCombo(disabledBackup[actionId] || action.original);
+    if (!restore) return null;
+
     config[actionId] = restore;
     disabledBackup[actionId] = restore;
     saveDisabledBackup();
@@ -514,6 +1150,12 @@
         --crack-sc-z-toast: 2147483099;
       }
 
+      html.${CLS.suppressModelHeader}.crack-ui-autohide-header #wrtn-custom-global-header,
+      html.${CLS.suppressModelHeader}.crack-ui-autohide-header [data-crack-ui-header="1"] {
+        transform: translateY(-110%) !important;
+        transition: none !important;
+      }
+
       html.${CLS.panelOpen} #${ID.backdrop} {
         display: block;
       }
@@ -633,13 +1275,26 @@
         flex-direction: column;
         gap: 3px;
         min-width: 0;
+        padding-left: 4px;
       }
 
       .crack-sc-panel-title {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
         font-size: 13px;
         font-weight: 900;
         line-height: 1;
         letter-spacing: -.02em;
+      }
+
+      .crack-sc-panel-version {
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -.01em;
+        color: rgba(255, 255, 255, .42);
+        user-select: none;
       }
 
       .crack-sc-panel-subtitle {
@@ -982,6 +1637,11 @@
         color: rgba(17, 24, 39, .94);
       }
 
+      body[data-theme="light"] #${ID.panel} .crack-sc-panel-version,
+      html[data-theme="light"] #${ID.panel} .crack-sc-panel-version {
+        color: rgba(75, 85, 99, .54);
+      }
+
       body[data-theme="light"] #${ID.panel} .crack-sc-panel-subtitle,
       html[data-theme="light"] #${ID.panel} .crack-sc-panel-subtitle,
       body[data-theme="light"] #${ID.panel} .crack-sc-row-desc,
@@ -1318,7 +1978,7 @@
     panel.innerHTML = `
       <div class="crack-sc-panel-head">
         <div class="crack-sc-title-wrap">
-          <div class="crack-sc-panel-title">단축키 커스텀</div>
+          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.2.0</span></div>
           <div class="crack-sc-panel-subtitle"><span class="crack-sc-desktop-hint">커스텀 창 열기: ${escapeHtml(humanCombo(PANEL_SHORTCUT))}</span></div>
         </div>
         <button type="button" class="crack-sc-panel-close" data-crack-sc-close aria-label="닫기">×</button>
@@ -1369,11 +2029,14 @@
     const hasCustom = Object.prototype.hasOwnProperty.call(config, action.id);
     const label = isRecording ? '입력 대기…' : humanCombo(custom);
     const toggleLabel = isDisabled ? '활성화' : '비활성화';
-    const desc = isDisabled
-      ? `기본 ${humanCombo(action.original)} · 현재 꺼짐`
-      : hasCustom && custom !== normalizeCombo(action.original)
-        ? `기본 ${humanCombo(action.original)} · 변경됨`
-        : `기본 ${humanCombo(action.original)}`;
+    const hasDefault = Boolean(normalizeCombo(action.original));
+    const desc = !hasDefault
+      ? (isDisabled ? '기본 단축키 없음 · 현재 꺼짐' : '기본 단축키 없음 · 직접 지정됨')
+      : isDisabled
+        ? `기본 ${humanCombo(action.original)} · 현재 꺼짐`
+        : hasCustom && custom !== normalizeCombo(action.original)
+          ? `기본 ${humanCombo(action.original)} · 변경됨`
+          : `기본 ${humanCombo(action.original)}`;
 
     return `
       <div class="crack-sc-row" data-crack-sc-row="${escapeAttr(action.id)}" data-conflict="${isConflict ? '1' : '0'}">
@@ -1436,7 +2099,12 @@
         recordingActionId = null;
         renderPanel();
         scheduleHelpPatch();
-        showToast(`${getActionName(id)} ${enabled ? '활성화' : '비활성화'}`);
+
+        if (enabled === null) {
+          showToast('먼저 단축키를 지정하셈');
+        } else {
+          showToast(`${getActionName(id)} ${enabled ? '활성화' : '비활성화'}`);
+        }
       });
     });
 
@@ -1464,9 +2132,8 @@
     });
   }
 
-  function openPanel(anchor) {
+  function openPanel() {
     ensurePanel();
-    lastAnchor = null;
     recordingActionId = null;
     renderPanel();
 
@@ -1489,9 +2156,9 @@
     recordingActionId = null;
   }
 
-  function togglePanel(anchor) {
+  function togglePanel() {
     if (isPanelOpen()) closePanel();
-    else openPanel(anchor);
+    else openPanel();
   }
 
   function isPanelOpen() {
@@ -1524,12 +2191,9 @@
   function scheduleDomEnhance(delay = 220) {
     if (!document.body) return;
 
-    domEnhanceScheduled = true;
     clearTimeout(domEnhanceTimer);
     domEnhanceTimer = setTimeout(() => {
       requestAnimationFrame(() => {
-        domEnhanceScheduled = false;
-
         if (shouldScanRoomSettings()) {
           injectRoomSettingsButton();
         }
@@ -1551,31 +2215,43 @@
   }
 
   function isRelevantMutation(mutation) {
-    if (mutation.type !== 'childList') return false;
+    if (mutation.type !== 'childList' || !mutation.addedNodes.length) return false;
 
-    const nodes = [...mutation.addedNodes];
-    if (!nodes.length) return false;
+    for (const node of mutation.addedNodes) {
+      if (!(node instanceof Element)) continue;
+      if (isCustomizerUiNode(node)) continue;
 
-    return nodes.some((node) => {
-      if (node.nodeType !== Node.ELEMENT_NODE) return false;
-      if (node.id === ID.panel || node.id === ID.backdrop || node.id === ID.toast) return false;
-      if (node.closest?.('#' + ID.panel + ', #' + ID.backdrop + ', #' + ID.toast)) return false;
-
-      const text = normalizeText(node.textContent || '');
       if (
-        text.includes('전체 설정') ||
-        text.includes('키보드 단축키') ||
-        text.includes('대화 내역 열기/닫기') ||
-        text.includes('추천 답변 선택하기')
+        node.matches?.('[role="dialog"], [data-crack-ui-room-panel="1"], code') ||
+        node.querySelector?.('[role="dialog"], [data-crack-ui-room-panel="1"], code')
       ) {
         return true;
       }
 
-      return Boolean(
-        node.matches?.('[role="dialog"], [data-crack-ui-room-panel="1"], code') ||
-        node.querySelector?.('[role="dialog"], [data-crack-ui-room-panel="1"], code')
-      );
-    });
+      if (hasWholeSettingsHeading(node)) return true;
+    }
+
+    return false;
+  }
+
+  function isCustomizerUiNode(node) {
+    if (node.id === ID.panel || node.id === ID.backdrop || node.id === ID.toast) return true;
+    return Boolean(node.closest?.('#' + ID.panel + ', #' + ID.backdrop + ', #' + ID.toast));
+  }
+
+  function hasWholeSettingsHeading(node) {
+    if (node.matches?.('p, span') && normalizeText(node.textContent) === '전체 설정') {
+      return true;
+    }
+
+    const labels = node.querySelectorAll?.('p, span');
+    if (!labels?.length) return false;
+
+    for (const label of labels) {
+      if (normalizeText(label.textContent) === '전체 설정') return true;
+    }
+
+    return false;
   }
 
   function shouldScanRoomSettings() {
@@ -1633,24 +2309,22 @@
     button?.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      openPanel(null);
+      openPanel();
     });
     button?.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       e.stopPropagation();
-      openPanel(null);
+      openPanel();
     });
 
     return row;
   }
 
   function scheduleHelpPatch(delay = 120) {
-    helpPatchScheduled = true;
     clearTimeout(helpPatchTimer);
     helpPatchTimer = setTimeout(() => {
       requestAnimationFrame(() => {
-        helpPatchScheduled = false;
         if (shouldPatchShortcutHelp()) {
           patchShortcutHelpLabels();
         }
@@ -1721,6 +2395,10 @@
 
   function normalizeText(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function compactText(text) {
+    return String(text || '').replace(/\s+/g, '').trim();
   }
 
   function escapeHtml(value) {
