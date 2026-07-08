@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.0.38
+// @version      2.1.13
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.0.38';
+  const CRACK_UI_VERSION = '2.1.13';
 
   function getCrackUiPublicWindow() {
     try {
@@ -72,6 +72,7 @@
     bottomModelPopup: 'crack-ui-bottom-model-popup',
     visibleModelDisclosure: 'crack-ui-visible-model-disclosure',
     visibleModelPanel: 'crack-ui-visible-model-panel',
+    officialModelVisibilityStyle: 'crack-ui-official-model-visibility-style',
     roomMenuZone: 'crack-ui-room-menu-zone',
     roomMenuHandle: 'crack-ui-room-menu-handle',
     toggleRoomMenuHandle: 'crack-ui-toggle-room-menu-handle',
@@ -99,6 +100,7 @@
     emptySendGuard: 'crack_ui_empty_send_guard',
     hideSituationImage: 'crack_ui_hide_situation_image',
     bottomModelVisibleModels: 'crack_ui_bottom_model_visible_models',
+    bottomModelRegistry: 'crack_ui_bottom_model_registry_v1',
     bottomModelVisibleModelsOpen: 'crack_ui_bottom_model_visible_models_open',
     roomMenuHandle: 'crack_ui_room_menu_handle',
     chatListAutoHide: 'crack_ui_chat_list_auto_hide',
@@ -361,6 +363,8 @@
   let initThrottleTimer = null;
   let pendingThemeApplied = false;
   let cachedBottomSendButton = null;
+  let cachedComposerEditable = null;
+  let emptySendGuardUiRaf = 0;
   let cachedOriginalModelButton = null;
   let cachedRoomMenuButton = null;
   let cachedChatListPanel = null;
@@ -372,9 +376,11 @@
   let situationImageMarkRaf = 0;
   let situationImageLastScanAt = 0;
   let cachedRoomTopBar = null;
+  let cachedRoomStatBar = null;
   let lastRoomTopBarInputInteractionAt = 0;
   let roomPanelCloseTimer = null;
   let lastRoomPanelClickAt = 0;
+  let lastRoomPanelToggleAttempt = null;
   let lastRoomPanelBootCloseHref = '';
   let lastCrackUiError = null;
 
@@ -579,6 +585,10 @@
         transition:
           opacity 160ms ease,
           transform 160ms ease !important;
+      }
+
+      html.${CLS.roomTopBarHidden} [data-crack-ui-room-stat-bar="1"] {
+        transform: translateY(-3rem) !important;
       }
 
 
@@ -1587,6 +1597,15 @@
         object-fit: cover !important;
       }
 
+      [role="menuitem"][data-crack-ui-official-model-hidden="1"] {
+        display: none !important;
+      }
+
+      /* Crack 원본 모델 메뉴의 모델별 설명문은 UI+ 활성화 시 항상 숨김. */
+      [data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[src*="model-icon"]) > div:first-child > div[class*="text-text_secondary"] {
+        display: none !important;
+      }
+
       .crack-ui-model-option-main {
         display: flex;
         align-items: center;
@@ -2231,13 +2250,13 @@
 
     root.classList.toggle('dark', resolved === 'dark');
     root.classList.toggle('light', resolved === 'light');
-    root.dataset.theme = resolved;
-    root.dataset.crackUiThemeMode = resolved;
-    root.style.colorScheme = resolved;
+    if (root.dataset.theme !== resolved) root.dataset.theme = resolved;
+    if (root.dataset.crackUiThemeMode !== resolved) root.dataset.crackUiThemeMode = resolved;
+    if (root.style.colorScheme !== resolved) root.style.colorScheme = resolved;
 
     if (body) {
-      body.dataset.theme = resolved;
-      body.style.colorScheme = resolved;
+      if (body.dataset.theme !== resolved) body.dataset.theme = resolved;
+      if (body.style.colorScheme !== resolved) body.style.colorScheme = resolved;
     }
   }
 
@@ -2341,6 +2360,89 @@
         return false;
       }
     }
+  }
+
+  function getActivationPoint(target) {
+    try {
+      const r = target?.getBoundingClientRect?.();
+      if (!r) return { clientX: 0, clientY: 0 };
+      return {
+        clientX: Math.max(0, Math.round(r.left + r.width / 2)),
+        clientY: Math.max(0, Math.round(r.top + r.height / 2)),
+      };
+    } catch {
+      return { clientX: 0, clientY: 0 };
+    }
+  }
+
+  function dispatchSingleClickOnly(target, methodLabel = 'single-click') {
+    if (!target) return '';
+    const point = getActivationPoint(target);
+
+    try {
+      if (typeof target.click === 'function') {
+        target.click();
+        return `${methodLabel}:native-click`;
+      }
+    } catch {
+    }
+
+    try {
+      target.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        buttons: 0,
+        ...point,
+      }));
+      return `${methodLabel}:mouse-click`;
+    } catch {
+      return '';
+    }
+  }
+
+  function dispatchTouchLikeActivation(target, methodLabel = 'touch-activation') {
+    if (!target) return '';
+    const point = getActivationPoint(target);
+
+    // iPad Safari can accept both a synthetic click and HTMLElement.click(), which can toggle Radix twice.
+    // For touch-like devices, use exactly one activation first, then delayed fallback if the panel still did not open.
+    const singleClick = dispatchSingleClickOnly(target, methodLabel);
+    if (singleClick) return singleClick;
+
+    try {
+      const pointerOptions = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        pointerId: 1,
+        pointerType: 'touch',
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        ...point,
+      };
+      target.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+      target.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
+      target.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        buttons: 0,
+        ...point,
+      }));
+      return `${methodLabel}:touch-pointer-click`;
+    } catch {
+      return '';
+    }
+  }
+
+  function dispatchRoomPanelToggleActivation(toggle, reason = '') {
+    if (!toggle) return '';
+    if (isTouchLikeDevice()) return dispatchTouchLikeActivation(toggle, reason || 'room-panel-touch');
+    return dispatchSyntheticClick(toggle) ? (reason ? `${reason}:synthetic-click` : 'synthetic-click') : '';
   }
 
   function clickOriginalSettingRow(label) {
@@ -3757,6 +3859,9 @@
             <label class="crack-ui-row">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">상황 이미지 끄기</span>
+                <span class="crack-ui-row-desc">
+                  세이프티 작품 전용
+                </span>
               </span>
 
               <span>
@@ -4031,7 +4136,7 @@
 
   function applyState() {
     updateDeviceViewportClasses();
-    markStatBars();
+    if (hideStatBar) markStatBars();
     scheduleSituationImageButtonMark({ immediate: hideSituationImage });
     document.documentElement.classList.toggle(CLS.autoHide, autoHideHeader);
     document.documentElement.classList.toggle(CLS.lineBreak, lineBreakOptimize);
@@ -4199,8 +4304,39 @@
     return true;
   }
 
+  function isDirectChatComposerEditable(editable) {
+    if (!editable?.isConnected || !crackUiIsChatRoute()) return false;
+    if (editable.matches?.('.__chat_input_textarea[contenteditable="true"]')) return true;
+
+    const placeholder = normalizeText(
+      editable.getAttribute?.('data-placeholder') || editable.getAttribute?.('placeholder') || ''
+    );
+    return placeholder === '메시지 보내기' &&
+      !!editable.matches?.('textarea, [contenteditable="true"], [role="textbox"]');
+  }
+
   function findChatComposerEditable() {
+    if (!crackUiIsChatRoute()) {
+      cachedComposerEditable = null;
+      return null;
+    }
+
     const sendButton = DOM.sendButton();
+
+    if (cachedComposerEditable?.isConnected) {
+      if (isDirectChatComposerEditable(cachedComposerEditable)) return cachedComposerEditable;
+      if (isComposerEditableCandidate(cachedComposerEditable, sendButton)) return cachedComposerEditable;
+    }
+    cachedComposerEditable = null;
+
+    const direct = document.querySelector(
+      '.__chat_input_textarea[contenteditable="true"], [contenteditable="true"][data-placeholder="메시지 보내기"], textarea[placeholder="메시지 보내기"]'
+    );
+    if (direct && isComposerEditableCandidate(direct, sendButton)) {
+      cachedComposerEditable = direct;
+      return direct;
+    }
+
     const roots = [];
     let node = sendButton?.parentElement || null;
     for (let i = 0; node && i < 7; i += 1) {
@@ -4237,7 +4373,8 @@
     });
 
     candidates.sort((a, b) => b.score - a.score);
-    return candidates[0]?.editable || null;
+    cachedComposerEditable = candidates[0]?.editable || null;
+    return cachedComposerEditable;
   }
 
   function isComposerEmptyForSend() {
@@ -4281,11 +4418,28 @@
     stopEmptySendEvent(e);
   }
 
+  function getFocusedComposerEditableForEnterEvent(e) {
+    const editable = DOM.composerEditable();
+    if (!editable?.isConnected) return null;
+
+    const target = e.target?.nodeType === 1 ? e.target : e.target?.parentElement;
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    const eventFromComposer = target === editable || editable.contains?.(target) || path.includes(editable);
+    if (!eventFromComposer) return null;
+
+    const active = document.activeElement;
+    const composerFocused = active === editable || editable.contains?.(active);
+    return composerFocused ? editable : null;
+  }
+
   function guardEmptyComposerEnterEvent(e) {
     if (!emptySendGuard || !crackUiIsChatRoute()) return;
     if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
-    if (!isChatComposerTarget(e.target)) return;
-    if (!shouldBlockEmptyComposerSend()) return;
+
+    const editable = getFocusedComposerEditableForEnterEvent(e);
+    if (!editable) return;
+    if (normalizeComposerText(getEditableText(editable)).length !== 0) return;
+
     stopEmptySendEvent(e);
   }
 
@@ -4315,7 +4469,11 @@
   }
 
   function scheduleEmptySendGuardUiUpdate() {
-    requestAnimationFrame(applyEmptySendGuardState);
+    if (emptySendGuardUiRaf) return;
+    emptySendGuardUiRaf = requestAnimationFrame(() => {
+      emptySendGuardUiRaf = 0;
+      applyEmptySendGuardState();
+    });
   }
 
 
@@ -4323,7 +4481,10 @@
   // Feature: bottom model picker
   // =====================================================
 
-  const CHAT_MODEL_INFO = {
+  const DEFAULT_CHAT_MODEL_INFO = {
+    '페이블챗 1.0': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/fablechat1_0.webp',
+    },
     '하이퍼챗 2.0': {
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat2_0.webp',
     },
@@ -4332,6 +4493,9 @@
     },
     '하이퍼챗 1.0': {
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat.webp',
+    },
+    '슈퍼챗 3.0': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat3_0.webp',
     },
     '슈퍼챗 2.5': {
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat2_5.webp',
@@ -4350,18 +4514,87 @@
     },
   };
 
-  const CHAT_MODEL_ORDER = Object.keys(CHAT_MODEL_INFO);
+  function cloneDefaultChatModelInfo() {
+    return Object.fromEntries(
+      Object.entries(DEFAULT_CHAT_MODEL_INFO).map(([name, info]) => [name, { ...info }])
+    );
+  }
 
-  const CHAT_MODEL_ICON_MAP = {
-    'hyperchat2_0.webp': '하이퍼챗 2.0',
-    'hyperchat1_5.webp': '하이퍼챗 1.5',
-    'hyperchat.webp': '하이퍼챗 1.0',
-    'superchat2_5.webp': '슈퍼챗 2.5',
-    'superchat2_0.webp': '슈퍼챗 2.0',
-    'prochat2_5.webp': '프로챗 2.5',
-    'prochat1_0.webp': '프로챗 1.0',
-    'powerchat.webp': '파워챗',
-  };
+  function getModelIconFileFromUrl(value) {
+    let text = String(value || '').trim();
+    if (!text) return '';
+
+    // Next 이미지 최적화 URL처럼 원본 model-icon 경로가 쿼리 안에 들어간 경우도 복원한다.
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const decoded = decodeURIComponent(text);
+        if (decoded === text) break;
+        text = decoded;
+      } catch {
+        break;
+      }
+    }
+
+    const nested = text.match(/model-icon\/([^/?#"'<>\s]+\.(?:webp|png|svg|avif))/i);
+    if (nested?.[1]) return nested[1];
+
+    return text.split(/[?#]/)[0].split('/').pop() || '';
+  }
+
+  function buildChatModelIconMap(infoMap) {
+    const map = {};
+    for (const [name, info] of Object.entries(infoMap || {})) {
+      const file = getModelIconFileFromUrl(info?.image);
+      if (file) map[file] = name;
+    }
+    return map;
+  }
+
+  function loadChatModelRegistry() {
+    const raw = readStorage(LS.bottomModelRegistry);
+    if (!raw) return cloneDefaultChatModelInfo();
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return cloneDefaultChatModelInfo();
+
+      const next = {};
+      for (const entry of parsed) {
+        const name = normalizeText(entry?.name);
+        const image = String(entry?.image || '').trim();
+        if (!name || !image.includes('model-icon')) continue;
+        if (!Object.prototype.hasOwnProperty.call(next, name)) next[name] = { image };
+      }
+
+      return Object.keys(next).length ? next : cloneDefaultChatModelInfo();
+    } catch {
+      return cloneDefaultChatModelInfo();
+    }
+  }
+
+  let CHAT_MODEL_INFO = loadChatModelRegistry();
+  let CHAT_MODEL_ORDER = Object.keys(CHAT_MODEL_INFO);
+  let CHAT_MODEL_ICON_MAP = buildChatModelIconMap(CHAT_MODEL_INFO);
+
+  function saveChatModelRegistry() {
+    writeJsonStorage(
+      LS.bottomModelRegistry,
+      CHAT_MODEL_ORDER.map((name) => ({
+        name,
+        image: String(CHAT_MODEL_INFO[name]?.image || ''),
+      }))
+    );
+  }
+
+  function escapeModelHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch] || ch));
+  }
 
   function loadVisibleChatModelNames() {
     const raw = readStorage(LS.bottomModelVisibleModels);
@@ -4430,18 +4663,20 @@
     return CHAT_MODEL_ORDER.map((name) => {
       const selected = visible.has(name);
       const image = CHAT_MODEL_INFO[name]?.image || '';
+      const safeName = escapeModelHtml(name);
+      const safeImage = escapeModelHtml(image);
       return `
                 <button
                   type="button"
                   role="checkbox"
                   class="crack-ui-choice-row crack-ui-visible-model-row"
-                  data-crack-ui-visible-model="${name}"
+                  data-crack-ui-visible-model="${safeName}"
                   data-selected="${selected ? '1' : '0'}"
                   aria-checked="${selected ? 'true' : 'false'}"
                 >
                   <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <img class="crack-ui-visible-model-icon" src="${image}" alt="">
-                  <span class="crack-ui-choice-name">${name}</span>
+                  <img class="crack-ui-visible-model-icon" src="${safeImage}" alt="">
+                  <span class="crack-ui-choice-name">${safeName}</span>
                 </button>
       `;
     }).join('');
@@ -4457,6 +4692,24 @@
       button.setAttribute('aria-checked', selected ? 'true' : 'false');
     });
 
+  }
+
+  function refreshVisibleModelChoicesPanel() {
+    const panel = document.getElementById(ID.panel);
+    const list = panel?.querySelector?.('.crack-ui-visible-model-list');
+    if (!list) return;
+
+    const signature = CHAT_MODEL_ORDER
+      .map((name) => `${name}|${String(CHAT_MODEL_INFO[name]?.image || '')}`)
+      .join('\n');
+
+    if (list.dataset.crackUiModelRegistrySignature !== signature) {
+      list.innerHTML = renderVisibleModelChoicesHtml();
+      list.dataset.crackUiModelRegistrySignature = signature;
+      bindChoiceButtons(panel);
+    }
+
+    updateVisibleModelChoicesUi();
   }
 
   function toggleVisibleChatModel(name) {
@@ -4476,6 +4729,7 @@
 
     saveVisibleChatModelNames();
     updateVisibleModelChoicesUi();
+    syncOfficialModelVisibility();
 
     if (isBottomModelPopupOpen()) {
       renderBottomModelPopup(document.getElementById(ID.bottomModelButton), getStaticModelList());
@@ -4483,6 +4737,16 @@
   }
 
   let syncingOfficialModelInfo = false;
+  let lastOfficialModelVisibilityHiddenCount = 0;
+  let lastOfficialModelRegistryAdded = [];
+  let lastOfficialModelRegistryRemoved = [];
+  let lastOfficialModelRegistryCount = CHAT_MODEL_ORDER.length;
+  let lastOfficialModelRegistrySignature = '';
+  let pendingOfficialModelRegistryRemovalSignature = '';
+  let officialModelRegistryRemovalConfirmTimer = null;
+  let officialModelRegistryScanTimers = [];
+
+  const MODEL_REGISTRY_REMOVAL_CONFIRM_MS = 500;
 
   function modelSleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -4498,73 +4762,97 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  function getModelNameFromNode(node) {
+  function getModelIconSourceFromNode(node) {
+    if (!node) return '';
+    const icon = node.matches?.('img[src*="model-icon"], img[srcset*="model-icon"]')
+      ? node
+      : node.querySelector?.('img[src*="model-icon"], img[srcset*="model-icon"]');
+    if (!icon) return '';
+
+    const src = String(icon.currentSrc || icon.getAttribute?.('src') || icon.src || '').trim();
+    if (src) return src;
+
+    const srcset = String(icon.getAttribute?.('srcset') || '').trim();
+    return srcset.split(',')[0]?.trim().split(/\s+/)[0] || '';
+  }
+
+  function getRawModelNameFromNode(node) {
     if (!node) return '';
 
-    const imgAlt = normalizeText(node.querySelector?.('img[alt]')?.getAttribute('alt'));
-    if (isKnownChatModelName(imgAlt)) return imgAlt;
+    const icon = node.matches?.('img[src*="model-icon"], img[srcset*="model-icon"], img[alt]')
+      ? node
+      : node.querySelector?.('img[src*="model-icon"], img[srcset*="model-icon"], img[alt]');
 
-    const src = String(node.querySelector?.('img[src*="model-icon"]')?.getAttribute('src') || '');
-    const fromSrc = Object.entries(CHAT_MODEL_ICON_MAP).find(([file]) => src.includes(file));
-    if (fromSrc?.[1]) return fromSrc[1];
+    const imgAlt = normalizeText(icon?.getAttribute?.('alt'));
+    if (imgAlt) return imgAlt;
 
-    const spanText = [...(node.querySelectorAll?.('span') || [])]
+    const src = getModelIconSourceFromNode(node);
+    const fromSrc = CHAT_MODEL_ICON_MAP[getModelIconFileFromUrl(src)];
+    if (fromSrc) return fromSrc;
+
+    const row = icon?.closest?.('.flex.items-center, [class*="items-center"]') || node;
+    const spanText = [...(row.querySelectorAll?.('span') || [])]
       .map((span) => normalizeText(span.textContent))
-      .find(isKnownChatModelName);
+      .find((text) => text && text.length <= 40 && !/변경\s*예정|권장|\d+\s*개/.test(text));
     if (spanText) return spanText;
 
     const text = normalizeText(node.textContent);
     return CHAT_MODEL_ORDER.find((model) => text.includes(model)) || '';
   }
 
+  function getModelNameFromNode(node) {
+    return getRawModelNameFromNode(node);
+  }
+
   function getDisplayModelInfo(modelName) {
-    const name = isKnownChatModelName(modelName) ? modelName : '파워챗';
-    return {
-      name,
-      ...CHAT_MODEL_INFO[name],
-    };
+    const name = normalizeText(modelName);
+    if (isKnownChatModelName(name)) {
+      return {
+        name,
+        ...CHAT_MODEL_INFO[name],
+      };
+    }
+
+    return { name: name || '모델', image: '' };
   }
 
   function getCurrentModelName() {
     const officialButton = DOM.modelButton();
     const buttonName = getModelNameFromNode(officialButton);
-    if (isKnownChatModelName(buttonName)) return buttonName;
+    if (buttonName) return buttonName;
 
-    const icons = [...document.querySelectorAll('img[src*="model-icon"], img[alt]')];
+    const icons = [...document.querySelectorAll('img[src*="model-icon"], img[srcset*="model-icon"]')];
     for (const icon of icons) {
       if (icon.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}, [role="menuitem"], [role="dialog"]`)) continue;
 
       const alt = normalizeText(icon.getAttribute('alt'));
-      if (isKnownChatModelName(alt)) return alt;
+      if (alt) return alt;
 
       const src = String(icon.getAttribute('src') || icon.src || '');
-      const fromSrc = Object.entries(CHAT_MODEL_ICON_MAP).find(([file]) => src.includes(file));
-      if (fromSrc?.[1]) return fromSrc[1];
-    }
-
-    const spans = [...document.querySelectorAll('span')];
-    for (const span of spans) {
-      if (span.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}, [role="menuitem"], [role="dialog"]`)) continue;
-      const text = normalizeText(span.textContent);
-      if (isKnownChatModelName(text)) return text;
+      const fromSrc = CHAT_MODEL_ICON_MAP[getModelIconFileFromUrl(src)];
+      if (fromSrc) return fromSrc;
     }
 
     return '';
   }
 
   function getCurrentModelInfo() {
+    const officialButton = DOM.modelButton();
     const name = getCurrentModelName();
     if (isKnownChatModelName(name)) return getDisplayModelInfo(name);
-    return { name: '모델', image: '' };
+    return {
+      name: name || '모델',
+      image: getModelIconSourceFromNode(officialButton),
+    };
   }
 
   function isOriginalModelButtonCandidate(button, panel = document.getElementById(ID.panel), popup = document.getElementById(ID.bottomModelPopup)) {
     if (!button || button.id === ID.bottomModelButton || !button.isConnected) return false;
     if (panel?.contains(button) || popup?.contains(button)) return false;
-    if (!button.querySelector('img[alt], img[src*="model-icon"]')) return false;
+    const icon = button.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]');
+    if (!icon) return false;
 
-    const name = getModelNameFromNode(button);
-    return isKnownChatModelName(name);
+    return !!getRawModelNameFromNode(button) || !!getModelIconSourceFromNode(button);
   }
 
   function findOriginalModelButton() {
@@ -4585,9 +4873,241 @@
   function getOfficialModelMenu() {
     const popup = document.getElementById(ID.bottomModelPopup);
     return [...document.querySelectorAll('[role="menu"]')].find((menu) => {
-      if (popup?.contains(menu)) return false;
-      return CHAT_MODEL_ORDER.some((model) => normalizeText(menu.textContent).includes(model));
+      if (popup?.contains(menu) || menu.closest?.(`#${ID.panel}`)) return false;
+      const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
+        .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
+      return modelItems.length >= 2;
     }) || null;
+  }
+
+  function scanOfficialModelMenuEntries(menu = DOM.modelMenu()) {
+    if (!menu) return [];
+
+    const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
+      .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
+    if (modelItems.length < 2) return [];
+
+    const entries = [];
+    const seenNames = new Set();
+
+    for (const item of modelItems) {
+      const image = getModelIconSourceFromNode(item);
+      const name = normalizeText(getRawModelNameFromNode(item));
+      const iconFile = getModelIconFileFromUrl(image);
+      if (!name || !image || !iconFile || seenNames.has(name)) continue;
+      seenNames.add(name);
+      entries.push({ name, image });
+    }
+
+    // 메뉴가 덜 렌더된 순간의 부분 스캔으로 기존 모델을 대량 삭제하지 않게 한다.
+    if (entries.length !== modelItems.length) return [];
+    return entries;
+  }
+
+  function syncVisibleChatModelsToRegistry(previousOrder, nextOrder) {
+    const raw = readStorage(LS.bottomModelVisibleModels);
+    if (!raw) {
+      visibleChatModelNames = [...nextOrder];
+      saveVisibleChatModelNames();
+      return;
+    }
+
+    let storedVisible = [];
+    try {
+      const parsed = JSON.parse(raw);
+      storedVisible = Array.isArray(parsed) ? parsed.map(normalizeText).filter(Boolean) : [];
+    } catch {
+      storedVisible = [];
+    }
+
+    const previousKnown = new Set(previousOrder);
+    const visibleSet = new Set(storedVisible);
+    let nextVisible = nextOrder.filter((name) => visibleSet.has(name) || !previousKnown.has(name));
+
+    // 모든 기존 선택 모델이 사이트에서 제거된 경우에도 새 모델은 최소 1개 이상 보이게 한다.
+    if (!nextVisible.length) nextVisible = [...nextOrder];
+    visibleChatModelNames = nextVisible;
+    saveVisibleChatModelNames();
+  }
+
+  function clearPendingOfficialModelRegistryRemoval() {
+    pendingOfficialModelRegistryRemovalSignature = '';
+    if (officialModelRegistryRemovalConfirmTimer) {
+      clearTimeout(officialModelRegistryRemovalConfirmTimer);
+      officialModelRegistryRemovalConfirmTimer = null;
+    }
+  }
+
+  function scheduleOfficialModelRegistryRemovalConfirmation(signature) {
+    if (
+      pendingOfficialModelRegistryRemovalSignature === signature &&
+      officialModelRegistryRemovalConfirmTimer
+    ) {
+      return;
+    }
+
+    clearPendingOfficialModelRegistryRemoval();
+    pendingOfficialModelRegistryRemovalSignature = signature;
+    officialModelRegistryRemovalConfirmTimer = setTimeout(() => {
+      officialModelRegistryRemovalConfirmTimer = null;
+      if (pendingOfficialModelRegistryRemovalSignature !== signature) return;
+
+      const menu = DOM.modelMenu();
+      if (menu) syncChatModelRegistryFromOfficialMenu(menu, { confirmRemovalSignature: signature });
+    }, MODEL_REGISTRY_REMOVAL_CONFIRM_MS);
+  }
+
+  function syncChatModelRegistryFromOfficialMenu(menu = DOM.modelMenu(), options = {}) {
+    const entries = scanOfficialModelMenuEntries(menu);
+    if (!entries.length) return false;
+
+    const signature = entries.map((entry) => `${entry.name}|${entry.image}`).join('\n');
+    if (signature === lastOfficialModelRegistrySignature) {
+      clearPendingOfficialModelRegistryRemoval();
+      return false;
+    }
+
+    const previousOrder = [...CHAT_MODEL_ORDER];
+    const previousInfo = CHAT_MODEL_INFO;
+    const previousNames = new Set(previousOrder);
+    const nextOrder = entries.map((entry) => entry.name);
+    const nextNames = new Set(nextOrder);
+    const nextInfo = Object.fromEntries(entries.map((entry) => [entry.name, { image: entry.image }]));
+    const added = nextOrder.filter((name) => !previousNames.has(name));
+    const removed = previousOrder.filter((name) => !nextNames.has(name));
+
+    // 메뉴가 열리는 중 잠깐 일부 항목만 렌더되는 순간을 실제 삭제로 오인하면,
+    // 사용자가 숨겨둔 모델이 다시 켜질 수 있다. 삭제/이름변경은 같은 결과를 한 번 더 확인한다.
+    if (removed.length && options.confirmRemovalSignature !== signature) {
+      scheduleOfficialModelRegistryRemovalConfirmation(signature);
+      return false;
+    }
+
+    clearPendingOfficialModelRegistryRemoval();
+
+    const registryChanged =
+      previousOrder.length !== nextOrder.length ||
+      previousOrder.some((name, index) => name !== nextOrder[index]) ||
+      nextOrder.some((name) => String(previousInfo[name]?.image || '') !== String(nextInfo[name]?.image || ''));
+
+    lastOfficialModelRegistrySignature = signature;
+    lastOfficialModelRegistryAdded = added;
+    lastOfficialModelRegistryRemoved = removed;
+    lastOfficialModelRegistryCount = nextOrder.length;
+
+    if (!registryChanged) return false;
+
+    CHAT_MODEL_INFO = nextInfo;
+    CHAT_MODEL_ORDER = nextOrder;
+    CHAT_MODEL_ICON_MAP = buildChatModelIconMap(CHAT_MODEL_INFO);
+    saveChatModelRegistry();
+    syncVisibleChatModelsToRegistry(previousOrder, nextOrder);
+    refreshVisibleModelChoicesPanel();
+
+    syncOfficialModelVisibilityStyle(getHiddenChatModelNames());
+    applyOfficialModelMenuVisibility(menu);
+
+    if (isBottomModelPopupOpen()) {
+      renderBottomModelPopup(document.getElementById(ID.bottomModelButton), getStaticModelList());
+    }
+
+    return true;
+  }
+
+  function clearOfficialModelRegistryScanTimers() {
+    officialModelRegistryScanTimers.forEach((timer) => clearTimeout(timer));
+    officialModelRegistryScanTimers = [];
+  }
+
+  function scheduleOfficialModelRegistryScanBurst() {
+    clearOfficialModelRegistryScanTimers();
+    officialModelRegistryScanTimers = [80, 220, 520].map((delay) => setTimeout(() => {
+      const menu = DOM.modelMenu();
+      if (menu) syncChatModelRegistryFromOfficialMenu(menu);
+    }, delay));
+  }
+
+  function bindOfficialModelRegistryScan(button = DOM.modelButton()) {
+    if (!button || button.dataset.crackUiModelRegistryBound === '1') return;
+    button.dataset.crackUiModelRegistryBound = '1';
+    button.addEventListener('click', scheduleOfficialModelRegistryScanBurst, { passive: true });
+  }
+
+  function getHiddenChatModelNames() {
+    const visible = new Set(getVisibleChatModelNames());
+    return CHAT_MODEL_ORDER.filter((name) => !visible.has(name));
+  }
+
+  function getChatModelIconFile(name) {
+    return getModelIconFileFromUrl(CHAT_MODEL_INFO[name]?.image);
+  }
+
+  function syncOfficialModelVisibilityStyle(hiddenNames = getHiddenChatModelNames()) {
+    let style = document.getElementById(ID.officialModelVisibilityStyle);
+
+    if (!hiddenNames.length) {
+      style?.remove();
+      return;
+    }
+
+    const selectors = hiddenNames.flatMap((name) => {
+      const file = getChatModelIconFile(name);
+      const escapedName = String(name).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
+      const next = [
+        `[data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[alt="${escapedName}"])`,
+      ];
+
+      if (file) {
+        const escapedFile = String(file).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
+        next.push(`[data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[src*="${escapedFile}"])`);
+      }
+
+      return next;
+    });
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = ID.officialModelVisibilityStyle;
+      (document.head || document.documentElement).appendChild(style);
+    }
+
+    const nextCss = `${selectors.join(',\n')} {\n  display: none !important;\n}`;
+    if (style.textContent !== nextCss) style.textContent = nextCss;
+  }
+
+  function applyOfficialModelMenuVisibility(menu = DOM.modelMenu()) {
+    if (!menu) {
+      lastOfficialModelVisibilityHiddenCount = 0;
+      return 0;
+    }
+
+    const visible = new Set(getVisibleChatModelNames());
+    let hiddenCount = 0;
+
+    menu.querySelectorAll('[role="menuitem"]').forEach((item) => {
+      const name = getModelNameFromNode(item);
+      if (!isKnownChatModelName(name)) {
+        delete item.dataset.crackUiOfficialModelHidden;
+        return;
+      }
+
+      const shouldHide = !visible.has(name);
+      item.dataset.crackUiOfficialModelHidden = shouldHide ? '1' : '0';
+      if (shouldHide) hiddenCount += 1;
+    });
+
+    lastOfficialModelVisibilityHiddenCount = hiddenCount;
+    return hiddenCount;
+  }
+
+  function syncOfficialModelVisibility() {
+    const hiddenNames = getHiddenChatModelNames();
+    syncOfficialModelVisibilityStyle(hiddenNames);
+    if (!hiddenNames.length) {
+      lastOfficialModelVisibilityHiddenCount = 0;
+      return;
+    }
+    applyOfficialModelMenuVisibility();
   }
 
   function createModelMenuAutoHider() {
@@ -4929,16 +5449,28 @@
     const nameEl = btn.querySelector('.crack-ui-bottom-model-name');
 
     if (iconWrap) {
+      const currentImg = iconWrap.querySelector('img');
       if (info.image) {
-        iconWrap.innerHTML = `<img src="${info.image}" alt="">`;
-      } else {
+        const iconAlreadyMatches =
+          currentImg?.getAttribute('src') === info.image &&
+          iconWrap.children.length === 1;
+
+        if (!iconAlreadyMatches) {
+          const img = document.createElement('img');
+          img.src = info.image;
+          img.alt = '';
+          iconWrap.replaceChildren(img);
+        }
+      } else if (iconWrap.textContent !== '🔥' || iconWrap.children.length > 0) {
         iconWrap.textContent = '🔥';
       }
     }
 
-    if (nameEl) nameEl.textContent = info.name;
-    btn.title = `채팅 모델 변경: ${info.name}`;
-    btn.setAttribute('aria-label', `채팅 모델 변경: ${info.name}`);
+    if (nameEl && nameEl.textContent !== info.name) nameEl.textContent = info.name;
+
+    const label = `채팅 모델 변경: ${info.name}`;
+    if (btn.title !== label) btn.title = label;
+    if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
   }
 
   function isNodeBeforeInSameParent(node, target) {
@@ -5309,6 +5841,37 @@
     return cachedRoomTopBar;
   }
 
+  function findRoomStatBar() {
+    const topBar = findRoomTopBar();
+    const group = topBar?.parentElement;
+    if (!group) {
+      cachedRoomStatBar = null;
+      return null;
+    }
+
+    if (cachedRoomStatBar?.isConnected && cachedRoomStatBar.parentElement === group) {
+      cachedRoomStatBar.dataset.crackUiRoomStatBar = '1';
+      cachedRoomStatBar.dataset.crackUiStatBar = '1';
+      return cachedRoomStatBar;
+    }
+
+    cachedRoomStatBar = null;
+
+    for (const child of group.children) {
+      if (!(child instanceof HTMLElement) || child === topBar) continue;
+      const cls = String(child.className || '');
+      if (!cls.includes('transition-transform') || !cls.includes('mt-12')) continue;
+      if (!child.querySelector('[aria-roledescription="carousel"]')) continue;
+
+      child.dataset.crackUiRoomStatBar = '1';
+      child.dataset.crackUiStatBar = '1';
+      cachedRoomStatBar = child;
+      return child;
+    }
+
+    return null;
+  }
+
   function releaseRoomTopBarHidden() {
     const bar = cachedRoomTopBar?.isConnected ? cachedRoomTopBar : DOM.roomTopBar();
     if (bar) delete bar.dataset.crackUiRoomTopBarHidden;
@@ -5339,7 +5902,10 @@
     const editable = el.closest?.('textarea, input, [contenteditable="true"], [role="textbox"]');
     if (!editable) return false;
     if (editable.closest?.('[data-crack-ui-room-panel="1"], [data-crack-ui-chat-list-panel="1"], [data-crack-ui-room-top-bar="1"]')) return false;
-    return true;
+    if (isDirectChatComposerEditable(editable)) return true;
+
+    const composer = DOM.composerEditable();
+    return editable === composer || !!composer?.contains?.(editable) || !!editable.contains?.(composer);
   }
 
   function noteRoomTopBarInputInteraction(target) {
@@ -5478,26 +6044,105 @@
     return cachedRoomPanelToggle;
   }
 
+  function getRoomPanelToggleForActivation() {
+    if (isTouchLikeDevice()) return DOM.chatRoomSettingsButton() || DOM.roomToggle();
+    return DOM.roomToggle() || DOM.chatRoomSettingsButton();
+  }
+
   function clickRoomPanelToggle(want, reason = '') {
     const panel = DOM.roomPanel();
     const open = panel ? isRoomPanelOpen(panel) : false;
-    if (open === want) return true;
+    if (open === want) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        skipped: 'already-matched',
+        touchLike: isTouchLikeDevice(),
+        at: Date.now(),
+      };
+      return true;
+    }
 
     const now = Date.now();
-    if (now - lastRoomPanelClickAt < 180) return false;
+    if (now - lastRoomPanelClickAt < 180) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        skipped: 'throttled',
+        touchLike: isTouchLikeDevice(),
+        at: now,
+      };
+      return false;
+    }
     lastRoomPanelClickAt = now;
 
-    const toggle = DOM.roomToggle();
-    if (!toggle) return false;
+    const toggle = getRoomPanelToggleForActivation();
+    if (!toggle) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        error: 'toggle-not-found',
+        touchLike: isTouchLikeDevice(),
+        at: now,
+      };
+      return false;
+    }
 
     if (want) setRoomTopBarHidden(false);
 
     try {
-      const clicked = dispatchSyntheticClick(toggle);
-      if (!clicked && typeof toggle.click === 'function') toggle.click();
+      const method = dispatchRoomPanelToggleActivation(toggle, reason || 'room-panel-toggle');
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        method: method || 'failed',
+        toggle: getElementDebugInfo(toggle),
+        touchLike: isTouchLikeDevice(),
+        openBefore: open,
+        at: now,
+      };
+
+      if (!method && !isTouchLikeDevice() && typeof toggle.click === 'function') {
+        toggle.click();
+        lastRoomPanelToggleAttempt.method = 'native-click-fallback';
+      }
+
+      if (isTouchLikeDevice()) {
+        setTimeout(() => {
+          const afterPanel = DOM.roomPanel();
+          const openAfter = afterPanel ? isRoomPanelOpen(afterPanel) : false;
+          if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.openAfter = openAfter;
+
+          if (openAfter !== want) {
+            cachedRoomPanelToggle = null;
+            cachedRoomMenuButton = null;
+            const fallbackToggle = getRoomPanelToggleForActivation();
+            const fallbackMethod = dispatchTouchLikeActivation(fallbackToggle, `${reason || 'room-panel-toggle'}:fallback`);
+            if (lastRoomPanelToggleAttempt) {
+              lastRoomPanelToggleAttempt.fallbackMethod = fallbackMethod || 'failed';
+              lastRoomPanelToggleAttempt.fallbackToggle = getElementDebugInfo(fallbackToggle);
+            }
+
+            setTimeout(() => {
+              const finalPanel = DOM.roomPanel();
+              const finalOpen = finalPanel ? isRoomPanelOpen(finalPanel) : false;
+              if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.finalOpen = finalOpen;
+              if (!want) setTimeout(() => pulseRoomTopBarHidden(), 120);
+            }, 180);
+          }
+        }, 220);
+      }
+
       if (!want) setTimeout(() => pulseRoomTopBarHidden(), 180);
-      return true;
-    } catch {
+      return !!method || !isTouchLikeDevice();
+    } catch (error) {
+      lastRoomPanelToggleAttempt = {
+        want,
+        reason,
+        error: String(error?.message || error || 'unknown'),
+        touchLike: isTouchLikeDevice(),
+        at: Date.now(),
+      };
       return false;
     }
   }
@@ -5589,6 +6234,7 @@
       cachedRoomPanel = null;
       cachedRoomPanelToggle = null;
       cachedRoomTopBar = null;
+      cachedRoomStatBar = null;
       return;
     }
 
@@ -5631,6 +6277,7 @@
     }
 
     DOM.roomTopBar();
+    findRoomStatBar();
     syncRoomTopBarVisibility();
 
     if (lastRoomPanelBootCloseHref !== location.href) {
@@ -5847,7 +6494,12 @@
 
   const DOM = {
     header: () => findHeader(),
-    statBars: () => [...document.querySelectorAll('[data-crack-ui-stat-bar="1"]')],
+    statBars: () => {
+      const bars = [...document.querySelectorAll('[data-crack-ui-stat-bar="1"]')];
+      const roomStatBar = findRoomStatBar();
+      if (roomStatBar && !bars.includes(roomStatBar)) bars.push(roomStatBar);
+      return bars;
+    },
     modelButton: () => findOriginalModelButton(),
     modelMenu: () => getOfficialModelMenu(),
     sendButton: () => findBottomSendButton(),
@@ -5917,6 +6569,7 @@
   function resetDomLocatorCache() {
     cachedHeader = null;
     cachedBottomSendButton = null;
+    cachedComposerEditable = null;
     cachedOriginalModelButton = null;
     cachedRoomMenuButton = null;
     cachedChatListPanel = null;
@@ -5925,6 +6578,7 @@
     cachedRoomPanel = null;
     cachedRoomPanelToggle = null;
     cachedRoomTopBar = null;
+    cachedRoomStatBar = null;
   }
 
   function isCrackUiWidthControlledChatListPanel(panel) {
@@ -6391,8 +7045,14 @@ function markMobileChatListOpenState() {
 
       scheduleMobileHide(250);
     }, { passive: true });
+    // Capture the composer Enter before Crack/ProseMirror handles it.
+    // A global Enter with no focused composer is still allowed to focus the chat input;
+    // only the next Enter from the focused, empty composer is blocked.
     document.addEventListener('keydown', (e) => {
       guardEmptyComposerEnterEvent(e);
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
       if (e.defaultPrevented) return;
 
       if (e.key === 'Escape') {
@@ -6465,6 +7125,12 @@ function markMobileChatListOpenState() {
         themeMode,
         episodeUiMode,
         bottomModelPicker,
+        visibleChatModels: getVisibleChatModelNames(),
+        hiddenOfficialChatModels: getHiddenChatModelNames(),
+        modelRegistryCount: lastOfficialModelRegistryCount,
+        modelRegistryAdded: [...lastOfficialModelRegistryAdded],
+        modelRegistryRemoved: [...lastOfficialModelRegistryRemoved],
+        officialModelMenuHiddenCount: lastOfficialModelVisibilityHiddenCount,
         bottomModelPlacement: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement || 'none',
         bottomModelCooperativeGroup: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement === 'cooperative-group',
         loreEntryButtonPlacement: getLoreEntryButtonPlacementState(),
@@ -6481,6 +7147,7 @@ function markMobileChatListOpenState() {
         panelOpen,
         mobileReveal,
         roomMenuReveal,
+        roomPanelToggleAttempt: lastRoomPanelToggleAttempt,
       },
       locators: getDomLocatorDebugSnapshot(),
       lastError: lastCrackUiError,
@@ -6662,7 +7329,6 @@ function markMobileChatListOpenState() {
     cleanupOldStuffOnce();
     ensureRevealZone();
     ensurePanel();
-    markStatBars();
     if (!pendingThemeApplied) {
       pendingThemeApplied = true;
       syncThemeStateFromOriginalSettings();
@@ -6678,14 +7344,14 @@ function markMobileChatListOpenState() {
     }
     ensureLoreEntryButtonInRoomTopBar();
 
+    bindOfficialModelRegistryScan();
+    syncChatModelRegistryFromOfficialMenu();
     ensureBottomModelPicker();
-    applyEmptySendGuardState();
+    syncOfficialModelVisibility();
     ensureRoomMenuHandle();
     ensureChatListAutoHide();
 
     applyImageSize();
-    applyThemeModeHint();
-    applyChatWidth();
     applyState();
     scheduleAnimatedThumbState();
   }
@@ -6716,6 +7382,20 @@ function markMobileChatListOpenState() {
 
       if (onlyImageSrcChanges) {
         if (pauseAnimatedThumbs) scheduleAnimatedThumbState();
+        return;
+      }
+
+      const composer = cachedComposerEditable?.isConnected ? cachedComposerEditable : null;
+      const onlyComposerChildChanges =
+        !!composer &&
+        mutations.length > 0 &&
+        mutations.every((mutation) =>
+          mutation.type === 'childList' &&
+          (mutation.target === composer || composer.contains(mutation.target))
+        );
+
+      if (onlyComposerChildChanges) {
+        if (emptySendGuard) scheduleEmptySendGuardUiUpdate();
         return;
       }
 
