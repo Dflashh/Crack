@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Shortcut Customizer
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.2.0
+// @version      1.2.1
 // @description  Crack 단축키를 내 마음대로 커스텀 + 로어 인젝터/대화 프로필/플레이 가이드/모델 선택
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -59,6 +59,7 @@
     { id: 'conversation_profile', group: '채팅방', name: '대화 프로필', original: '', customAction: 'toggle_native_text', targetText: '대화 프로필' },
     { id: 'play_guide', group: '채팅방', name: '플레이 가이드', original: '', customAction: 'toggle_native_text', targetText: '플레이 가이드' },
 
+    { id: 'model_fablechat_10', group: '모델 선택', name: '페이블챗 1.0', original: '', customAction: 'select_model', modelName: '페이블챗 1.0' },
     { id: 'model_hyperchat_20', group: '모델 선택', name: '하이퍼챗 2.0', original: '', customAction: 'select_model', modelName: '하이퍼챗 2.0' },
     { id: 'model_hyperchat_15', group: '모델 선택', name: '하이퍼챗 1.5', original: '', customAction: 'select_model', modelName: '하이퍼챗 1.5' },
     { id: 'model_hyperchat_10', group: '모델 선택', name: '하이퍼챗 1.0', original: '', customAction: 'select_model', modelName: '하이퍼챗 1.0' },
@@ -1978,7 +1979,7 @@
     panel.innerHTML = `
       <div class="crack-sc-panel-head">
         <div class="crack-sc-title-wrap">
-          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.2.0</span></div>
+          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.2.1</span></div>
           <div class="crack-sc-panel-subtitle"><span class="crack-sc-desktop-hint">커스텀 창 열기: ${escapeHtml(humanCombo(PANEL_SHORTCUT))}</span></div>
         </div>
         <button type="button" class="crack-sc-panel-close" data-crack-sc-close aria-label="닫기">×</button>
