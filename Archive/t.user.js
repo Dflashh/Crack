@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.2.1
+// @version      2.5.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.2.1';
+  const CRACK_UI_VERSION = '2.5.1';
 
   function getCrackUiPublicWindow() {
     try {
@@ -53,6 +53,7 @@
     zone: 'crack-ui-reveal-zone',
     handle: 'crack-ui-mobile-handle',
     panel: 'crack-ui-settings-panel',
+    panelBackdrop: 'crack-ui-settings-backdrop',
     gearDesktop: 'crack-ui-gear-desktop',
     gearMobile: 'crack-ui-gear-mobile',
     toggleHeader: 'crack-ui-toggle-header',
@@ -79,6 +80,32 @@
     chatListZone: 'crack-ui-chat-list-zone',
     chatListHandle: 'crack-ui-chat-list-handle',
     toggleChatListAutoHide: 'crack-ui-toggle-chat-list-auto-hide',
+    fontCssInput: 'crack-ui-font-css-input',
+    fontFamilySelect: 'crack-ui-font-family-select',
+    fontFamilyValue: 'crack-ui-font-family-value',
+    fontFollowCrackButton: 'crack-ui-font-follow-crack-button',
+    fontCustomModeButton: 'crack-ui-font-custom-mode-button',
+    fontTextScaleSlider: 'crack-ui-font-text-scale-slider',
+    fontTextScaleValue: 'crack-ui-font-text-scale-value',
+    fontCodeScaleSlider: 'crack-ui-font-code-scale-slider',
+    fontCodeScaleValue: 'crack-ui-font-code-scale-value',
+    fontWeightSlider: 'crack-ui-font-weight-slider',
+    fontWeightValue: 'crack-ui-font-weight-value',
+    fontLineHeightSlider: 'crack-ui-font-line-height-slider',
+    fontLineHeightValue: 'crack-ui-font-line-height-value',
+    fontLetterSpacingSlider: 'crack-ui-font-letter-spacing-slider',
+    fontLetterSpacingValue: 'crack-ui-font-letter-spacing-value',
+    fontParagraphSpacingSlider: 'crack-ui-font-paragraph-spacing-slider',
+    fontParagraphSpacingValue: 'crack-ui-font-paragraph-spacing-value',
+    fontResetButton: 'crack-ui-font-reset-button',
+    fontLibraryInput: 'crack-ui-font-library-input',
+    fontLibraryAddButton: 'crack-ui-font-library-add-button',
+    fontLibraryList: 'crack-ui-font-library-list',
+    fontLibraryCount: 'crack-ui-font-library-count',
+    fontRoomBodySelect: 'crack-ui-font-room-body-select',
+    fontRoomCodeSelect: 'crack-ui-font-room-code-select',
+    fontRoomTitleSelect: 'crack-ui-font-room-title-select',
+    fontRoomStatus: 'crack-ui-font-room-status',
   };
 
   const LS = {
@@ -96,6 +123,7 @@
     sectionDisplayOpen: 'crack_ui_section_display_open',
     sectionThemeOpen: 'crack_ui_section_theme_open',
     sectionChatOpen: 'crack_ui_section_chat_open',
+    panelActiveSection: 'crack_ui_panel_active_section',
     bottomModelPicker: 'crack_ui_bottom_model_picker',
     emptySendGuard: 'crack_ui_empty_send_guard',
     hideSituationImage: 'crack_ui_hide_situation_image',
@@ -104,6 +132,7 @@
     bottomModelVisibleModelsOpen: 'crack_ui_bottom_model_visible_models_open',
     roomMenuHandle: 'crack_ui_room_menu_handle',
     chatListAutoHide: 'crack_ui_chat_list_auto_hide',
+    fontSettings: 'crack_ui_font_settings_v1',
   };
 
   const CLS = {
@@ -150,6 +179,293 @@
     const n = Number(value);
     if (!Number.isFinite(n)) return 0;
     return Math.min(100, Math.max(-50, Math.round(n)));
+  }
+
+  const CRACK_NATIVE_FONT_DEFINITIONS = Object.freeze([
+    { value: 'pretendard', label: '기본', family: 'pretendard' },
+    { value: 'nanummyeongjo', label: '나눔명조', family: 'nanummyeongjo' },
+    { value: 'maruburi', label: '마루부리', family: 'maruburi' },
+    { value: 'kopubbatang', label: 'KoPub 바탕', family: 'kopubbatang' },
+  ]);
+
+  const CRACK_NATIVE_FONT_VALUE_SET = new Set(
+    CRACK_NATIVE_FONT_DEFINITIONS.map((item) => item.value)
+  );
+
+  const FONT_LIBRARY_STYLE_ID = 'crack-ui-font-library-style';
+  const FONT_ROOM_STYLE_ID = 'crack-ui-font-room-style';
+
+  const FONT_SETTINGS_DEFAULTS = Object.freeze({
+    fontMode: 'inherit',
+    crackFont: 'pretendard',
+    customFontCssUrl: '',
+    customFontFamily: '',
+    textScale: 1,
+    codeTextScale: 1,
+    fontWeight: 400,
+    lineHeight: 1.65,
+    letterSpacing: 0,
+    paragraphSpacing: 0.70,
+  });
+
+  function clampFontNumber(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function normalizeCustomFontFamily(value) {
+    return String(value || '')
+      .replace(/[\u0000-\u001f\u007f]/g, '')
+      .replace(/[;{}<>]/g, '')
+      .trim()
+      .slice(0, 160);
+  }
+
+  function stripFontCssNoise(value) {
+    return String(value || '')
+      .replace(/<style\b[^>]*>/gi, '')
+      .replace(/<\/style>/gi, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .trim();
+  }
+
+  function rewriteLegacyFontResourceUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const rawgit = raw.match(/^https?:\/\/(?:cdn\.)?rawgit\.com\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)\/(.+)$/i);
+    if (rawgit) {
+      const [, user, repo, ref, rest] = rawgit;
+      return `https://cdn.jsdelivr.net/gh/${encodeURIComponent(user)}/${encodeURIComponent(repo)}@${encodeURIComponent(ref)}/${rest}`;
+    }
+
+    const rawGithub = raw.match(/^https?:\/\/raw\.githubusercontent\.com\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)\/(.+)$/i);
+    if (rawGithub) {
+      const [, user, repo, ref, rest] = rawGithub;
+      return `https://cdn.jsdelivr.net/gh/${encodeURIComponent(user)}/${encodeURIComponent(repo)}@${encodeURIComponent(ref)}/${rest}`;
+    }
+
+    return raw;
+  }
+
+  function normalizeFontResourceUrl(value) {
+    try {
+      const parsed = new URL(rewriteLegacyFontResourceUrl(value));
+      if (!/^https?:$/.test(parsed.protocol)) return '';
+      return parsed.href.slice(0, 700);
+    } catch {
+      return '';
+    }
+  }
+
+  function resolveFontUrl(url, baseUrl = '') {
+    const raw = String(url || '').trim().replace(/^['"]|['"]$/g, '');
+    if (!raw || /^data:/i.test(raw)) return '';
+
+    try {
+      if (raw.startsWith('//')) return normalizeFontResourceUrl(`https:${raw}`);
+      if (/^https?:\/\//i.test(raw)) return normalizeFontResourceUrl(raw);
+      if (baseUrl) return normalizeFontResourceUrl(new URL(raw, baseUrl).href);
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  function normalizeFontFormat(value, url = '') {
+    const raw = String(value || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (raw) return raw.slice(0, 24);
+    if (/\.woff2(?:[?#].*)?$/i.test(url)) return 'woff2';
+    if (/\.woff(?:[?#].*)?$/i.test(url)) return 'woff';
+    if (/\.ttf(?:[?#].*)?$/i.test(url)) return 'truetype';
+    if (/\.otf(?:[?#].*)?$/i.test(url)) return 'opentype';
+    return 'woff2';
+  }
+
+  function normalizeFontCssToken(value, fallback = '') {
+    const raw = String(value || '').replace(/[;{}<>]/g, '').trim();
+    return (raw || fallback).slice(0, 100);
+  }
+
+  function normalizeFontWeightValue(value) {
+    const raw = normalizeFontCssToken(value, 'normal').replace(/[^\w\s.-]/g, '').trim();
+    if (/^(normal|bold|lighter|bolder)$/i.test(raw)) return raw.toLowerCase();
+
+    const range = raw.match(/^(\d{2,4})\s+(\d{2,4})$/);
+    if (range) {
+      const low = Math.max(1, Math.min(1000, Number(range[1])));
+      const high = Math.max(1, Math.min(1000, Number(range[2])));
+      return `${low} ${high}`;
+    }
+
+    if (/^\d{2,4}$/.test(raw)) return String(Math.max(1, Math.min(1000, Number(raw))));
+    return 'normal';
+  }
+
+  function extractFontCssDeclaration(face, property) {
+    const escaped = String(property || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return face.match(new RegExp(`${escaped}\\s*:\\s*([^;{}]+)\\s*;?`, 'i'))?.[1] || '';
+  }
+
+  function cssString(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  function normalizeFontFaceCssText(cssText, baseUrl = '') {
+    const raw = stripFontCssNoise(cssText);
+    const faceMatches = raw.match(/@font-?face\s*\{[\s\S]*?\}/gi);
+    if (!faceMatches?.length) return '';
+
+    return faceMatches.map((faceRaw) => {
+      const face = faceRaw.replace(/^@fontface/i, '@font-face');
+      const familyMatch = face.match(/font-family\s*:\s*(['"]?)([^;'"}]+)\1\s*;?/i);
+      const srcDecl = extractFontCssDeclaration(face, 'src');
+      const srcMatch = srcDecl.match(/url\((['"]?)([^'")\s]+)\1\)/i);
+      if (!familyMatch || !srcMatch) return '';
+
+      const family = normalizeCustomFontFamily(familyMatch[2]);
+      const url = resolveFontUrl(srcMatch[2], baseUrl);
+      if (!family || !url) return '';
+
+      const format = normalizeFontFormat(srcDecl.match(/format\((['"]?)([^'")]+)\1\)/i)?.[2] || '', url);
+      const weight = normalizeFontWeightValue(extractFontCssDeclaration(face, 'font-weight') || 'normal');
+      const style = normalizeFontCssToken(extractFontCssDeclaration(face, 'font-style'), 'normal').replace(/[^\w\s.-]/g, '').trim() || 'normal';
+      const stretch = normalizeFontCssToken(extractFontCssDeclaration(face, 'font-stretch'), '');
+      const display = normalizeFontCssToken(extractFontCssDeclaration(face, 'font-display'), 'swap').replace(/[^\w\s.-]/g, '').trim() || 'swap';
+      const unicodeRange = normalizeFontCssToken(extractFontCssDeclaration(face, 'unicode-range'), '').replace(/[^\w\s.,?+*-]/g, '').trim();
+
+      return `@font-face{font-family:"${cssString(family)}";src:url("${cssString(url)}") format("${cssString(format)}");font-weight:${weight};font-style:${style};${stretch ? `font-stretch:${stretch};` : ''}font-display:${display};${unicodeRange ? `unicode-range:${unicodeRange};` : ''}}`;
+    }).filter(Boolean).join('\n');
+  }
+
+  function normalizeCustomFontCssUrl(value) {
+    const original = String(value || '').trim();
+    if (!original) return '';
+
+    const raw = stripFontCssNoise(original);
+    const faceCss = normalizeFontFaceCssText(raw, '');
+    if (faceCss) return faceCss;
+
+    const importMatch = raw.match(/@import\s+(?:url\()?(['"]?)(https?:\/\/[^'")\s]+|\/\/[^'")\s]+)\1\)?/i);
+    const linkMatch = raw.match(/href\s*=\s*(['"])(https?:\/\/[^'"]+|\/\/[^'"]+)\1/i);
+    const urlMatch = raw.match(/^(https?:\/\/[^\s"'<>]+|\/\/[^\s"'<>]+)$/i);
+
+    let url = importMatch?.[2] || linkMatch?.[2] || urlMatch?.[0] || '';
+    if (!url) return '';
+    if (url.startsWith('//')) url = `https:${url}`;
+    return normalizeFontResourceUrl(url);
+  }
+
+  function extractFontFamilyFromFontFace(value) {
+    const faceMatch = String(value || '').match(/@font-?face\s*\{[\s\S]*?\}/i);
+    if (!faceMatch) return '';
+    const familyMatch = faceMatch[0].match(/font-family\s*:\s*(['"]?)([^;'"}]+)\1\s*;?/i);
+    return normalizeCustomFontFamily(familyMatch?.[2] || '');
+  }
+
+  function extractFontFamiliesFromFontFace(value) {
+    const families = [];
+    const seen = new Set();
+    const matches = String(value || '').match(/@font-?face\s*\{[\s\S]*?\}/gi) || [];
+
+    matches.forEach((face) => {
+      const familyMatch = face.match(/font-family\s*:\s*(['"]?)([^;'"}]+)\1\s*;?/i);
+      const family = normalizeCustomFontFamily(familyMatch?.[2] || '');
+      const key = family.toLowerCase();
+      if (!family || seen.has(key)) return;
+      seen.add(key);
+      families.push(family);
+    });
+
+    return families;
+  }
+
+  function isDirectFontResource(value) {
+    return /\.(?:woff2?|ttf|otf)(?:[?#].*)?$/i.test(String(value || '').trim());
+  }
+
+  function inferDirectFontWeightRangeFromUrl(value) {
+    const raw = String(value || '').toLowerCase();
+    return /(?:variable|varfont|(?:^|[^a-z])vf(?:[^a-z]|$)|(?:^|[^a-z])var(?:[^a-z]|$))/i.test(raw) ? '100 900' : 'normal';
+  }
+
+  function getKnownFontFamilyCandidates(source) {
+    const lower = String(source || '').toLowerCase();
+    if (lower.includes('monadabxy/mona-font') || /\/mona\.css(?:[?#].*)?$/i.test(String(source || ''))) {
+      return ['Mona12', 'Mona10', 'Mona10x12', 'Mona8x12', 'MonaS12', 'MonaS10', 'MonaS10x12', 'MonaS8x12'];
+    }
+    return [];
+  }
+
+  function inferFontFamilyFromSource(value) {
+    const source = String(value || '').trim();
+    if (!source) return '';
+
+    const lower = source.toLowerCase();
+    if (lower.includes('monadabxy/mona-font') || /\/mona\.css(?:[?#].*)?$/i.test(source)) return 'Mona12';
+    if (lower.includes('moonspam/nanumsquare') || /\/nanumsquare(?:\.min)?\.css(?:[?#].*)?$/i.test(source)) return 'NanumSquare';
+    if (lower.includes('wanteddev/wanted-sans') || lower.includes('wantedsansvariable')) return 'Wanted Sans Variable';
+    if (lower.includes('projectnoonnu/noonfonts_suit') || /suit[-_]?/i.test(source)) return 'SUIT';
+
+    try {
+      const parsed = new URL(source);
+      const familyParam = parsed.searchParams.get('family');
+      if (familyParam) {
+        const family = decodeURIComponent(familyParam).split('|')[0].split(':')[0].replace(/\+/g, ' ').trim();
+        if (family) return normalizeCustomFontFamily(family);
+      }
+      if (isDirectFontResource(source)) return 'CrackUICustomUserFont';
+    } catch {
+    }
+
+    return '';
+  }
+
+  function cssFontStack(value) {
+    const raw = normalizeCustomFontFamily(value);
+    if (!raw) return '';
+    if (/[,"']/.test(raw)) return raw;
+    return `"${cssString(raw)}"`;
+  }
+
+  function normalizeCrackNativeFont(value, fallback = FONT_SETTINGS_DEFAULTS.crackFont) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return CRACK_NATIVE_FONT_VALUE_SET.has(normalized) ? normalized : fallback;
+  }
+
+  function normalizeFontMode(value, hasCustomFont = false) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'inherit' || normalized === 'crack' || normalized === 'custom') {
+      return normalized;
+    }
+    return hasCustomFont ? 'custom' : 'inherit';
+  }
+
+  function getCrackNativeFontDefinition(value) {
+    const normalized = normalizeCrackNativeFont(value);
+    return CRACK_NATIVE_FONT_DEFINITIONS.find((item) => item.value === normalized)
+      || CRACK_NATIVE_FONT_DEFINITIONS[0];
+  }
+
+  function normalizeFontSettings(raw = {}) {
+    const defaults = FONT_SETTINGS_DEFAULTS;
+    const customFontCssUrl = normalizeCustomFontCssUrl(raw.customFontCssUrl || '');
+    const customFontFamily = normalizeCustomFontFamily(raw.customFontFamily || '');
+    const hasCustomFont = Boolean(customFontCssUrl || customFontFamily);
+
+    return {
+      fontMode: normalizeFontMode(raw.fontMode, hasCustomFont),
+      crackFont: normalizeCrackNativeFont(raw.crackFont, defaults.crackFont),
+      customFontCssUrl,
+      customFontFamily,
+      textScale: clampFontNumber(raw.textScale, 0.70, 1.60, defaults.textScale),
+      codeTextScale: clampFontNumber(raw.codeTextScale, 0.70, 1.60, defaults.codeTextScale),
+      fontWeight: Math.round(clampFontNumber(raw.fontWeight, 300, 900, defaults.fontWeight) / 100) * 100,
+      lineHeight: clampFontNumber(raw.lineHeight, 1.35, 2.10, defaults.lineHeight),
+      letterSpacing: clampFontNumber(raw.letterSpacing, -0.03, 0.08, defaults.letterSpacing),
+      paragraphSpacing: clampFontNumber(raw.paragraphSpacing, 0, 1.60, defaults.paragraphSpacing),
+    };
   }
 
   function getCurrentThemeModeFallback() {
@@ -294,6 +610,15 @@
     return 0;
   }
 
+  function loadFontSettings() {
+    try {
+      const raw = readStorage(LS.fontSettings);
+      return normalizeFontSettings(raw ? JSON.parse(raw) : {});
+    } catch {
+      return normalizeFontSettings({});
+    }
+  }
+
   function loadThemeMode() {
     const saved = readStorage(LS.themeMode);
     if (saved === 'light' || saved === 'dark') return saved;
@@ -327,11 +652,15 @@
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
   let chatWidthPercent = loadChatWidthPercent();
+  let fontSettings = loadFontSettings();
   let themeMode = loadThemeMode();
   let episodeUiMode = loadEpisodeUiMode();
   let displaySectionOpen = loadSectionOpen(LS.sectionDisplayOpen, true);
   let themeSectionOpen = loadSectionOpen(LS.sectionThemeOpen, true);
   let chatSectionOpen = loadSectionOpen(LS.sectionChatOpen, true);
+  let activePanelSection = ['chat', 'font', 'display'].includes(readStorage(LS.panelActiveSection))
+    ? readStorage(LS.panelActiveSection)
+    : 'chat';
 
   let panelOpen = false;
   let pointerOnZone = false;
@@ -350,6 +679,19 @@
   let cleanedOnce = false;
   let imageSizeSaveTimer = null;
   let chatWidthSaveTimer = null;
+  let fontSettingsSaveTimer = null;
+  let fontApplyTimer = null;
+  let fontResolveSource = '';
+  let fontResolveStatus = 'idle';
+  let resolvedCustomFontCss = '';
+  let resolvedCustomFontFamily = '';
+  let resolvedCustomFontFamilies = [];
+  let fontLibraryFonts = [];
+  let fontRoomConfig = null;
+  let fontLibraryLoaded = false;
+  let fontLibrarySyncSeq = 0;
+  let fontLastRoomId = '';
+  let fontLibraryLoadingRoomId = '';
   let episodeUiSaveRequestSeq = 0;
   let episodeUiReloadTimer = null;
   let isChatWidthDragging = false;
@@ -403,6 +745,7 @@
   applyImageSize();
   applyChatWidth();
   applyThemeModeHint();
+  applyFontSettings();
 
   const gearSvg = `
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" aria-hidden="true">
@@ -2166,6 +2509,951 @@
           height: 26px !important;
           min-width: 26px !important;
         }
+
+      }
+
+      /* Visual-only backdrop: blur is restored without stealing hover/click events. */
+      #${ID.panelBackdrop} {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: calc(var(--crack-ui-z-panel) - 1) !important;
+        display: none !important;
+        pointer-events: none !important;
+        background: rgba(0, 0, 0, .16) !important;
+        backdrop-filter: blur(5px) saturate(.96) !important;
+        -webkit-backdrop-filter: blur(5px) saturate(.96) !important;
+      }
+
+      html.${CLS.panelOpen} #${ID.panelBackdrop} {
+        display: block !important;
+      }
+
+      body[data-theme="light"] #${ID.panelBackdrop},
+      html[data-theme="light"] #${ID.panelBackdrop} {
+        background: rgba(15, 23, 42, .10) !important;
+      }
+
+      /* =====================================================
+         Settings workspace v4 — layout only.
+         Header auto-hide/reveal behavior is intentionally untouched.
+         ===================================================== */
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] {
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: min(980px, calc(100vw - 32px)) !important;
+        height: min(760px, calc(100dvh - 32px)) !important;
+        max-width: calc(100vw - 32px) !important;
+        max-height: calc(100dvh - 32px) !important;
+        transform: translate(-50%, -50%) !important;
+        padding: 10px !important;
+        overflow: hidden !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"][data-open="1"] {
+        display: flex !important;
+        flex-direction: column !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] > .crack-ui-panel-head {
+        flex: 0 0 auto !important;
+        min-height: 38px !important;
+        padding: 2px 6px 10px !important;
+        margin: 0 !important;
+        position: relative !important;
+        top: auto !important;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] > .crack-ui-panel-shell {
+        display: flex !important;
+        flex: 1 1 auto !important;
+        flex-direction: column !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+      }
+
+      /* Theme stays visible above both pages. Only these compact controls get a surface. */
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip {
+        display: flex !important;
+        flex: 0 0 auto !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+        padding: 0 0 10px !important;
+        min-width: 0 !important;
+        background: transparent !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title {
+        display: inline-flex !important;
+        flex: 0 0 auto !important;
+        align-items: center !important;
+        padding: 0 2px !important;
+        color: rgba(255, 255, 255, .90) !important;
+        font-size: 12px !important;
+        font-weight: 900 !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group {
+        display: flex !important;
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        align-items: center !important;
+        gap: 9px !important;
+        box-sizing: border-box !important;
+        padding: 8px 10px !important;
+        border: 1px solid rgba(255, 255, 255, .07) !important;
+        border-radius: 14px !important;
+        background: rgba(0, 0, 0, .28) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label {
+        flex: 0 0 auto !important;
+        min-width: 30px !important;
+        color: rgba(255, 255, 255, .58) !important;
+        font-size: 11px !important;
+        font-weight: 850 !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-options {
+        display: flex !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 5px !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-row {
+        display: flex !important;
+        flex: 1 1 0 !important;
+        width: auto !important;
+        min-width: 0 !important;
+        min-height: 32px !important;
+        padding: 0 9px !important;
+        gap: 0 !important;
+        border-radius: 10px !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-mark {
+        display: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-name {
+        font-size: 11px !important;
+        font-weight: 800 !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-workspace {
+        display: grid !important;
+        grid-template-columns: 112px minmax(0, 1fr) !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        background: transparent !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+        display: flex !important;
+        flex-direction: column !important;
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 4px 8px 4px 0 !important;
+        gap: 6px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        border-right: 1px solid rgba(255, 255, 255, .065) !important;
+        background: transparent !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button {
+        appearance: none !important;
+        display: flex !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        box-sizing: border-box !important;
+        padding: 0 11px !important;
+        border: 1px solid transparent !important;
+        border-radius: 12px !important;
+        background: transparent !important;
+        color: rgba(255, 255, 255, .68) !important;
+        font-family: inherit !important;
+        font-size: 12px !important;
+        font-weight: 850 !important;
+        line-height: 1 !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        transform: none !important;
+        transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button:hover {
+        background: rgba(255, 255, 255, .055) !important;
+        color: rgba(255, 255, 255, .92) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button[data-active="1"] {
+        background: rgba(254, 69, 50, .14) !important;
+        border-color: rgba(254, 69, 50, .38) !important;
+        color: rgba(255, 255, 255, .96) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-content {
+        display: flex !important;
+        flex-direction: column !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        background: transparent !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body {
+        display: block !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        padding: 4px 10px 12px 14px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain !important;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(120, 120, 128, .38) transparent;
+        background: transparent !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body::-webkit-scrollbar,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body::-webkit-scrollbar-track,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body::-webkit-scrollbar-thumb,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(120, 120, 128, .32);
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section {
+        display: flex !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        overflow: visible !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section[hidden] {
+        display: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section-head {
+        display: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section-body {
+        display: flex !important;
+        flex-direction: column !important;
+        width: 100% !important;
+        gap: 10px !important;
+      }
+
+      /* Chat page uses the wide workspace only on tablet/desktop.
+         Phone layout intentionally remains the existing single column. */
+      @media (min-width: 768px) {
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section-body.crack-ui-chat-layout-grid {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          align-items: stretch !important;
+          gap: 10px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid > .crack-ui-chat-layout-full {
+          grid-column: 1 / -1 !important;
+          min-width: 0 !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid > .crack-ui-chat-layout-half {
+          min-width: 0 !important;
+          height: 100% !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid > label.crack-ui-chat-layout-half {
+          align-self: stretch !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid .crack-ui-visible-model-list {
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        }
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title {
+        color: rgba(17, 24, 39, .94) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group {
+        border-color: rgba(17, 24, 39, .075) !important;
+        background: rgba(255, 255, 255, .68) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label {
+        color: rgba(75, 85, 99, .72) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+        border-right-color: rgba(17, 24, 39, .075) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button {
+        color: rgba(75, 85, 99, .82) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button:hover,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button:hover {
+        background: rgba(17, 24, 39, .055) !important;
+        color: rgba(17, 24, 39, .94) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button[data-active="1"],
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button[data-active="1"] {
+        background: rgba(254, 69, 50, .11) !important;
+        border-color: rgba(254, 69, 50, .34) !important;
+        color: rgba(17, 24, 39, .96) !important;
+      }
+
+      @media (max-width: 640px) {
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] {
+          top: auto !important;
+          left: 6px !important;
+          right: 6px !important;
+          bottom: max(6px, env(safe-area-inset-bottom)) !important;
+          width: auto !important;
+          height: calc(100dvh - 12px - env(safe-area-inset-bottom)) !important;
+          max-width: none !important;
+          max-height: calc(100dvh - 12px - env(safe-area-inset-bottom)) !important;
+          transform: none !important;
+          padding: 7px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] > .crack-ui-panel-head {
+          min-height: 38px !important;
+          padding: 2px 3px 8px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          gap: 6px !important;
+          padding-bottom: 7px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title {
+          grid-column: 1 / -1 !important;
+          padding: 0 2px 1px !important;
+          font-size: 11px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group {
+          flex-direction: column !important;
+          align-items: stretch !important;
+          gap: 6px !important;
+          padding: 7px !important;
+          border-radius: 13px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label {
+          min-width: 0 !important;
+          padding-left: 2px !important;
+          font-size: 10px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-options {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          gap: 4px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-row {
+          grid-template-columns: minmax(0, 1fr) !important;
+          min-height: 34px !important;
+          padding: 0 5px !important;
+          gap: 0 !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-mark {
+          display: none !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-name {
+          font-size: 10px !important;
+          text-align: center !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-workspace {
+          display: flex !important;
+          flex-direction: column !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+          flex: 0 0 auto !important;
+          width: auto !important;
+          flex-direction: row !important;
+          gap: 6px !important;
+          padding: 0 0 7px !important;
+          border-right: 0 !important;
+          border-bottom: 1px solid rgba(255, 255, 255, .065) !important;
+          overflow-x: auto !important;
+          overflow-y: hidden !important;
+          background: transparent !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button {
+          flex: 1 1 0 !important;
+          width: auto !important;
+          min-height: 38px !important;
+          justify-content: center !important;
+          padding: 0 10px !important;
+          border-radius: 12px !important;
+          font-size: 12px !important;
+          text-align: center !important;
+          white-space: nowrap !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body {
+          padding: 9px 2px 12px !important;
+        }
+
+        body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav,
+        html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+          border-bottom-color: rgba(17, 24, 39, .075) !important;
+        }
+      }
+
+      /* Font settings page */
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-native-card {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 13px !important;
+        border: 1px solid rgba(255, 255, 255, .07) !important;
+        border-radius: 18px !important;
+        background: rgba(0, 0, 0, .42) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-native-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 7px !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-native-button {
+        min-width: 0 !important;
+        min-height: 42px !important;
+        box-sizing: border-box !important;
+        padding: 0 9px !important;
+        border: 1px solid rgba(255, 255, 255, .085) !important;
+        border-radius: 13px !important;
+        background: rgba(255, 255, 255, .045) !important;
+        color: rgba(255, 255, 255, .86) !important;
+        font-size: 12px !important;
+        line-height: 1.2 !important;
+        cursor: pointer !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-native-button:hover {
+        background: rgba(255, 255, 255, .085) !important;
+        border-color: rgba(255, 255, 255, .14) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-native-button[data-selected="1"] {
+        border-color: rgba(254, 69, 50, .52) !important;
+        background: rgba(254, 69, 50, .15) !important;
+        color: rgba(255, 255, 255, .98) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-source-actions {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 7px !important;
+        min-width: 0 !important;
+      }
+
+      #${ID.fontFollowCrackButton},
+      #${ID.fontCustomModeButton} {
+        flex: 0 0 auto !important;
+        min-height: 30px !important;
+        padding: 0 10px !important;
+        border: 1px solid rgba(255, 255, 255, .085) !important;
+        border-radius: 10px !important;
+        background: rgba(255, 255, 255, .05) !important;
+        color: rgba(255, 255, 255, .72) !important;
+        font-family: inherit !important;
+        font-size: 10px !important;
+        font-weight: 850 !important;
+        cursor: pointer !important;
+      }
+
+      #${ID.fontFollowCrackButton}:hover,
+      #${ID.fontCustomModeButton}:hover:not(:disabled) {
+        background: rgba(255, 255, 255, .10) !important;
+        color: rgba(255, 255, 255, .94) !important;
+      }
+
+      #${ID.fontFollowCrackButton}[data-active="1"],
+      #${ID.fontCustomModeButton}[data-active="1"] {
+        border-color: rgba(254, 69, 50, .46) !important;
+        background: rgba(254, 69, 50, .14) !important;
+        color: rgba(255, 255, 255, .96) !important;
+      }
+
+      #${ID.fontCustomModeButton}:disabled {
+        opacity: .42 !important;
+        cursor: not-allowed !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-source-card {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 13px !important;
+        border: 1px solid rgba(255, 255, 255, .07) !important;
+        border-radius: 18px !important;
+        background: rgba(0, 0, 0, .42) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-source-head {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 10px !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-source-current {
+        min-width: 0 !important;
+        max-width: 60% !important;
+        overflow: hidden !important;
+        color: rgba(255, 255, 255, .62) !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        line-height: 1.2 !important;
+        text-align: right !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-fields {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1.65fr) minmax(180px, .75fr) !important;
+        gap: 8px !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-field {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 6px !important;
+        min-width: 0 !important;
+        color: rgba(255, 255, 255, .60) !important;
+        font-size: 10px !important;
+        font-weight: 800 !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-field textarea,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-field select {
+        width: 100% !important;
+        box-sizing: border-box !important;
+        border: 1px solid rgba(255, 255, 255, .09) !important;
+        border-radius: 13px !important;
+        outline: none !important;
+        background: rgba(255, 255, 255, .055) !important;
+        color: rgba(255, 255, 255, .92) !important;
+        font-family: inherit !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-field textarea {
+        min-height: 76px !important;
+        resize: vertical !important;
+        padding: 10px 11px !important;
+        line-height: 1.35 !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-custom-register-card #${ID.fontCssInput} {
+        min-height: 40px !important;
+        max-height: 88px !important;
+        padding: 10px 11px !important;
+        resize: vertical !important;
+        white-space: nowrap !important;
+        overflow-x: auto !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-custom-register-card #${ID.fontLibraryAddButton} {
+        min-height: 30px !important;
+        padding: 0 10px !important;
+        border-radius: 10px !important;
+        font-size: 10px !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-custom-register-card #${ID.fontLibraryAddButton}:disabled {
+        opacity: .52 !important;
+        cursor: wait !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-field select {
+        min-height: 40px !important;
+        padding: 0 10px !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-field textarea:focus,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-field select:focus {
+        border-color: rgba(254, 69, 50, .48) !important;
+        box-shadow: 0 0 0 3px rgba(254, 69, 50, .10) !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-help {
+        color: rgba(255, 255, 255, .48) !important;
+        font-size: 10px !important;
+        line-height: 1.45 !important;
+        word-break: keep-all !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-layout-grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-reset-row {
+        display: flex !important;
+        justify-content: flex-end !important;
+      }
+
+      #${ID.fontResetButton} {
+        min-height: 36px !important;
+        padding: 0 13px !important;
+        border: 1px solid rgba(255, 255, 255, .09) !important;
+        border-radius: 12px !important;
+        background: rgba(255, 255, 255, .055) !important;
+        color: rgba(255, 255, 255, .78) !important;
+        font-family: inherit !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        cursor: pointer !important;
+      }
+
+      #${ID.fontResetButton}:hover {
+        background: rgba(255, 255, 255, .10) !important;
+        color: rgba(255, 255, 255, .94) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-native-card,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-native-card,
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-source-card,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-source-card {
+        border-color: rgba(17, 24, 39, .075) !important;
+        background: rgba(255, 255, 255, .72) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-source-current,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-source-current,
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-field,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-field,
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-help,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-help {
+        color: rgba(75, 85, 99, .72) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-field textarea,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-field textarea,
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-field select,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-field select,
+      body[data-theme="light"] #${ID.fontResetButton},
+      html[data-theme="light"] #${ID.fontResetButton} {
+        border-color: rgba(17, 24, 39, .075) !important;
+        background: rgba(17, 24, 39, .045) !important;
+        color: rgba(17, 24, 39, .88) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-native-button,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-native-button,
+      body[data-theme="light"] #${ID.fontFollowCrackButton},
+      html[data-theme="light"] #${ID.fontFollowCrackButton},
+      body[data-theme="light"] #${ID.fontCustomModeButton},
+      html[data-theme="light"] #${ID.fontCustomModeButton} {
+        border-color: rgba(17, 24, 39, .075) !important;
+        background: rgba(17, 24, 39, .045) !important;
+        color: rgba(17, 24, 39, .82) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-native-button[data-selected="1"],
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-native-button[data-selected="1"],
+      body[data-theme="light"] #${ID.fontFollowCrackButton}[data-active="1"],
+      html[data-theme="light"] #${ID.fontFollowCrackButton}[data-active="1"],
+      body[data-theme="light"] #${ID.fontCustomModeButton}[data-active="1"],
+      html[data-theme="light"] #${ID.fontCustomModeButton}[data-active="1"] {
+        border-color: rgba(254, 69, 50, .42) !important;
+        background: rgba(254, 69, 50, .12) !important;
+        color: rgba(17, 24, 39, .94) !important;
+      }
+
+      @media (max-width: 640px) {
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-fields,
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-layout-grid {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-native-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-native-card,
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-source-card {
+          padding: 11px !important;
+        }
+      }
+
+
+
+      .crack-ui-font-library-list {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        min-height: 28px !important;
+      }
+
+      .crack-ui-font-library-empty {
+        display: flex !important;
+        align-items: center !important;
+        min-height: 28px !important;
+        color: rgba(255, 255, 255, .48) !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+      }
+
+      .crack-ui-font-library-chip {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        max-width: 100% !important;
+        min-height: 30px !important;
+        box-sizing: border-box !important;
+        padding: 5px 7px 5px 9px !important;
+        border: 1px solid rgba(255, 255, 255, .075) !important;
+        border-radius: 11px !important;
+        background: rgba(255, 255, 255, .045) !important;
+        color: rgba(255, 255, 255, .86) !important;
+      }
+
+      .crack-ui-font-library-chip-name {
+        min-width: 0 !important;
+        max-width: 220px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+      }
+
+      .crack-ui-font-library-delete {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 999px !important;
+        background: rgba(255, 69, 58, .10) !important;
+        color: rgba(255, 120, 112, .92) !important;
+        font-family: inherit !important;
+        font-size: 14px !important;
+        font-weight: 900 !important;
+        line-height: 1 !important;
+        cursor: pointer !important;
+      }
+
+      .crack-ui-font-library-delete:hover {
+        background: rgba(255, 69, 58, .18) !important;
+      }
+
+      .crack-ui-font-library-actions {
+        display: flex !important;
+        justify-content: flex-end !important;
+      }
+
+      #${ID.fontLibraryAddButton} {
+        min-height: 36px !important;
+        padding: 0 14px !important;
+        border: 1px solid rgba(254, 69, 50, .42) !important;
+        border-radius: 12px !important;
+        background: rgba(254, 69, 50, .14) !important;
+        color: rgba(255, 255, 255, .94) !important;
+        font-family: inherit !important;
+        font-size: 11px !important;
+        font-weight: 850 !important;
+        cursor: pointer !important;
+      }
+
+      #${ID.fontLibraryAddButton}:hover {
+        background: rgba(254, 69, 50, .22) !important;
+      }
+
+      .crack-ui-font-room-grid {
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+      }
+
+      .crack-ui-font-room-field {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 6px !important;
+        min-width: 0 !important;
+        color: rgba(255, 255, 255, .62) !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+      }
+
+      .crack-ui-font-room-field select {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 38px !important;
+        box-sizing: border-box !important;
+        padding: 0 10px !important;
+        border: 1px solid rgba(255, 255, 255, .075) !important;
+        border-radius: 12px !important;
+        background: rgba(255, 255, 255, .045) !important;
+        color: rgba(255, 255, 255, .90) !important;
+        font-family: inherit !important;
+        font-size: 11px !important;
+        font-weight: 750 !important;
+        outline: none !important;
+      }
+
+      .crack-ui-font-room-status {
+        max-width: 220px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        color: rgba(255, 255, 255, .48) !important;
+        font-size: 10px !important;
+        font-weight: 750 !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-library-chip,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-library-chip,
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-room-field select,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-room-field select {
+        border-color: rgba(17, 24, 39, .075) !important;
+        background: rgba(17, 24, 39, .045) !important;
+        color: rgba(17, 24, 39, .88) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-library-empty,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-library-empty,
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-room-field,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-room-field,
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-room-status,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-room-status {
+        color: rgba(75, 85, 99, .68) !important;
+      }
+
+      body[data-theme="light"] #${ID.fontLibraryAddButton},
+      html[data-theme="light"] #${ID.fontLibraryAddButton} {
+        color: rgba(17, 24, 39, .94) !important;
+      }
+
+      @media (max-width: 760px) {
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-font-room-grid {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+      }
+
+      /* Chat typography. Defaults mirror the source extension and only target rendered chat text. */
+      html[data-crack-ui-font-settings="on"] main .wrtn-markdown :is(p, li, blockquote) {
+        font-size: calc(1em * var(--crack-ui-font-text-scale, 1)) !important;
+        line-height: var(--crack-ui-font-line-height, 1.65) !important;
+        letter-spacing: var(--crack-ui-font-letter-spacing, 0em) !important;
+        font-weight: var(--crack-ui-font-weight, 400) !important;
+      }
+
+      html[data-crack-ui-font-settings="on"] main .wrtn-markdown :is(h1, h2, h3, h4, h5, h6) {
+        line-height: var(--crack-ui-font-line-height, 1.65) !important;
+        letter-spacing: var(--crack-ui-font-letter-spacing, 0em) !important;
+      }
+
+      html[data-crack-ui-font-settings="on"] main .wrtn-markdown :is(p, blockquote) {
+        margin-top: 0 !important;
+        margin-bottom: var(--crack-ui-font-paragraph-spacing, .70rem) !important;
+      }
+
+      html[data-crack-ui-font-settings="on"] main .wrtn-markdown :is(p, blockquote):last-child {
+        margin-bottom: 0 !important;
+      }
+
+      html[data-crack-ui-font-settings="on"] main .wrtn-markdown li {
+        margin-top: calc(var(--crack-ui-font-paragraph-spacing, .70rem) * .25) !important;
+        margin-bottom: calc(var(--crack-ui-font-paragraph-spacing, .70rem) * .25) !important;
+      }
+
+      html[data-crack-ui-chat-font="active"] main .wrtn-markdown,
+      html[data-crack-ui-chat-font="active"] main .wrtn-markdown :is(p, li, blockquote, h1, h2, h3, h4, h5, h6, span, em, strong, a, pre, code, kbd, samp) {
+        font-family: var(--crack-ui-custom-chat-font-stack), 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif !important;
+      }
+
+      html[data-crack-ui-chat-font="active"] main .wrtn-markdown strong {
+        font-weight: var(--crack-ui-font-strong-weight, 700) !important;
+      }
+
+      html[data-crack-ui-font-settings="on"] main .wrtn-markdown pre,
+      html[data-crack-ui-font-settings="on"] main .wrtn-markdown pre *,
+      html[data-crack-ui-font-settings="on"] main [class*="wrtn-codeblock"] :is(pre, code, span, div) {
+        font-size: calc(13px * var(--crack-ui-font-code-scale, 1)) !important;
+        line-height: 1.45 !important;
+        letter-spacing: 0 !important;
+        font-weight: 400 !important;
       }
     `;
     if (typeof GM_addStyle === 'function') {
@@ -3141,6 +4429,959 @@
   }
 
 
+  function escapeFontHtmlText(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function escapeFontHtmlAttr(value) {
+    return escapeFontHtmlText(value).replace(/"/g, '&quot;');
+  }
+
+  function getEffectiveCustomFontFamily(settings = fontSettings) {
+    const explicit = normalizeCustomFontFamily(settings.customFontFamily);
+    if (explicit) return explicit;
+
+    const source = normalizeCustomFontCssUrl(settings.customFontCssUrl);
+    const extracted = extractFontFamilyFromFontFace(source);
+    if (extracted) return extracted;
+
+    if (source && fontResolveSource === source && resolvedCustomFontFamily) {
+      return resolvedCustomFontFamily;
+    }
+
+    if (isDirectFontResource(source)) return 'CrackUICustomUserFont';
+    return inferFontFamilyFromSource(source);
+  }
+
+  function getAvailableCustomFontFamilies(settings = fontSettings) {
+    const source = normalizeCustomFontCssUrl(settings.customFontCssUrl);
+    const explicit = normalizeCustomFontFamily(settings.customFontFamily);
+    const families = [];
+    const seen = new Set();
+    const add = (family) => {
+      const normalized = normalizeCustomFontFamily(family);
+      const key = normalized.toLowerCase();
+      if (!normalized || seen.has(key)) return;
+      seen.add(key);
+      families.push(normalized);
+    };
+
+    if (explicit) add(explicit);
+    getKnownFontFamilyCandidates(source).forEach(add);
+    extractFontFamiliesFromFontFace(source).forEach(add);
+
+    if (source && fontResolveSource === source && resolvedCustomFontCss) {
+      extractFontFamiliesFromFontFace(resolvedCustomFontCss).forEach(add);
+      resolvedCustomFontFamilies.forEach(add);
+    }
+
+    add(inferFontFamilyFromSource(source));
+    add(getEffectiveCustomFontFamily({ ...settings, customFontFamily: explicit }));
+    return families;
+  }
+
+  function renderFontFamilyOptionsHtml(settings = fontSettings) {
+    const explicit = normalizeCustomFontFamily(settings.customFontFamily);
+    const autoFamily = getEffectiveCustomFontFamily({ ...settings, customFontFamily: '' });
+    const autoLabel = autoFamily ? `자동 감지: ${autoFamily}` : '자동 감지';
+    const families = getAvailableCustomFontFamilies(settings);
+
+    return [
+      `<option value=""${explicit ? '' : ' selected'}>${escapeFontHtmlText(autoLabel)}</option>`,
+      ...families.map((family) => `<option value="${escapeFontHtmlAttr(family)}"${explicit === family ? ' selected' : ''}>${escapeFontHtmlText(family)}</option>`),
+    ].join('');
+  }
+
+  function getEffectiveChatFontFamily(settings = fontSettings) {
+    const normalized = normalizeFontSettings(settings);
+    if (normalized.fontMode === 'custom') return getEffectiveCustomFontFamily(normalized);
+    if (normalized.fontMode === 'crack') return getCrackNativeFontDefinition(normalized.crackFont).family;
+    return '';
+  }
+
+  function renderCrackNativeFontButtonsHtml(settings = fontSettings) {
+    const normalized = normalizeFontSettings(settings);
+    return CRACK_NATIVE_FONT_DEFINITIONS.map((item) => {
+      const selected = normalized.fontMode === 'crack' && normalized.crackFont === item.value;
+      return `
+        <button
+          type="button"
+          class="crack-ui-font-native-button"
+          data-crack-ui-native-font="${escapeFontHtmlAttr(item.value)}"
+          data-selected="${selected ? '1' : '0'}"
+          aria-pressed="${selected ? 'true' : 'false'}"
+          style="font-family: '${escapeFontHtmlAttr(item.family)}', sans-serif;"
+        >${escapeFontHtmlText(item.label)}</button>
+      `;
+    }).join('');
+  }
+
+  function resetFontResolveState(nextSource = '') {
+    fontResolveSource = nextSource;
+    fontResolveStatus = nextSource ? 'idle' : 'idle';
+    resolvedCustomFontCss = '';
+    resolvedCustomFontFamily = '';
+    resolvedCustomFontFamilies = [];
+  }
+
+  function resolveImportedCustomFontCss(fontSource) {
+    if (!fontSource || /^@font-face\s*\{/i.test(fontSource) || isDirectFontResource(fontSource)) return;
+    if (fontResolveSource === fontSource && (fontResolveStatus === 'loading' || fontResolveStatus === 'done')) return;
+
+    fontResolveSource = fontSource;
+    fontResolveStatus = 'loading';
+    resolvedCustomFontCss = '';
+    resolvedCustomFontFamilies = getKnownFontFamilyCandidates(fontSource);
+    resolvedCustomFontFamily = inferFontFamilyFromSource(fontSource) || resolvedCustomFontFamilies[0] || '';
+
+    fetch(fontSource, { cache: 'force-cache', credentials: 'omit' })
+      .then((response) => response.ok ? response.text() : '')
+      .then((cssText) => {
+        if (fontResolveSource !== fontSource) return;
+
+        const normalizedCss = normalizeFontFaceCssText(cssText, fontSource);
+        const families = extractFontFamiliesFromFontFace(normalizedCss);
+        const inferred = inferFontFamilyFromSource(fontSource);
+        const family = inferred && families.some((item) => item.toLowerCase() === inferred.toLowerCase())
+          ? inferred
+          : (families[0] || inferred || resolvedCustomFontFamilies[0] || '');
+
+        resolvedCustomFontCss = normalizedCss;
+        resolvedCustomFontFamilies = families.length ? families : getKnownFontFamilyCandidates(fontSource);
+        resolvedCustomFontFamily = family;
+        fontResolveStatus = 'done';
+        injectCustomFontStyle();
+        applyFontSettings();
+      })
+      .catch((error) => {
+        if (fontResolveSource !== fontSource) return;
+        fontResolveStatus = 'failed';
+        resolvedCustomFontCss = '';
+        resolvedCustomFontFamilies = getKnownFontFamilyCandidates(fontSource);
+        resolvedCustomFontFamily = inferFontFamilyFromSource(fontSource) || resolvedCustomFontFamilies[0] || '';
+        try {
+          console.warn('[Crack UI Plus] 웹폰트 CSS를 직접 읽지 못해 @import 방식으로 유지합니다.', error);
+        } catch {
+        }
+        syncFontSettingsUi();
+      });
+  }
+
+  function injectCustomFontStyle() {
+    const styleId = 'crack-ui-custom-font-style';
+    const existing = document.getElementById(styleId);
+    const source = normalizeCustomFontCssUrl(fontSettings.customFontCssUrl);
+    let content = '';
+
+    if (source) {
+      if (/^@font-face\s*\{/i.test(source)) {
+        content = source;
+      } else if (isDirectFontResource(source)) {
+        const family = getEffectiveCustomFontFamily(fontSettings);
+        if (family) {
+          content = `@font-face{font-family:"${cssString(family)}";src:url("${cssString(source)}") format("${cssString(normalizeFontFormat('', source))}");font-weight:${inferDirectFontWeightRangeFromUrl(source)};font-style:normal;font-display:swap;}`;
+        }
+      } else {
+        resolveImportedCustomFontCss(source);
+        content = fontResolveSource === source && resolvedCustomFontCss
+          ? resolvedCustomFontCss
+          : `@import url("${cssString(source)}");`;
+      }
+    }
+
+    if (!content) {
+      existing?.remove();
+      return;
+    }
+
+    if (existing && existing.textContent === content) return;
+    existing?.remove();
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = content;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function formatFontSettingValue(key, value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '';
+    if (key === 'textScale' || key === 'codeTextScale') return `${Math.round(n * 100)}%`;
+    if (key === 'fontWeight') return String(Math.round(n));
+    if (key === 'lineHeight') return `${n.toFixed(2)}배`;
+    if (key === 'letterSpacing') return `${n.toFixed(2)}em`;
+    if (key === 'paragraphSpacing') return `${n.toFixed(2)}rem`;
+    return String(n);
+  }
+
+  function saveFontSettingsNow() {
+    fontSettings = normalizeFontSettings(fontSettings);
+    writeJsonStorage(LS.fontSettings, fontSettings);
+  }
+
+  function saveFontSettingsSoon(delay = 220) {
+    clearTimeout(fontSettingsSaveTimer);
+    fontSettingsSaveTimer = setTimeout(() => {
+      fontSettingsSaveTimer = null;
+      saveFontSettingsNow();
+    }, delay);
+  }
+
+  function flushFontSettingsSave() {
+    if (!fontSettingsSaveTimer) return;
+    clearTimeout(fontSettingsSaveTimer);
+    fontSettingsSaveTimer = null;
+    saveFontSettingsNow();
+  }
+
+  function applyFontSettings() {
+    fontSettings = normalizeFontSettings(fontSettings);
+    const root = document.documentElement;
+    const family = getEffectiveChatFontFamily(fontSettings);
+    const stack = cssFontStack(family);
+
+    root.style.setProperty('--crack-ui-font-text-scale', String(fontSettings.textScale));
+    root.style.setProperty('--crack-ui-font-code-scale', String(fontSettings.codeTextScale));
+    root.style.setProperty('--crack-ui-font-weight', String(fontSettings.fontWeight));
+    root.style.setProperty('--crack-ui-font-strong-weight', String(Math.max(700, fontSettings.fontWeight)));
+    root.style.setProperty('--crack-ui-font-line-height', String(fontSettings.lineHeight));
+    root.style.setProperty('--crack-ui-font-letter-spacing', `${fontSettings.letterSpacing}em`);
+    root.style.setProperty('--crack-ui-font-paragraph-spacing', `${fontSettings.paragraphSpacing}rem`);
+
+    if (stack) root.style.setProperty('--crack-ui-custom-chat-font-stack', stack);
+    else root.style.removeProperty('--crack-ui-custom-chat-font-stack');
+
+    root.setAttribute('data-crack-ui-font-settings', 'on');
+    root.setAttribute('data-crack-ui-chat-font', family ? 'active' : 'none');
+    root.setAttribute('data-crack-ui-font-mode', fontSettings.fontMode);
+    injectCustomFontStyle();
+    applyRoomFontConfig(fontRoomConfig);
+    syncFontSettingsUi();
+    syncFontLibraryUi();
+  }
+
+  function setFontNumericSetting(key, nextValue) {
+    if (!Object.prototype.hasOwnProperty.call(FONT_SETTINGS_DEFAULTS, key)) return;
+    fontSettings = normalizeFontSettings({ ...fontSettings, [key]: Number(nextValue) });
+    applyFontSettings();
+    saveFontSettingsSoon();
+  }
+
+  function commitFontCssSource(nextValue, immediate = false) {
+    const run = () => {
+      const source = normalizeCustomFontCssUrl(nextValue);
+      if (source !== fontSettings.customFontCssUrl) resetFontResolveState(source);
+      fontSettings = normalizeFontSettings({
+        ...fontSettings,
+        fontMode: source ? 'custom' : 'inherit',
+        customFontCssUrl: source,
+        customFontFamily: '',
+      });
+      saveFontSettingsNow();
+      applyFontSettings();
+    };
+
+    clearTimeout(fontApplyTimer);
+    if (immediate) run();
+    else fontApplyTimer = setTimeout(run, 260);
+  }
+
+  function commitFontFamily(nextValue) {
+    fontSettings = normalizeFontSettings({
+      ...fontSettings,
+      fontMode: 'custom',
+      customFontFamily: nextValue,
+    });
+    saveFontSettingsNow();
+    applyFontSettings();
+  }
+
+  function commitCrackNativeFont(nextValue) {
+    fontSettings = normalizeFontSettings({
+      ...fontSettings,
+      fontMode: 'crack',
+      crackFont: nextValue,
+    });
+    saveFontSettingsNow();
+    applyFontSettings();
+  }
+
+  function followCrackFontSetting() {
+    fontSettings = normalizeFontSettings({ ...fontSettings, fontMode: 'inherit' });
+    saveFontSettingsNow();
+    applyFontSettings();
+  }
+
+  function useCustomFontSetting() {
+    const source = normalizeCustomFontCssUrl(fontSettings.customFontCssUrl);
+    const family = getEffectiveCustomFontFamily(fontSettings);
+    if (!source && !family) return;
+
+    fontSettings = normalizeFontSettings({ ...fontSettings, fontMode: 'custom' });
+    saveFontSettingsNow();
+    applyFontSettings();
+  }
+
+  function resetFontSettings() {
+    clearTimeout(fontApplyTimer);
+    clearTimeout(fontSettingsSaveTimer);
+    fontApplyTimer = null;
+    fontSettingsSaveTimer = null;
+    fontSettings = normalizeFontSettings(FONT_SETTINGS_DEFAULTS);
+    resetFontResolveState('');
+    removeStorage(LS.fontSettings);
+    applyFontSettings();
+  }
+
+  function syncFontSettingsUi() {
+    const panel = document.getElementById(ID.panel);
+    if (!panel) return;
+
+    const valueMap = {
+      textScale: [ID.fontTextScaleSlider, ID.fontTextScaleValue],
+      codeTextScale: [ID.fontCodeScaleSlider, ID.fontCodeScaleValue],
+      fontWeight: [ID.fontWeightSlider, ID.fontWeightValue],
+      lineHeight: [ID.fontLineHeightSlider, ID.fontLineHeightValue],
+      letterSpacing: [ID.fontLetterSpacingSlider, ID.fontLetterSpacingValue],
+      paragraphSpacing: [ID.fontParagraphSpacingSlider, ID.fontParagraphSpacingValue],
+    };
+
+    Object.entries(valueMap).forEach(([key, [sliderId, outputId]]) => {
+      const slider = panel.querySelector(`#${sliderId}`);
+      const output = panel.querySelector(`#${outputId}`);
+      if (slider instanceof HTMLInputElement && document.activeElement !== slider) {
+        slider.value = String(fontSettings[key]);
+      }
+      if (output) output.textContent = formatFontSettingValue(key, fontSettings[key]);
+    });
+
+    panel.querySelectorAll('[data-crack-ui-native-font]').forEach((button) => {
+      if (!(button instanceof HTMLButtonElement)) return;
+      const selected = fontSettings.fontMode === 'crack'
+        && normalizeCrackNativeFont(button.dataset.crackUiNativeFont) === fontSettings.crackFont;
+      button.dataset.selected = selected ? '1' : '0';
+      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+
+    const followCrackButton = panel.querySelector(`#${ID.fontFollowCrackButton}`);
+    if (followCrackButton instanceof HTMLButtonElement) {
+      const active = fontSettings.fontMode === 'inherit';
+      followCrackButton.dataset.active = active ? '1' : '0';
+      followCrackButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+      followCrackButton.textContent = active ? 'Crack 설정 사용 중' : 'Crack 설정 따르기';
+    }
+
+    const customModeButton = panel.querySelector(`#${ID.fontCustomModeButton}`);
+    if (customModeButton instanceof HTMLButtonElement) {
+      const hasCustomFont = Boolean(
+        normalizeCustomFontCssUrl(fontSettings.customFontCssUrl)
+        || getEffectiveCustomFontFamily(fontSettings)
+      );
+      const active = fontSettings.fontMode === 'custom';
+      customModeButton.disabled = !hasCustomFont;
+      customModeButton.dataset.active = active ? '1' : '0';
+      customModeButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+      customModeButton.textContent = active ? '사용 중' : '사용';
+    }
+
+    const sourceInput = panel.querySelector(`#${ID.fontCssInput}`);
+    if (sourceInput instanceof HTMLTextAreaElement && document.activeElement !== sourceInput) {
+      sourceInput.value = fontSettings.customFontCssUrl;
+    }
+
+    const familySelect = panel.querySelector(`#${ID.fontFamilySelect}`);
+    if (familySelect instanceof HTMLSelectElement && document.activeElement !== familySelect) {
+      familySelect.innerHTML = renderFontFamilyOptionsHtml(fontSettings);
+      familySelect.value = normalizeCustomFontFamily(fontSettings.customFontFamily);
+    }
+
+    const familyOutput = panel.querySelector(`#${ID.fontFamilyValue}`);
+    if (familyOutput) {
+      const family = getEffectiveCustomFontFamily(fontSettings);
+      familyOutput.textContent = family || '미설정';
+      familyOutput.title = family || '미설정';
+    }
+  }
+
+  function renderFontRangeRowHtml(key, label, sliderId, outputId, min, max, step) {
+    return `
+      <div class="crack-ui-range-row crack-ui-font-range-row">
+        <div class="crack-ui-range-head">
+          <span class="crack-ui-row-name">${escapeFontHtmlText(label)}</span>
+          <span id="${outputId}" class="crack-ui-range-value">${formatFontSettingValue(key, fontSettings[key])}</span>
+        </div>
+        <input
+          id="${sliderId}"
+          class="crack-ui-range"
+          type="range"
+          min="${min}"
+          max="${max}"
+          step="${step}"
+          value="${fontSettings[key]}"
+          aria-label="${escapeFontHtmlAttr(label)}"
+          data-crack-ui-font-range="${key}"
+        >
+      </div>
+    `;
+  }
+
+
+
+
+  // =====================================================
+  // Font library / room-specific mapping
+  // Compatible with the previously distributed CrackFontManagerDB_v2 data.
+  // =====================================================
+
+  const FontLibraryDB = {
+    dbName: 'CrackFontManagerDB_v2',
+    version: 1,
+    dbPromise: null,
+
+    init() {
+      if (this.dbPromise) return this.dbPromise;
+
+      this.dbPromise = new Promise((resolve, reject) => {
+        let request;
+        try {
+          request = indexedDB.open(this.dbName, this.version);
+        } catch (error) {
+          reject(error);
+          return;
+        }
+
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains('fonts')) {
+            db.createObjectStore('fonts', { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains('roomConfigs')) {
+            db.createObjectStore('roomConfigs', { keyPath: 'roomId' });
+          }
+        };
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('폰트 보관함 DB 열기 실패'));
+      }).catch((error) => {
+        this.dbPromise = null;
+        throw error;
+      });
+
+      return this.dbPromise;
+    },
+
+    async getAll(storeName) {
+      const db = await this.init();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const request = tx.objectStore(storeName).getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error || new Error(`${storeName} 읽기 실패`));
+      });
+    },
+
+    async get(storeName, key) {
+      const db = await this.init();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const request = tx.objectStore(storeName).get(key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error(`${storeName} 항목 읽기 실패`));
+      });
+    },
+
+    async put(storeName, value) {
+      const db = await this.init();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error || new Error(`${storeName} 저장 실패`));
+        tx.objectStore(storeName).put(value);
+      });
+    },
+
+    async delete(storeName, key) {
+      const db = await this.init();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error || new Error(`${storeName} 삭제 실패`));
+        tx.objectStore(storeName).delete(key);
+      });
+    },
+  };
+
+  function getCurrentFontRoomId(pathname = location.pathname) {
+    const match = String(pathname || '').match(/\/(?:episodes|c|chats)\/([^/?#]+)/);
+    return match?.[1] || 'default_global_room';
+  }
+
+  function normalizeFontLibraryRecord(record) {
+    if (!record || typeof record !== 'object') return null;
+    const css = stripFontCssNoise(record.css || record.source || '');
+    if (!css) return null;
+
+    const families = extractFontFamiliesFromFontFace(css);
+    const name = normalizeCustomFontFamily(record.name || families[0] || '사용자 폰트');
+    if (!name) return null;
+
+    return {
+      id: String(record.id || `font_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+      name,
+      css,
+      families: families.length ? families : [name],
+    };
+  }
+
+  function normalizeFontRoomConfig(raw, roomId = getCurrentFontRoomId()) {
+    const config = raw && typeof raw === 'object' ? raw : {};
+    return {
+      roomId,
+      body: normalizeCustomFontFamily(config.body || ''),
+      code: normalizeCustomFontFamily(config.code || ''),
+      title: normalizeCustomFontFamily(config.title || ''),
+    };
+  }
+
+  function getFontLibraryFamilies() {
+    const families = [];
+    const seen = new Set();
+    const add = (family, label = family, group = 'library') => {
+      const normalized = normalizeCustomFontFamily(family);
+      const key = normalized.toLowerCase();
+      if (!normalized || seen.has(key)) return;
+      seen.add(key);
+      families.push({ family: normalized, label: String(label || normalized), group });
+    };
+
+    CRACK_NATIVE_FONT_DEFINITIONS.forEach((item) => add(item.family, item.label, 'crack'));
+
+    const currentCustomFamilies = getAvailableCustomFontFamilies(fontSettings);
+    currentCustomFamilies.forEach((family) => add(family, family, 'current'));
+
+    fontLibraryFonts.forEach((font) => {
+      (font.families || [font.name]).forEach((family) => add(family, family, 'library'));
+    });
+
+    return families;
+  }
+
+  function renderFontRoomSelectOptions(selectedValue = '') {
+    const selected = normalizeCustomFontFamily(selectedValue);
+    const definitions = getFontLibraryFamilies();
+    const groups = {
+      crack: definitions.filter((item) => item.group === 'crack'),
+      current: definitions.filter((item) => item.group === 'current'),
+      library: definitions.filter((item) => item.group === 'library'),
+    };
+    const known = definitions.some((item) => item.family === selected);
+
+    const renderGroup = (label, items) => {
+      if (!items.length) return '';
+      return `<optgroup label="${escapeFontHtmlAttr(label)}">${items.map((item) => (
+        `<option value="${escapeFontHtmlAttr(item.family)}"${selected === item.family ? ' selected' : ''}>${escapeFontHtmlText(item.label)}</option>`
+      )).join('')}</optgroup>`;
+    };
+
+    return [
+      `<option value=""${selected ? '' : ' selected'}>전역 설정 따르기</option>`,
+      !known && selected ? `<option value="${escapeFontHtmlAttr(selected)}" selected>${escapeFontHtmlText(selected)} (저장됨)</option>` : '',
+      renderGroup('Crack 제공 글꼴', groups.crack),
+      renderGroup('현재 사용자 웹폰트', groups.current),
+      renderGroup('폰트 보관함', groups.library),
+    ].join('');
+  }
+
+  function applyFontLibraryStyle() {
+    const existing = document.getElementById(FONT_LIBRARY_STYLE_ID);
+    const entries = fontLibraryFonts.map((font) => String(font.css || '').trim()).filter(Boolean);
+    const imports = entries.filter((css) => /^@import\b/i.test(css));
+    const faces = entries.filter((css) => !/^@import\b/i.test(css));
+    const content = [...imports, ...faces].join('\n');
+
+    if (!content) {
+      existing?.remove();
+      return;
+    }
+
+    if (existing && existing.textContent === content) return;
+    existing?.remove();
+
+    const style = document.createElement('style');
+    style.id = FONT_LIBRARY_STYLE_ID;
+    style.textContent = content;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function applyRoomFontConfig(config = fontRoomConfig) {
+    const existing = document.getElementById(FONT_ROOM_STYLE_ID);
+    const normalized = normalizeFontRoomConfig(config, getCurrentFontRoomId());
+    const bodyFamily = normalizeCustomFontFamily(normalized.body);
+    const codeFamily = normalizeCustomFontFamily(normalized.code);
+    const titleFamily = normalizeCustomFontFamily(normalized.title);
+    const rules = [];
+
+    if (bodyFamily) {
+      const family = `"${cssString(bodyFamily)}", 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif`;
+      rules.push(`
+        main .wrtn-markdown,
+        main .wrtn-markdown :not(pre):not(code):not(pre *):not(code *) {
+          font-family: ${family} !important;
+        }
+      `);
+    }
+
+    if (codeFamily) {
+      const family = `"${cssString(codeFamily)}", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+      rules.push(`
+        main .wrtn-markdown pre,
+        main .wrtn-markdown pre *,
+        main .wrtn-markdown code,
+        main [class*="wrtn-codeblock"] :is(pre, code, span, div) {
+          font-family: ${family} !important;
+        }
+      `);
+    } else if (bodyFamily) {
+      const globalFamily = getEffectiveChatFontFamily(fontSettings);
+      const family = globalFamily
+        ? `"${cssString(globalFamily)}", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`
+        : 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      rules.push(`
+        main .wrtn-markdown pre,
+        main .wrtn-markdown pre *,
+        main .wrtn-markdown code,
+        main [class*="wrtn-codeblock"] :is(pre, code, span, div) {
+          font-family: ${family} !important;
+        }
+      `);
+    }
+
+    if (titleFamily) {
+      const family = `"${cssString(titleFamily)}", 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif`;
+      rules.push(`
+        .group\\/header span.line-clamp-1,
+        [data-crack-ui-room-top-bar="1"] span.line-clamp-1 {
+          font-family: ${family} !important;
+          line-height: 1.4 !important;
+          padding-top: 2px !important;
+          padding-bottom: 2px !important;
+          display: block !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+        }
+      `);
+    }
+
+    const content = rules.join('\n').trim();
+    if (!content) {
+      existing?.remove();
+      return;
+    }
+
+    if (existing && existing.textContent === content) return;
+    existing?.remove();
+
+    const style = document.createElement('style');
+    style.id = FONT_ROOM_STYLE_ID;
+    style.textContent = content;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function syncFontLibraryUi() {
+    const panel = document.getElementById(ID.panel);
+    if (!panel) return;
+
+    const list = panel.querySelector(`#${ID.fontLibraryList}`);
+    const count = panel.querySelector(`#${ID.fontLibraryCount}`);
+    const status = panel.querySelector(`#${ID.fontRoomStatus}`);
+
+    if (count) count.textContent = `${fontLibraryFonts.length}개`;
+    if (status) {
+      status.textContent = getCurrentFontRoomId() === 'default_global_room'
+        ? '공용 화면 설정'
+        : '현재 방에만 저장됨';
+    }
+
+    if (list) {
+      list.innerHTML = '';
+      if (!fontLibraryFonts.length) {
+        const empty = document.createElement('span');
+        empty.className = 'crack-ui-font-library-empty';
+        empty.textContent = '등록된 폰트가 없음';
+        list.appendChild(empty);
+      } else {
+        fontLibraryFonts.forEach((font) => {
+          const chip = document.createElement('div');
+          chip.className = 'crack-ui-font-library-chip';
+
+          const name = document.createElement('span');
+          name.className = 'crack-ui-font-library-chip-name';
+          name.textContent = font.name;
+          name.title = (font.families || [font.name]).join(', ');
+
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'crack-ui-font-library-delete';
+          remove.dataset.crackUiFontDelete = font.id;
+          remove.setAttribute('aria-label', `${font.name} 삭제`);
+          remove.textContent = '×';
+
+          chip.append(name, remove);
+          list.appendChild(chip);
+        });
+      }
+    }
+
+    const config = normalizeFontRoomConfig(fontRoomConfig, getCurrentFontRoomId());
+    const selectMap = {
+      [ID.fontRoomBodySelect]: config.body,
+      [ID.fontRoomCodeSelect]: config.code,
+      [ID.fontRoomTitleSelect]: config.title,
+    };
+
+    Object.entries(selectMap).forEach(([id, value]) => {
+      const select = panel.querySelector(`#${id}`);
+      if (!(select instanceof HTMLSelectElement) || document.activeElement === select) return;
+      select.innerHTML = renderFontRoomSelectOptions(value);
+      select.value = value;
+    });
+  }
+
+  async function refreshFontLibraryState(options = {}) {
+    const seq = ++fontLibrarySyncSeq;
+    const roomId = getCurrentFontRoomId();
+    fontLibraryLoadingRoomId = roomId;
+
+    try {
+      const [rawFonts, rawConfig] = await Promise.all([
+        FontLibraryDB.getAll('fonts'),
+        FontLibraryDB.get('roomConfigs', roomId),
+      ]);
+      if (seq !== fontLibrarySyncSeq) return;
+
+      fontLibraryFonts = rawFonts.map(normalizeFontLibraryRecord).filter(Boolean);
+      fontRoomConfig = normalizeFontRoomConfig(rawConfig, roomId);
+      fontLibraryLoaded = true;
+      fontLastRoomId = roomId;
+      if (fontLibraryLoadingRoomId === roomId) fontLibraryLoadingRoomId = '';
+      applyFontLibraryStyle();
+      applyRoomFontConfig(fontRoomConfig);
+      syncFontLibraryUi();
+    } catch (error) {
+      if (seq !== fontLibrarySyncSeq) return;
+      fontLibraryLoaded = false;
+      if (fontLibraryLoadingRoomId === roomId) fontLibraryLoadingRoomId = '';
+      reportCrackUiError('font-library-sync', error);
+      if (options.alertOnError) alert('폰트 보관함을 불러오지 못했음. 콘솔과 CrackUIPlus.debug()를 확인해 주세요.');
+    }
+  }
+
+  function syncFontRoomContext(force = false) {
+    const roomId = getCurrentFontRoomId();
+    if (fontLibraryLoadingRoomId === roomId) return;
+    if (!force && fontLibraryLoaded && fontLastRoomId === roomId) return;
+    refreshFontLibraryState();
+  }
+
+  function inferFontLibraryFamilyFromUrl(source, preferredFamily = '') {
+    const preferred = normalizeCustomFontFamily(preferredFamily);
+    if (preferred) return preferred;
+
+    const explicit = normalizeCustomFontFamily(fontSettings.customFontFamily);
+    if (explicit) return explicit;
+
+    const resolved = fontResolveSource === source
+      ? normalizeCustomFontFamily(resolvedCustomFontFamily)
+      : '';
+    if (resolved && resolved !== 'CrackUICustomUserFont') return resolved;
+
+    const inferred = normalizeCustomFontFamily(inferFontFamilyFromSource(source));
+    if (inferred && inferred !== 'CrackUICustomUserFont') return inferred;
+
+    try {
+      const parsed = new URL(source);
+      const familyParam = parsed.searchParams.get('family');
+      if (familyParam) {
+        const family = decodeURIComponent(familyParam)
+          .split('|')[0]
+          .split(':')[0]
+          .replace(/\+/g, ' ')
+          .trim();
+        if (family) return normalizeCustomFontFamily(family);
+      }
+
+      if (isDirectFontResource(source)) {
+        const file = decodeURIComponent(parsed.pathname || '').split('/').filter(Boolean).pop() || '';
+        const base = file
+          .replace(/\.(?:woff2?|ttf|otf)$/i, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (base) return normalizeCustomFontFamily(base);
+      }
+    } catch {
+    }
+
+    return isDirectFontResource(source)
+      ? normalizeCustomFontFamily(`사용자 폰트 ${fontLibraryFonts.length + 1}`)
+      : '';
+  }
+
+  async function buildFontLibraryRecordFromSource(rawValue, preferredFamily = '') {
+    const source = normalizeCustomFontCssUrl(rawValue);
+    if (!source) throw new Error('지원하는 폰트 CSS 또는 URL을 찾지 못했음.');
+
+    let css = '';
+    let families = [];
+
+    if (/^@font-face\s*\{/i.test(source)) {
+      css = source;
+      families = extractFontFamiliesFromFontFace(css);
+    } else if (isDirectFontResource(source)) {
+      const family = inferFontLibraryFamilyFromUrl(source, preferredFamily);
+      if (!family) throw new Error('직접 폰트 파일의 이름을 정하지 못했음.');
+      css = `@font-face{font-family:"${cssString(family)}";src:url("${cssString(source)}") format("${cssString(normalizeFontFormat('', source))}");font-weight:${inferDirectFontWeightRangeFromUrl(source)};font-style:normal;font-display:swap;}`;
+      families = [family];
+    } else {
+      if (fontResolveSource === source && resolvedCustomFontCss) {
+        css = resolvedCustomFontCss;
+      }
+
+      if (!css) {
+        try {
+          const response = await fetch(source, { cache: 'force-cache', credentials: 'omit' });
+          if (response.ok) {
+            const cssText = await response.text();
+            css = normalizeFontFaceCssText(cssText, source);
+          }
+        } catch {
+        }
+      }
+
+      families = extractFontFamiliesFromFontFace(css);
+
+      if (!css || !families.length) {
+        const family = inferFontLibraryFamilyFromUrl(source, preferredFamily);
+        if (!family) throw new Error('CSS 주소에서 font-family를 확인하지 못했음. 먼저 사용자 웹폰트로 적용된 뒤 다시 등록해 주세요.');
+        css = `@import url("${cssString(source)}");`;
+        families = [family];
+      }
+    }
+
+    families = [...new Set(families.map(normalizeCustomFontFamily).filter(Boolean))];
+    if (!css || !families.length) throw new Error('font-family가 포함된 폰트를 찾지 못했음.');
+
+    const duplicate = fontLibraryFonts.find((font) => String(font.css || '').trim() === String(css).trim());
+    if (duplicate) return { ...duplicate, duplicate: true };
+
+    return {
+      id: `font_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: families[0],
+      families,
+      css,
+      source,
+      duplicate: false,
+    };
+  }
+
+  async function registerFontLibrarySource() {
+    const input = document.getElementById(ID.fontCssInput);
+    const button = document.getElementById(ID.fontLibraryAddButton);
+    if (!(input instanceof HTMLTextAreaElement)) return;
+
+    const rawValue = input.value.trim();
+    if (!rawValue) {
+      alert('사용자 웹폰트 칸에 @font-face 코드나 폰트 주소를 넣어 주세요.');
+      return;
+    }
+
+    const oldText = button instanceof HTMLButtonElement ? button.textContent : '';
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = true;
+      button.textContent = '등록 중…';
+    }
+
+    try {
+      const selectedFamily = normalizeCustomFontFamily(
+        document.getElementById(ID.fontFamilySelect)?.value || fontSettings.customFontFamily
+      );
+
+      // 입력 직후 바로 눌러도 현재 웹폰트 설정과 보관함 등록값이 어긋나지 않게 먼저 확정한다.
+      commitFontCssSource(rawValue, true);
+      const record = await buildFontLibraryRecordFromSource(rawValue, selectedFamily);
+
+      if (record.duplicate) {
+        alert(`'${record.name}' 폰트는 이미 보관함에 있음.`);
+        return;
+      }
+
+      await FontLibraryDB.put('fonts', record);
+      await refreshFontLibraryState({ alertOnError: true });
+    } catch (error) {
+      reportCrackUiError('font-library-save', error);
+      alert(error?.message || '폰트 보관함 저장에 실패했음.');
+    } finally {
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = false;
+        button.textContent = oldText || '보관함에 등록';
+      }
+    }
+  }
+
+  async function deleteFontLibraryEntry(fontId) {
+    const target = fontLibraryFonts.find((font) => font.id === fontId);
+    if (!target) return;
+    if (!window.confirm(`'${target.name}' 폰트를 보관함에서 삭제할까요?`)) return;
+
+    const removedFamilies = new Set((target.families || [target.name]).map((family) => normalizeCustomFontFamily(family)));
+
+    try {
+      await FontLibraryDB.delete('fonts', target.id);
+      const roomConfigs = await FontLibraryDB.getAll('roomConfigs');
+      await Promise.all(roomConfigs.map(async (rawConfig) => {
+        const config = normalizeFontRoomConfig(rawConfig, rawConfig?.roomId || 'default_global_room');
+        let changed = false;
+        ['body', 'code', 'title'].forEach((key) => {
+          if (removedFamilies.has(config[key])) {
+            config[key] = '';
+            changed = true;
+          }
+        });
+        if (changed) await FontLibraryDB.put('roomConfigs', config);
+      }));
+      await refreshFontLibraryState({ alertOnError: true });
+    } catch (error) {
+      reportCrackUiError('font-library-delete', error);
+      alert('폰트 삭제에 실패했음.');
+    }
+  }
+
+  async function saveCurrentRoomFontConfig() {
+    const panel = document.getElementById(ID.panel);
+    if (!panel) return;
+
+    const roomId = getCurrentFontRoomId();
+    const body = panel.querySelector(`#${ID.fontRoomBodySelect}`)?.value || '';
+    const code = panel.querySelector(`#${ID.fontRoomCodeSelect}`)?.value || '';
+    const title = panel.querySelector(`#${ID.fontRoomTitleSelect}`)?.value || '';
+    const config = normalizeFontRoomConfig({ roomId, body, code, title }, roomId);
+
+    try {
+      await FontLibraryDB.put('roomConfigs', config);
+      fontRoomConfig = config;
+      applyRoomFontConfig(config);
+      syncFontLibraryUi();
+    } catch (error) {
+      reportCrackUiError('font-room-save', error);
+      alert('이 방의 폰트 설정 저장에 실패했음.');
+    }
+  }
+
+
   function updateThemeUi() {
     document.querySelectorAll('[data-crack-ui-theme-mode]').forEach((button) => {
       const selected = normalizeThemeMode(button.dataset.crackUiThemeMode) === themeMode;
@@ -3486,64 +5727,80 @@
     bindMobileHandle(handle);
   }
 
-  function setPanelSectionOpen(sectionName, isOpen) {
-    const section = document.querySelector(`[data-crack-ui-section="${sectionName}"]`);
-    if (!section) return;
+  const PANEL_SECTION_LABEL = Object.freeze({
+    chat: '채팅',
+    font: '폰트',
+    display: '화면',
+  });
 
-    const button = section.querySelector(`[data-crack-ui-section-toggle="${sectionName}"]`);
-    const body = section.querySelector(`[data-crack-ui-section-body="${sectionName}"]`);
+  function setActivePanelSection(sectionName, options = {}) {
+    if (!Object.prototype.hasOwnProperty.call(PANEL_SECTION_LABEL, sectionName)) return;
 
-    section.dataset.open = isOpen ? '1' : '0';
-    if (button) {
-      button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    activePanelSection = sectionName;
+    if (options.persist !== false) {
+      writeStorage(LS.panelActiveSection, activePanelSection);
     }
 
-    if (body) {
-      body.hidden = !isOpen;
+    const panel = document.getElementById(ID.panel);
+    if (!panel) return;
+
+    panel.querySelectorAll('[data-crack-ui-section-nav]').forEach((button) => {
+      const active = button.dataset.crackUiSectionNav === activePanelSection;
+      button.dataset.active = active ? '1' : '0';
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      button.tabIndex = active ? 0 : -1;
+    });
+
+    panel.querySelectorAll('[data-crack-ui-section]').forEach((section) => {
+      section.hidden = section.dataset.crackUiSection !== activePanelSection;
+    });
+
+    if (options.resetScroll !== false) {
+      const scroller = panel.querySelector('.crack-ui-panel-body');
+      if (scroller) scroller.scrollTop = 0;
     }
   }
 
   function syncPanelSections() {
-    setPanelSectionOpen('display', displaySectionOpen);
-    setPanelSectionOpen('theme', themeSectionOpen);
-    setPanelSectionOpen('chat', chatSectionOpen);
-  }
-
-  function setSavedPanelSectionOpen(sectionName, isOpen) {
-    if (sectionName === 'display') {
-      displaySectionOpen = isOpen;
-      writeStorage(LS.sectionDisplayOpen, isOpen ? '1' : '0');
-    } else if (sectionName === 'theme') {
-      themeSectionOpen = isOpen;
-      writeStorage(LS.sectionThemeOpen, isOpen ? '1' : '0');
-    } else if (sectionName === 'chat') {
-      chatSectionOpen = isOpen;
-      writeStorage(LS.sectionChatOpen, isOpen ? '1' : '0');
-    }
-
-    setPanelSectionOpen(sectionName, isOpen);
-    if (panelOpen) {
-      requestAnimationFrame(() => {
-        const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
-        positionPanel(anchor);
-      });
-    }
+    setActivePanelSection(activePanelSection, { persist: false, resetScroll: false });
   }
 
   function bindPanelSections(panel) {
-    panel.querySelectorAll('[data-crack-ui-section-toggle]').forEach((button) => {
+    const sectionOrder = Object.keys(PANEL_SECTION_LABEL);
+    const buttons = [...panel.querySelectorAll('[data-crack-ui-section-nav]')];
+
+    buttons.forEach((button) => {
       if (button.dataset.crackUiBound === '1') return;
       button.dataset.crackUiBound = '1';
 
       button.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        setActivePanelSection(button.dataset.crackUiSectionNav);
+      });
 
-        const sectionName = button.dataset.crackUiSectionToggle;
-        const section = panel.querySelector(`[data-crack-ui-section="${sectionName}"]`);
-        const isOpen = section?.dataset.open !== '0';
+      button.addEventListener('keydown', (e) => {
+        const currentIndex = sectionOrder.indexOf(button.dataset.crackUiSectionNav);
+        if (currentIndex < 0) return;
 
-        setSavedPanelSectionOpen(sectionName, !isOpen);
+        let nextIndex = -1;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+          nextIndex = (currentIndex + 1) % sectionOrder.length;
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          nextIndex = (currentIndex - 1 + sectionOrder.length) % sectionOrder.length;
+        } else if (e.key === 'Home') {
+          nextIndex = 0;
+        } else if (e.key === 'End') {
+          nextIndex = sectionOrder.length - 1;
+        }
+
+        if (nextIndex < 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const nextSection = sectionOrder[nextIndex];
+        setActivePanelSection(nextSection);
+        panel.querySelector(`[data-crack-ui-section-nav="${nextSection}"]`)?.focus?.();
       });
     });
   }
@@ -3622,10 +5879,19 @@
   }
 
   function ensurePanel() {
+    let panelBackdrop = document.getElementById(ID.panelBackdrop);
+    if (!panelBackdrop) {
+      panelBackdrop = document.createElement('div');
+      panelBackdrop.id = ID.panelBackdrop;
+      panelBackdrop.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(panelBackdrop);
+    }
+
     if (document.getElementById(ID.panel)) return;
 
     const panel = document.createElement('div');
     panel.id = ID.panel;
+    panel.dataset.crackUiLayout = 'workspace-v4';
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Crack UI Plus 설정');
 
@@ -3638,55 +5904,44 @@
         <button type="button" class="crack-ui-panel-close" aria-label="닫기">×</button>
       </div>
 
-      <div class="crack-ui-panel-body">
-        <div class="crack-ui-section" data-crack-ui-section="theme" data-open="${themeSectionOpen ? '1' : '0'}">
-          <button
-            type="button"
-            class="crack-ui-section-head"
-            data-crack-ui-section-toggle="theme"
-            aria-expanded="${themeSectionOpen ? 'true' : 'false'}"
-          >
-            <span>
-              <span class="crack-ui-section-title">테마</span>
-            </span>
-            <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
-          </button>
+      <div class="crack-ui-panel-shell">
+        <div class="crack-ui-panel-theme-strip" aria-label="빠른 테마 설정">
+          <span class="crack-ui-theme-strip-title">테마</span>
 
-          <div class="crack-ui-section-body" data-crack-ui-section-body="theme">
-            <div class="crack-ui-choice-group">
-              <div class="crack-ui-choice-head">
-                <span class="crack-ui-choice-title">색상</span>
-              </div>
-              <div class="crack-ui-choice-list">
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="light" data-selected="${themeMode === 'light' ? '1' : '0'}" aria-checked="${themeMode === 'light' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">라이트 모드</span>
-                </button>
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="dark" data-selected="${themeMode === 'dark' ? '1' : '0'}" aria-checked="${themeMode === 'dark' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">다크 모드</span>
-                </button>
-              </div>
+          <div class="crack-ui-theme-strip-group">
+            <span class="crack-ui-theme-strip-label">색상</span>
+            <div class="crack-ui-theme-strip-options">
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="light" data-selected="${themeMode === 'light' ? '1' : '0'}" aria-checked="${themeMode === 'light' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">라이트 모드</span>
+              </button>
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="dark" data-selected="${themeMode === 'dark' ? '1' : '0'}" aria-checked="${themeMode === 'dark' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">다크 모드</span>
+              </button>
             </div>
+          </div>
 
-            <div class="crack-ui-choice-group">
-              <div class="crack-ui-choice-head">
-                <span class="crack-ui-choice-title">작품</span>
-              </div>
-              <div class="crack-ui-choice-list">
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="novel" data-selected="${episodeUiMode === 'novel' ? '1' : '0'}" aria-checked="${episodeUiMode === 'novel' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">소설형 UI</span>
-                </button>
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="chat" data-selected="${episodeUiMode === 'chat' ? '1' : '0'}" aria-checked="${episodeUiMode === 'chat' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">채팅형 UI</span>
-                </button>
-              </div>
+          <div class="crack-ui-theme-strip-group">
+            <span class="crack-ui-theme-strip-label">작품</span>
+            <div class="crack-ui-theme-strip-options">
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="novel" data-selected="${episodeUiMode === 'novel' ? '1' : '0'}" aria-checked="${episodeUiMode === 'novel' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">소설형 UI</span>
+              </button>
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="chat" data-selected="${episodeUiMode === 'chat' ? '1' : '0'}" aria-checked="${episodeUiMode === 'chat' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">채팅형 UI</span>
+              </button>
             </div>
           </div>
         </div>
 
+        <div class="crack-ui-panel-workspace">
+          <nav class="crack-ui-panel-nav" role="tablist" aria-label="설정 카테고리">
+            <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="chat" data-active="${activePanelSection === 'chat' ? '1' : '0'}" aria-selected="${activePanelSection === 'chat' ? 'true' : 'false'}">채팅</button>
+            <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="font" data-active="${activePanelSection === 'font' ? '1' : '0'}" aria-selected="${activePanelSection === 'font' ? 'true' : 'false'}">폰트</button>
+            <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="display" data-active="${activePanelSection === 'display' ? '1' : '0'}" aria-selected="${activePanelSection === 'display' ? 'true' : 'false'}">화면</button>
+          </nav>
+
+          <main class="crack-ui-panel-content">
+            <div class="crack-ui-panel-body">
         <div class="crack-ui-section" data-crack-ui-section="chat" data-open="${chatSectionOpen ? '1' : '0'}">
           <button
             type="button"
@@ -3700,8 +5955,8 @@
             <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
           </button>
 
-          <div class="crack-ui-section-body" data-crack-ui-section-body="chat">
-            <div class="crack-ui-range-row" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
+          <div class="crack-ui-section-body crack-ui-chat-layout-grid" data-crack-ui-section-body="chat">
+            <div class="crack-ui-range-row crack-ui-chat-layout-half" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
               <div class="crack-ui-range-head">
                 <span class="crack-ui-row-name">대화창 폭 조절</span>
                 <span id="${ID.chatWidthValue}" class="crack-ui-range-value">${formatChatWidthDisplay(chatWidthPercent)}</span>
@@ -3718,7 +5973,7 @@
               >
             </div>
 
-            <div class="crack-ui-range-row">
+            <div class="crack-ui-range-row crack-ui-chat-layout-half">
               <div class="crack-ui-range-head">
                 <span class="crack-ui-row-name">이미지 사이즈 조절</span>
                 <span id="${ID.imageValue}" class="crack-ui-range-value">${formatImageSizeDisplay(imageSize)}</span>
@@ -3736,7 +5991,7 @@
               >
             </div>
 
-            <div class="crack-ui-model-settings-card">
+            <div class="crack-ui-model-settings-card crack-ui-chat-layout-full">
               <label class="crack-ui-row crack-ui-model-toggle-row">
                 <span class="crack-ui-row-text">
                   <span class="crack-ui-row-name">입력창 모델 변경 버튼</span>
@@ -3775,7 +6030,7 @@
               </div>
             </div>
 
-            <label class="crack-ui-row crack-ui-empty-send-guard-row">
+            <label class="crack-ui-row crack-ui-empty-send-guard-row crack-ui-chat-layout-half">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">스토리 자동 재생 끄기</span>
                 <span class="crack-ui-row-desc">입력창이 비어 있으면 전송을 막음</span>
@@ -3787,7 +6042,21 @@
               </span>
             </label>
 
-            <label class="crack-ui-row">
+            <label class="crack-ui-row crack-ui-chat-layout-half">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">상황 이미지 끄기</span>
+                <span class="crack-ui-row-desc">
+                  세이프티 작품 전용
+                </span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleHideSituationImage}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅방 설정 자동 숨김</span>
               </span>
@@ -3798,7 +6067,7 @@
               </span>
             </label>
 
-            <label class="crack-ui-row">
+            <label class="crack-ui-row crack-ui-chat-layout-half">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">스탯창 숨김</span>
               </span>
@@ -3809,7 +6078,7 @@
               </span>
             </label>
 
-            <label class="crack-ui-row">
+            <label class="crack-ui-row crack-ui-chat-layout-full">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">줄바꿈 최적화</span>
                 <span class="crack-ui-row-desc">
@@ -3823,19 +6092,105 @@
               </span>
             </label>
 
-            <label class="crack-ui-row">
-              <span class="crack-ui-row-text">
-                <span class="crack-ui-row-name">상황 이미지 끄기</span>
-                <span class="crack-ui-row-desc">
-                  세이프티 작품 전용
-                </span>
-              </span>
 
-              <span>
-                <input id="${ID.toggleHideSituationImage}" class="crack-ui-toggle" type="checkbox">
-                <span class="crack-ui-switch" aria-hidden="true"></span>
-              </span>
-            </label>
+          </div>
+        </div>
+
+        <div class="crack-ui-section" data-crack-ui-section="font" data-open="1">
+          <button
+            type="button"
+            class="crack-ui-section-head"
+            data-crack-ui-section-toggle="font"
+            aria-expanded="true"
+          >
+            <span><span class="crack-ui-section-title">폰트</span></span>
+            <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
+          </button>
+
+          <div class="crack-ui-section-body" data-crack-ui-section-body="font">
+            <div class="crack-ui-font-source-card crack-ui-font-room-card">
+              <div class="crack-ui-font-source-head">
+                <span class="crack-ui-row-name">이 방 전용 폰트</span>
+                <output id="${ID.fontRoomStatus}" class="crack-ui-font-room-status">불러오는 중…</output>
+              </div>
+
+              <div class="crack-ui-font-room-grid">
+                <label class="crack-ui-font-room-field">
+                  <span>본문</span>
+                  <select id="${ID.fontRoomBodySelect}"><option value="">전역 설정 따르기</option></select>
+                </label>
+                <label class="crack-ui-font-room-field">
+                  <span>코드블록</span>
+                  <select id="${ID.fontRoomCodeSelect}"><option value="">전역 설정 따르기</option></select>
+                </label>
+                <label class="crack-ui-font-room-field">
+                  <span>스토리명</span>
+                  <select id="${ID.fontRoomTitleSelect}"><option value="">전역 설정 따르기</option></select>
+                </label>
+              </div>
+              <span class="crack-ui-font-help">Crack 제공 글꼴과 보관함 폰트를 현재 방의 본문·코드블록·스토리명에 각각 지정할 수 있음. 비워 두면 전역 설정을 따름.</span>
+            </div>
+
+            <div class="crack-ui-font-layout-grid">
+              ${renderFontRangeRowHtml('textScale', '글씨 크기', ID.fontTextScaleSlider, ID.fontTextScaleValue, 0.70, 1.60, 0.01)}
+              ${renderFontRangeRowHtml('codeTextScale', '코드블록 글씨 크기', ID.fontCodeScaleSlider, ID.fontCodeScaleValue, 0.70, 1.60, 0.01)}
+              ${renderFontRangeRowHtml('fontWeight', '폰트 두께', ID.fontWeightSlider, ID.fontWeightValue, 300, 900, 100)}
+              ${renderFontRangeRowHtml('lineHeight', '행간', ID.fontLineHeightSlider, ID.fontLineHeightValue, 1.35, 2.10, 0.01)}
+              ${renderFontRangeRowHtml('letterSpacing', '자간', ID.fontLetterSpacingSlider, ID.fontLetterSpacingValue, -0.03, 0.08, 0.01)}
+              ${renderFontRangeRowHtml('paragraphSpacing', '문단 간격', ID.fontParagraphSpacingSlider, ID.fontParagraphSpacingValue, 0, 1.60, 0.01)}
+            </div>
+
+            <div class="crack-ui-font-reset-row">
+              <button type="button" id="${ID.fontResetButton}">폰트 설정 초기화</button>
+            </div>
+
+            <div class="crack-ui-font-source-card crack-ui-font-library-card">
+              <div class="crack-ui-font-source-head">
+                <span class="crack-ui-row-name">폰트 보관함</span>
+                <output id="${ID.fontLibraryCount}" class="crack-ui-font-source-current">0개</output>
+              </div>
+
+              <div id="${ID.fontLibraryList}" class="crack-ui-font-library-list">
+                <span class="crack-ui-font-library-empty">불러오는 중…</span>
+              </div>
+              <span class="crack-ui-font-help">아래 사용자 웹폰트 칸에 주소나 @font-face를 넣고 ‘보관함에 등록’을 누르면 여기에 저장됨. 저장한 폰트는 위의 방 전용 폰트에서 선택할 수 있음.</span>
+            </div>
+
+            <div class="crack-ui-font-source-card crack-ui-font-custom-register-card">
+              <div class="crack-ui-font-source-head">
+                <span class="crack-ui-row-name">사용자 웹폰트 등록</span>
+                <div class="crack-ui-font-source-actions">
+                  <output id="${ID.fontFamilyValue}" class="crack-ui-font-source-current">${escapeFontHtmlText(getEffectiveCustomFontFamily(fontSettings) || '미설정')}</output>
+                  <button
+                    type="button"
+                    id="${ID.fontCustomModeButton}"
+                    data-active="${fontSettings.fontMode === 'custom' ? '1' : '0'}"
+                    aria-pressed="${fontSettings.fontMode === 'custom' ? 'true' : 'false'}"
+                    ${fontSettings.customFontCssUrl || getEffectiveCustomFontFamily(fontSettings) ? '' : 'disabled'}
+                  >${fontSettings.fontMode === 'custom' ? '사용 중' : '사용'}</button>
+                  <button type="button" id="${ID.fontLibraryAddButton}">보관함에 등록</button>
+                </div>
+              </div>
+
+              <div class="crack-ui-font-fields">
+                <label class="crack-ui-font-field">
+                  <span>폰트 CSS / URL</span>
+                  <textarea
+                    id="${ID.fontCssInput}"
+                    rows="1"
+                    spellcheck="false"
+                    placeholder="@font-face / .woff2 주소 / CSS 주소 / @import"
+                  >${escapeFontHtmlText(fontSettings.customFontCssUrl)}</textarea>
+                </label>
+
+                <label class="crack-ui-font-field">
+                  <span>폰트 종류</span>
+                  <select id="${ID.fontFamilySelect}">${renderFontFamilyOptionsHtml(fontSettings)}</select>
+                </label>
+              </div>
+
+              <span class="crack-ui-font-help">붙여넣은 폰트는 즉시 전역 웹폰트로 적용됨. 같은 입력값을 그대로 보관함에 등록할 수 있으며, CSS 주소와 직접 폰트 파일 주소도 지원함.</span>
+            </div>
           </div>
         </div>
 
@@ -3886,6 +6241,9 @@
               </span>
             </label>
           </div>
+        </div>
+            </div>
+          </main>
         </div>
       </div>
     `;
@@ -3991,8 +6349,87 @@
       chatWidthSlider.addEventListener('blur', stopChatWidthDrag);
     }
 
+    const fontRangeBindings = {
+      [ID.fontTextScaleSlider]: 'textScale',
+      [ID.fontCodeScaleSlider]: 'codeTextScale',
+      [ID.fontWeightSlider]: 'fontWeight',
+      [ID.fontLineHeightSlider]: 'lineHeight',
+      [ID.fontLetterSpacingSlider]: 'letterSpacing',
+      [ID.fontParagraphSpacingSlider]: 'paragraphSpacing',
+    };
+
+    Object.entries(fontRangeBindings).forEach(([id, key]) => {
+      bindRangeInput(panel, id, (value) => setFontNumericSetting(key, value), flushFontSettingsSave);
+    });
+
+    panel.querySelectorAll('[data-crack-ui-native-font]').forEach((button) => {
+      if (!(button instanceof HTMLButtonElement)) return;
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        commitCrackNativeFont(button.dataset.crackUiNativeFont);
+      });
+    });
+
+    panel.querySelector(`#${ID.fontFollowCrackButton}`)?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      followCrackFontSetting();
+    });
+
+    panel.querySelector(`#${ID.fontCustomModeButton}`)?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      useCustomFontSetting();
+    });
+
+    const fontCssInput = panel.querySelector(`#${ID.fontCssInput}`);
+    if (fontCssInput instanceof HTMLTextAreaElement) {
+      fontCssInput.addEventListener('input', () => commitFontCssSource(fontCssInput.value, false));
+      fontCssInput.addEventListener('change', () => commitFontCssSource(fontCssInput.value, true));
+      fontCssInput.addEventListener('blur', () => commitFontCssSource(fontCssInput.value, true));
+      fontCssInput.addEventListener('paste', () => {
+        setTimeout(() => commitFontCssSource(fontCssInput.value, true), 80);
+        setTimeout(() => commitFontCssSource(fontCssInput.value, true), 220);
+      });
+    }
+
+    const fontFamilySelect = panel.querySelector(`#${ID.fontFamilySelect}`);
+    if (fontFamilySelect instanceof HTMLSelectElement) {
+      fontFamilySelect.addEventListener('change', () => commitFontFamily(fontFamilySelect.value));
+    }
+
+    panel.querySelector(`#${ID.fontResetButton}`)?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      resetFontSettings();
+    });
+
+
+    panel.querySelector(`#${ID.fontLibraryAddButton}`)?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      registerFontLibrarySource();
+    });
+
+    panel.querySelector(`#${ID.fontLibraryList}`)?.addEventListener('click', (event) => {
+      const button = event.target?.closest?.('[data-crack-ui-font-delete]');
+      if (!(button instanceof HTMLButtonElement)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      deleteFontLibraryEntry(button.dataset.crackUiFontDelete || '');
+    });
+
+    [ID.fontRoomBodySelect, ID.fontRoomCodeSelect, ID.fontRoomTitleSelect].forEach((id) => {
+      const select = panel.querySelector(`#${id}`);
+      if (!(select instanceof HTMLSelectElement)) return;
+      select.addEventListener('change', () => saveCurrentRoomFontConfig());
+    });
+
+
     updateImageSizeUi();
     updateChatWidthUi();
+    syncFontSettingsUi();
   }
 
   function positionPanel(anchor) {
@@ -4042,6 +6479,8 @@
     updateThemeUi();
     updateImageSizeUi();
     updateChatWidthUi();
+    syncFontSettingsUi();
+    syncFontRoomContext(true);
     applyState();
     requestAnimationFrame(() => {
       positionPanel(anchor);
@@ -4059,6 +6498,7 @@
     document.documentElement.classList.remove(CLS.widthDragging);
     flushImageSizeSave();
     flushChatWidthSave();
+    flushFontSettingsSave();
 
     if (isTouchLikeDevice() && autoHideHeader) {
       scheduleMobileHide(1200);
@@ -4118,6 +6558,7 @@
     applyEmptySendGuardState();
     applyThemeModeHint();
     applyChatWidth();
+    applyFontSettings();
     updateReveal();
   }
 
@@ -7089,6 +9530,7 @@ function markMobileChatListOpenState() {
     window.addEventListener('pagehide', () => {
       flushImageSizeSave();
       flushChatWidthSave();
+      flushFontSettingsSave();
     });
   }
 
@@ -7128,6 +9570,13 @@ function markMobileChatListOpenState() {
         hideSituationImage,
         situationImageMarkScheduled: !!situationImageMarkTimer || !!situationImageMarkRaf,
         chatWidthPercent,
+        fontSettings: { ...fontSettings },
+        fontFamily: getEffectiveCustomFontFamily(fontSettings) || 'default',
+        fontResolveStatus,
+        fontLibraryCount: fontLibraryFonts.length,
+        fontLibraryLoaded,
+        fontRoomId: getCurrentFontRoomId(),
+        fontRoomConfig: fontRoomConfig ? { ...fontRoomConfig } : null,
         themeMode,
         episodeUiMode,
         bottomModelPicker,
@@ -7359,6 +9808,7 @@ function markMobileChatListOpenState() {
 
     applyImageSize();
     applyState();
+    syncFontRoomContext();
     scheduleAnimatedThumbState();
   }
 
