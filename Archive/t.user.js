@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.1.13
+// @version      2.2.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.1.13';
+  const CRACK_UI_VERSION = '2.2.1';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2323,43 +2323,7 @@
   }
 
   function dispatchSyntheticClick(target) {
-    if (!target) return false;
-
-    const pointerOptions = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      pointerId: 1,
-      pointerType: 'mouse',
-      isPrimary: true,
-      button: 0,
-      buttons: 1,
-    };
-    const mouseOptions = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      button: 0,
-      buttons: 1,
-    };
-
-    try {
-      target.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
-      target.dispatchEvent(new MouseEvent('mousedown', mouseOptions));
-      target.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
-      target.dispatchEvent(new MouseEvent('mouseup', { ...mouseOptions, buttons: 0 }));
-      target.dispatchEvent(new MouseEvent('click', { ...mouseOptions, buttons: 0 }));
-      if (typeof target.click === 'function') target.click();
-      return true;
-    } catch {
-      try {
-        target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        if (typeof target.click === 'function') target.click();
-        return true;
-      } catch {
-        return false;
-      }
-    }
+    return !!dispatchSingleClickOnly(target, 'synthetic-click');
   }
 
   function getActivationPoint(target) {
@@ -2453,9 +2417,7 @@
       ? row
       : row.querySelector('[role="checkbox"]');
 
-    const clickedControl = dispatchSyntheticClick(control);
-    const clickedRow = dispatchSyntheticClick(row);
-    return clickedControl || clickedRow;
+    return dispatchSyntheticClick(control || row);
   }
 
   function applyOriginalSettingChoice(mode, labels, pendingKey) {
@@ -2468,12 +2430,16 @@
       return true;
     }
 
+    writeStorage(pendingKey, mode);
+
     if (clickOriginalSettingRow(label)) {
-      removeStorage(pendingKey);
+      setTimeout(() => {
+        const checkedAfterClick = isOriginalSettingChecked(label);
+        if (checkedAfterClick === true) removeStorage(pendingKey);
+        else if (checkedAfterClick === false) writeStorage(pendingKey, mode);
+      }, 180);
       return true;
     }
-
-    writeStorage(pendingKey, mode);
     return false;
   }
 
@@ -2494,7 +2460,7 @@
         window.location.reload();
       } catch {
         try {
-          window.location.href = window.location.href;
+          window.location.replace(window.location.href);
         } catch {
         }
       }
@@ -2639,6 +2605,7 @@
       : 'access_token 쿠키를 못 찾음';
     const message = `Crack UI Plus: ${label} 저장 실패\n${describeEpisodeUiError(error)}\n${tokenHint}\n\n원본 설정에서는 되는 상태면 이 문구를 그대로 보내줘.`;
     writeStorage(LS.lastEpisodeUiError, message);
+    reportCrackUiError('episode-ui-save', error);
     console.warn('[Crack UI Plus] episode UI setting save failed', error);
     try {
       window.alert(message);
@@ -4403,6 +4370,42 @@
     if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
   }
 
+  const EMPTY_SEND_ABSENT_ATTRIBUTE = '__crack_ui_absent__';
+
+  function preserveEmptySendButtonState(sendButton) {
+    if (!sendButton) return;
+
+    if (!Object.prototype.hasOwnProperty.call(sendButton.dataset, 'crackUiOriginalTitle')) {
+      sendButton.dataset.crackUiOriginalTitle = sendButton.hasAttribute('title')
+        ? sendButton.getAttribute('title') || ''
+        : EMPTY_SEND_ABSENT_ATTRIBUTE;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(sendButton.dataset, 'crackUiOriginalAriaDisabled')) {
+      sendButton.dataset.crackUiOriginalAriaDisabled = sendButton.hasAttribute('aria-disabled')
+        ? sendButton.getAttribute('aria-disabled') || ''
+        : EMPTY_SEND_ABSENT_ATTRIBUTE;
+    }
+  }
+
+  function restoreEmptySendButtonState(sendButton) {
+    if (!sendButton) return;
+
+    const originalTitle = sendButton.dataset.crackUiOriginalTitle;
+    if (originalTitle != null) {
+      if (originalTitle === EMPTY_SEND_ABSENT_ATTRIBUTE) sendButton.removeAttribute('title');
+      else sendButton.setAttribute('title', originalTitle);
+      delete sendButton.dataset.crackUiOriginalTitle;
+    }
+
+    const originalAriaDisabled = sendButton.dataset.crackUiOriginalAriaDisabled;
+    if (originalAriaDisabled != null) {
+      if (originalAriaDisabled === EMPTY_SEND_ABSENT_ATTRIBUTE) sendButton.removeAttribute('aria-disabled');
+      else sendButton.setAttribute('aria-disabled', originalAriaDisabled);
+      delete sendButton.dataset.crackUiOriginalAriaDisabled;
+    }
+  }
+
   function guardEmptyComposerSendEvent(e) {
     if (!emptySendGuard || !crackUiIsChatRoute()) return;
     if (!isEmptySendGuardEventTarget(e.target)) return;
@@ -4410,6 +4413,7 @@
 
     const sendButton = DOM.sendButton();
     if (sendButton) {
+      preserveEmptySendButtonState(sendButton);
       sendButton.classList.add('crack-ui-empty-send-blocked');
       sendButton.dataset.crackUiEmptySendBlocked = '1';
       sendButton.title = '입력창이 비어 있어 자동 재생 전송을 막음';
@@ -4453,18 +4457,11 @@
     sendButton.dataset.crackUiEmptySendBlocked = blocked ? '1' : '0';
 
     if (blocked) {
-      if (!sendButton.dataset.crackUiOriginalTitle) {
-        sendButton.dataset.crackUiOriginalTitle = sendButton.getAttribute('title') || '';
-      }
+      preserveEmptySendButtonState(sendButton);
       sendButton.title = '입력창이 비어 있어 자동 재생 전송을 막음';
       sendButton.setAttribute('aria-disabled', 'true');
     } else {
-      const originalTitle = sendButton.dataset.crackUiOriginalTitle;
-      if (originalTitle != null) {
-        if (originalTitle) sendButton.title = originalTitle;
-        else sendButton.removeAttribute('title');
-      }
-      sendButton.removeAttribute('aria-disabled');
+      restoreEmptySendButtonState(sendButton);
     }
   }
 
@@ -5289,9 +5286,18 @@
     if (!isKnownChatModelName(targetName)) return false;
 
     const headerRevealSnapshot = takeHeaderRevealSnapshotForModelPicker();
+    const syncWaitTimeout = 6000;
 
-    while (syncingOfficialModelInfo) {
+    for (let waited = 0; waited < syncWaitTimeout; waited += 30) {
+      if (!syncingOfficialModelInfo) break;
       await modelSleep(30);
+    }
+
+    if (syncingOfficialModelInfo) {
+      const error = new Error(`official model sync wait timed out after ${syncWaitTimeout}ms`);
+      reportCrackUiError('model-select-wait', error);
+      restoreHeaderRevealAfterInvisibleModelSelect(headerRevealSnapshot);
+      return false;
     }
 
     const officialBtn = DOM.modelButton();
