@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.13
+// @version      2.4.14
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.13';
+  const CRACK_UI_VERSION = '2.4.14';
 
   function getCrackUiPublicWindow() {
     try {
@@ -419,6 +419,7 @@
   let cachedChatListPanel = null;
   let cachedChatListToggle = null;
   let cachedMobileChatListToggle = null;
+  let mobileChatListCleanupPending = true;
   let cachedRoomPanel = null;
   let cachedRoomPanelToggle = null;
   let situationImageMarkTimer = null;
@@ -3398,6 +3399,11 @@
       result = await requestEpisodeUiModeWithFetch(payload);
     } catch (error) {
       errors.push(error);
+
+      // A newer selection supersedes this request. Do not start a second network
+      // fallback for a value that is no longer current.
+      if (requestSeq !== episodeUiSaveRequestSeq) return null;
+
       try {
         result = await requestEpisodeUiModeWithGm(payload);
       } catch (gmError) {
@@ -5095,6 +5101,8 @@
       hideSituationImage = checked;
       writeStorage(LS.hideSituationImage, hideSituationImage ? '1' : '0');
       applyState();
+      // User activation should reflect immediately; routine init scans stay throttled.
+      scheduleSituationImageButtonMark({ immediate: true });
     });
     bindCheckbox(panel, ID.toggleRoomMenuHandle, roomMenuHandle, (checked) => {
       roomMenuHandle = checked;
@@ -5226,7 +5234,11 @@
   function applyState() {
     updateDeviceViewportClasses();
     if (hideStatBar) markStatBars();
-    scheduleSituationImageButtonMark({ immediate: hideSituationImage });
+    // init can run repeatedly while the chat DOM is streaming. Keep later full
+    // button scans on the existing throttle, while preserving an immediate first scan.
+    scheduleSituationImageButtonMark({
+      immediate: hideSituationImage && situationImageLastScanAt === 0,
+    });
     document.documentElement.classList.toggle(CLS.autoHide, autoHideHeader);
     document.documentElement.classList.toggle(CLS.lineBreak, lineBreakOptimize);
     document.documentElement.classList.toggle(CLS.pauseAnimatedThumbs, pauseAnimatedThumbs);
@@ -7917,13 +7929,21 @@
   function updateFullscreenButtonUi() {
     const button = document.getElementById(ID.fullscreenButton);
     if (!button) return;
+
     const active = !!getFullscreenElement();
+    const nextState = active ? '1' : '0';
     const label = active ? '전체화면 종료' : '전체화면 시작';
     const span = button.querySelector('span');
-    if (span) span.innerHTML = getFullscreenButtonIcon(active);
-    button.dataset.active = active ? '1' : '0';
-    button.setAttribute('aria-label', label);
-    button.setAttribute('title', label);
+    const stateChanged = button.dataset.active !== nextState;
+
+    // Replacing innerHTML creates a childList mutation. Doing that on every init
+    // feeds the global observer and can keep scheduleInit running indefinitely.
+    if (span && (stateChanged || !span.firstElementChild)) {
+      span.innerHTML = getFullscreenButtonIcon(active);
+    }
+    if (stateChanged) button.dataset.active = nextState;
+    if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
+    if (button.getAttribute('title') !== label) button.setAttribute('title', label);
   }
 
   async function toggleFullscreen() {
@@ -8206,6 +8226,7 @@
         panel.style.setProperty('max-height', '100dvh', 'important');
       }
 
+      mobileChatListCleanupPending = true;
       document.documentElement.classList.add(CLS.chatListMobileHeaderGapCompensated);
       return true;
     } catch {
@@ -8226,21 +8247,36 @@
 
 
   function markMobileChatListOpenState() {
-    if (!isPhoneLikeViewport()) {
-      document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
+    const root = document.documentElement;
+
+    // The proxy feature is the only reason to inspect the native mobile list dialog.
+    // When it is off, clear our state without repeatedly scanning every open dialog.
+    if (!chatListAutoHide || !isPhoneLikeViewport()) {
+      root.classList.remove(CLS.chatListMobilePopoverOpen);
+      root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
       return false;
     }
 
     const open = !!DOM.mobileChatListPopover();
-    document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, open);
-    if (!open) document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+    root.classList.toggle(CLS.chatListMobilePopoverOpen, open);
+    if (open) mobileChatListCleanupPending = true;
+    else root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
     return open;
   }
 
   function releaseMobileChatListPopoverForcedStyles() {
+    const root = document.documentElement;
+    const hasManagedState =
+      root.classList.contains(CLS.chatListMobilePopoverOpen) ||
+      root.classList.contains(CLS.chatListMobileHeaderGapCompensated);
+
+    // Run once at boot for legacy cleanup, and again only after this feature has
+    // actually managed a mobile popover. Avoid a full dialog/text scan every init.
+    if (!mobileChatListCleanupPending && !hasManagedState) return false;
+
     const mobilePopover = DOM.mobileChatListPopover();
-    document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, !!mobilePopover);
-    if (!mobilePopover) document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+    root.classList.toggle(CLS.chatListMobilePopoverOpen, !!mobilePopover);
+    if (!mobilePopover) root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
     // Cleanup stale markers/styles from 2.0.20~2.0.24 without changing native Crack popover layout.
     for (const panel of document.querySelectorAll('[data-crack-ui-mobile-chat-list-popover="1"], [data-crack-ui-chat-list-panel="1"][role="dialog"]')) {
       if (!(panel instanceof HTMLElement)) continue;
@@ -8261,6 +8297,9 @@
       } catch {
       }
     }
+
+    mobileChatListCleanupPending = false;
+    return true;
   }
 
   function isChatListOpen(panel = DOM.chatListPanel()) {
