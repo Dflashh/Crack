@@ -82,6 +82,7 @@
     toggleChatListAutoHide: 'crack-ui-toggle-chat-list-auto-hide',
     toggleFullscreenButton: 'crack-ui-toggle-fullscreen-button',
     fullscreenButton: 'fullscreen-toolbar-btn',
+    fullscreenNotice: 'crack-ui-fullscreen-notice',
   };
 
   const LS = {
@@ -345,6 +346,7 @@
     : 'chat';
 
   let panelOpen = false;
+  let fullscreenNoticeTimer = null;
   let pointerOnZone = false;
   let pointerOnHeader = false;
   let mobileReveal = false;
@@ -1432,6 +1434,42 @@
         margin: 0 !important;
         overflow: visible !important;
         pointer-events: none !important;
+      }
+
+      #${ID.fullscreenNotice} {
+        position: fixed !important;
+        left: 50% !important;
+        bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+        z-index: calc(var(--crack-ui-z-panel) + 20) !important;
+        width: max-content !important;
+        max-width: calc(100vw - 32px) !important;
+        box-sizing: border-box !important;
+        padding: 11px 14px !important;
+        border: 1px solid rgba(255, 255, 255, .12) !important;
+        border-radius: 14px !important;
+        background: rgba(24, 24, 27, .94) !important;
+        color: rgba(255, 255, 255, .94) !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, .28) !important;
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        line-height: 1.45 !important;
+        text-align: center !important;
+        word-break: keep-all !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+        transform: translate(-50%, 8px) !important;
+        transition: opacity 150ms ease, transform 150ms ease !important;
+      }
+
+      #${ID.fullscreenNotice}[data-open="1"] {
+        opacity: 1 !important;
+        transform: translate(-50%, 0) !important;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #${ID.fullscreenNotice} {
+          transition: none !important;
+        }
       }
 
       #${ID.bottomModelButton} {
@@ -2774,6 +2812,13 @@
   function isAndroidFirefoxBrowser() {
     const ua = String(navigator.userAgent || '');
     return /Android/i.test(ua) && /Firefox\//i.test(ua);
+  }
+
+  function isIphoneSafariBrowser() {
+    const ua = String(navigator.userAgent || '');
+    const iphone = /iPhone|iPod/i.test(ua);
+    const safari = /Safari\//i.test(ua) && !/(CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo)/i.test(ua);
+    return iphone && safari;
   }
 
   function getCrackUiViewportWidth() {
@@ -7290,18 +7335,62 @@
     button.setAttribute('title', label);
   }
 
+  function showFullscreenNotice(message) {
+    ready(() => {
+      let notice = document.getElementById(ID.fullscreenNotice);
+      if (!notice) {
+        notice = document.createElement('div');
+        notice.id = ID.fullscreenNotice;
+        notice.setAttribute('role', 'status');
+        notice.setAttribute('aria-live', 'polite');
+        document.body.appendChild(notice);
+      }
+
+      notice.textContent = String(message || '');
+      notice.dataset.open = '1';
+
+      clearTimeout(fullscreenNoticeTimer);
+      fullscreenNoticeTimer = setTimeout(() => {
+        notice.dataset.open = '0';
+      }, 3600);
+    });
+  }
+
   async function toggleFullscreen() {
     try {
       const active = getFullscreenElement();
       if (active) {
-        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen;
         if (typeof exit !== 'function') throw new Error('이 브라우저는 전체화면 종료를 지원하지 않습니다.');
         await exit.call(document);
       } else {
         const root = document.documentElement;
-        const request = root.requestFullscreen || root.webkitRequestFullscreen;
-        if (typeof request !== 'function') throw new Error('이 브라우저는 전체화면을 지원하지 않습니다.');
-        await request.call(root);
+        const request = root.requestFullscreen || root.webkitRequestFullscreen || root.webkitRequestFullScreen;
+
+        if (typeof request !== 'function') {
+          const error = new Error('이 브라우저는 페이지 전체화면을 지원하지 않습니다.');
+          reportCrackUiError('fullscreen-toggle', error);
+          if (isIphoneSafariBrowser()) {
+            showFullscreenNotice('iPhone Safari에서는 페이지 메뉴 → 도구 막대 가리기를 눌러주세요.');
+            return;
+          }
+          throw error;
+        }
+
+        try {
+          if (request === root.requestFullscreen) {
+            await request.call(root, { navigationUI: 'hide' });
+          } else {
+            await request.call(root);
+          }
+        } catch (error) {
+          if (isIphoneSafariBrowser()) {
+            reportCrackUiError('fullscreen-toggle', error);
+            showFullscreenNotice('iPhone Safari에서는 페이지 메뉴 → 도구 막대 가리기를 눌러주세요.');
+            return;
+          }
+          throw error;
+        }
       }
     } catch (error) {
       reportCrackUiError('fullscreen-toggle', error);
