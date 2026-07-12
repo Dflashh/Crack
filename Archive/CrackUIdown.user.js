@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.0.0
+// @version      2.5.3
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
 // @run-at       document-start
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
 // @connect      crack-api.wrtn.ai
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UI.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
@@ -17,10 +18,43 @@
 (() => {
   'use strict';
 
+  const CRACK_UI_VERSION = '2.5.3';
+
+  function getCrackUiPublicWindow() {
+    try {
+      if (typeof unsafeWindow !== 'undefined' && unsafeWindow) return unsafeWindow;
+    } catch {
+    }
+
+    return window;
+  }
+
+  function exposeCrackUiPublicApi(api) {
+    try {
+      const publicWindow = getCrackUiPublicWindow();
+      publicWindow.CrackUIPlus = Object.assign(publicWindow.CrackUIPlus || {}, api);
+      return true;
+    } catch {
+    }
+
+    try {
+      window.CrackUIPlus = Object.assign(window.CrackUIPlus || {}, api);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // =====================================================
+  // Core: constants / storage / state
+  // =====================================================
+
   const ID = {
     zone: 'crack-ui-reveal-zone',
     handle: 'crack-ui-mobile-handle',
     panel: 'crack-ui-settings-panel',
+    panelBackdrop: 'crack-ui-settings-backdrop',
+    panelRoot: 'crack-ui-settings-root',
     gearDesktop: 'crack-ui-gear-desktop',
     gearMobile: 'crack-ui-gear-mobile',
     toggleHeader: 'crack-ui-toggle-header',
@@ -28,8 +62,9 @@
     toggleAnimatedThumbs: 'crack-ui-toggle-animated-thumbs',
     toggleStatBar: 'crack-ui-toggle-stat-bar',
     toggleBottomModelPicker: 'crack-ui-toggle-bottom-model-picker',
-    themeModeValue: 'crack-ui-theme-mode-value',
-    episodeUiModeValue: 'crack-ui-episode-ui-mode-value',
+    toggleEmptySendGuard: 'crack-ui-toggle-empty-send-guard',
+    toggleHideSituationImage: 'crack-ui-toggle-hide-situation-image',
+    toggleNovelModelIndicator: 'crack-ui-toggle-novel-model-indicator',
     imageSlider: 'crack-ui-image-size-slider',
     imageValue: 'crack-ui-image-size-value',
     chatWidthSlider: 'crack-ui-chat-width-slider',
@@ -38,12 +73,20 @@
     bottomModelPopup: 'crack-ui-bottom-model-popup',
     visibleModelDisclosure: 'crack-ui-visible-model-disclosure',
     visibleModelPanel: 'crack-ui-visible-model-panel',
+    officialModelVisibilityStyle: 'crack-ui-official-model-visibility-style',
     roomMenuZone: 'crack-ui-room-menu-zone',
     roomMenuHandle: 'crack-ui-room-menu-handle',
     toggleRoomMenuHandle: 'crack-ui-toggle-room-menu-handle',
+    roomMenuModeButton: 'crack-ui-room-menu-mode-button',
+    roomMenuModePanel: 'crack-ui-room-menu-mode-panel',
     chatListZone: 'crack-ui-chat-list-zone',
     chatListHandle: 'crack-ui-chat-list-handle',
     toggleChatListAutoHide: 'crack-ui-toggle-chat-list-auto-hide',
+    chatListModeButton: 'crack-ui-chat-list-mode-button',
+    chatListModePanel: 'crack-ui-chat-list-mode-panel',
+    menuSwipeZone: 'crack-ui-menu-swipe-zone',
+    toggleFullscreenButton: 'crack-ui-toggle-fullscreen-button',
+    fullscreenButton: 'fullscreen-toolbar-btn',
   };
 
   const LS = {
@@ -58,14 +101,22 @@
     pendingThemeMode: 'crack_ui_pending_theme_mode',
     pendingEpisodeUiMode: 'crack_ui_pending_episode_ui_mode',
     lastEpisodeUiError: 'crack_ui_last_episode_ui_error',
-    sectionDisplayOpen: 'crack_ui_section_display_open',
-    sectionThemeOpen: 'crack_ui_section_theme_open',
-    sectionChatOpen: 'crack_ui_section_chat_open',
+    panelActiveSection: 'crack_ui_panel_active_section',
     bottomModelPicker: 'crack_ui_bottom_model_picker',
+    emptySendGuard: 'crack_ui_empty_send_guard',
+    hideSituationImage: 'crack_ui_hide_situation_image',
+    novelModelIndicator: 'crack_ui_novel_model_indicator',
+    novelModelMessageCache: 'crack_ui_novel_model_message_cache_v1',
+    novelModelManualMap: 'crack_ui_novel_model_manual_map_v1',
+    novelModelCatalog: 'crack_ui_novel_model_catalog_v1',
     bottomModelVisibleModels: 'crack_ui_bottom_model_visible_models',
+    bottomModelRegistry: 'crack_ui_bottom_model_registry_v2',
     bottomModelVisibleModelsOpen: 'crack_ui_bottom_model_visible_models_open',
     roomMenuHandle: 'crack_ui_room_menu_handle',
+    roomMenuAssistMode: 'crack_ui_room_menu_assist_mode',
     chatListAutoHide: 'crack_ui_chat_list_auto_hide',
+    chatListAssistMode: 'crack_ui_chat_list_assist_mode',
+    fullscreenButton: 'crack_ui_fullscreen_button',
   };
 
   const CLS = {
@@ -75,14 +126,19 @@
     lineBreak: 'crack-ui-line-break-optimize',
     pauseAnimatedThumbs: 'crack-ui-pause-animated-thumbs',
     hideStatBar: 'crack-ui-hide-stat-bar',
+    hideSituationImage: 'crack-ui-hide-situation-image',
     chatWidthCustom: 'crack-ui-chat-width-custom',
     widthDragging: 'crack-ui-width-dragging',
+    rangePreview: 'crack-ui-range-preview',
     roomMenuEnabled: 'crack-ui-room-menu-enabled',
     roomMenuReveal: 'crack-ui-room-menu-reveal',
     chatListEnabled: 'crack-ui-chat-list-enabled',
+    chatListMobilePopoverOpen: 'crack-ui-chat-list-mobile-popover-open',
+    chatListMobileHeaderGapCompensated: 'crack-ui-chat-list-mobile-header-gap-compensated',
     roomTopBarHidden: 'crack-ui-room-top-bar-hidden',
     phoneViewport: 'crack-ui-phone-viewport',
     tabletViewport: 'crack-ui-tablet-viewport',
+    androidFirefox: 'crack-ui-android-firefox',
   };
 
   const THEME_MODE_LABEL = {
@@ -95,9 +151,44 @@
     chat: '채팅형 UI',
   };
 
+  const MENU_ASSIST_MODE_LABEL = Object.freeze({
+    handle: '핸들',
+    swipe: '슬라이더',
+    both: '둘 다',
+  });
+
+  const MENU_SWIPE = Object.freeze({
+    minDx: 48,
+    maxDy: 40,
+    ratio: 2,
+    maxMs: 600,
+    cooldownMs: 600,
+    topOffset: 36,
+  });
+
+  let cachedAndroidFirefoxBrowser = null;
+  let cachedIosDevice = null;
+
+  function normalizeMenuAssistMode(value) {
+    const mode = String(value || '').toLowerCase();
+    return Object.prototype.hasOwnProperty.call(MENU_ASSIST_MODE_LABEL, mode) ? mode : 'handle';
+  }
+
+  function menuAssistModeHasHandle(mode) {
+    const normalized = normalizeMenuAssistMode(mode);
+    return normalized === 'handle' || normalized === 'both';
+  }
+
+  function menuAssistModeHasSwipe(mode) {
+    const normalized = normalizeMenuAssistMode(mode);
+    return normalized === 'swipe' || normalized === 'both';
+  }
+
   const CRACK_API = {
     episodeUiSetting: 'https://crack-api.wrtn.ai/crack-api/profiles/ui-setting',
   };
+
+  const EPISODE_UI_REQUEST_TIMEOUT_MS = 10000;
 
   function clampImageSize(value) {
     const n = Number(value);
@@ -169,13 +260,6 @@
     return `${p}%`;
   }
 
-  function formatThemeModeDisplay(mode) {
-    return THEME_MODE_LABEL[normalizeThemeMode(mode)] || THEME_MODE_LABEL.dark;
-  }
-
-  function formatEpisodeUiModeDisplay(mode) {
-    return EPISODE_UI_MODE_LABEL[normalizeEpisodeUiMode(mode)] || EPISODE_UI_MODE_LABEL.novel;
-  }
 
   function readStorage(key, fallback = null) {
     try {
@@ -242,6 +326,24 @@
     return raw === '1';
   }
 
+  function loadEmptySendGuard() {
+    const raw = readStorage(LS.emptySendGuard);
+    if (raw == null) return true;
+    return raw === '1';
+  }
+
+  function loadHideSituationImage() {
+    const raw = readStorage(LS.hideSituationImage);
+    if (raw == null) return false;
+    return raw === '1';
+  }
+
+  function loadNovelModelIndicator() {
+    const raw = readStorage(LS.novelModelIndicator);
+    if (raw == null) return false;
+    return raw === '1';
+  }
+
   function loadChatWidthPercent() {
     const raw = readStorage(LS.chatWidthPercent);
     if (raw != null) return clampChatWidthPercent(raw);
@@ -264,26 +366,30 @@
     return 'novel';
   }
 
-  function loadSectionOpen(key, fallback = true) {
-    const raw = readStorage(key);
-    if (raw == null) return fallback;
-    return raw === '1';
-  }
-
   let autoHideHeader = readStorage(LS.autoHideHeader) === '1';
   let imageSize = loadImageSize();
   let lineBreakOptimize = loadLineBreakOptimize();
   let pauseAnimatedThumbs = loadPauseAnimatedThumbs();
   let hideStatBar = loadHideStatBar();
   let bottomModelPicker = loadBottomModelPicker();
+  let emptySendGuard = loadEmptySendGuard();
+  let hideSituationImage = loadHideSituationImage();
+  let novelModelIndicator = loadNovelModelIndicator();
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
+  let roomMenuAssistMode = normalizeMenuAssistMode(readStorage(LS.roomMenuAssistMode, 'handle'));
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
+  let chatListAssistMode = normalizeMenuAssistMode(readStorage(LS.chatListAssistMode, 'handle'));
+  let fullscreenButtonEnabled = !isIosDevice() && readStorage(LS.fullscreenButton) === '1';
+
+  if (isIosDevice()) {
+    writeStorage(LS.fullscreenButton, '0');
+  }
   let chatWidthPercent = loadChatWidthPercent();
   let themeMode = loadThemeMode();
   let episodeUiMode = loadEpisodeUiMode();
-  let displaySectionOpen = loadSectionOpen(LS.sectionDisplayOpen, true);
-  let themeSectionOpen = loadSectionOpen(LS.sectionThemeOpen, true);
-  let chatSectionOpen = loadSectionOpen(LS.sectionChatOpen, true);
+  let activePanelSection = ['display', 'chat'].includes(readStorage(LS.panelActiveSection))
+    ? readStorage(LS.panelActiveSection)
+    : 'chat';
 
   let panelOpen = false;
   let pointerOnZone = false;
@@ -295,6 +401,8 @@
   let roomMenuForceRevealTimer = null;
   let lastRoomMenuHandleOpenAt = 0;
   let lastRoomMenuNativeButtonClickAt = 0;
+  let lastMenuSwipeAt = 0;
+  let menuSwipePositionRaf = 0;
   let chatListCloseTimer = null;
   let lastChatListClickAt = 0;
   let lastChatListHandleOpenAt = 0;
@@ -305,6 +413,7 @@
   let episodeUiSaveRequestSeq = 0;
   let episodeUiReloadTimer = null;
   let isChatWidthDragging = false;
+  let activePanelRangePreviewInput = null;
   let animatedThumbRafPending = false;
   let animatedThumbUrlMap = null;
   let animatedThumbStillUrlStatus = new Map();
@@ -315,18 +424,48 @@
   let initThrottleTimer = null;
   let pendingThemeApplied = false;
   let cachedBottomSendButton = null;
+  let cachedComposerEditable = null;
+  let emptySendGuardUiRaf = 0;
   let cachedOriginalModelButton = null;
   let cachedRoomMenuButton = null;
   let cachedChatListPanel = null;
   let cachedChatListToggle = null;
   let cachedMobileChatListToggle = null;
+  let mobileChatListCleanupPending = true;
   let cachedRoomPanel = null;
   let cachedRoomPanelToggle = null;
+  let situationImageMarkTimer = null;
+  let situationImageMarkRaf = 0;
+  let situationImageLastScanAt = 0;
   let cachedRoomTopBar = null;
+  let cachedRoomStatBar = null;
   let lastRoomTopBarInputInteractionAt = 0;
   let roomPanelCloseTimer = null;
   let lastRoomPanelClickAt = 0;
+  let lastRoomPanelToggleAttempt = null;
+  let roomPanelToggleRequestSeq = 0;
+  let roomPanelToggleVerifyTimer = null;
+  let roomPanelToggleFinalVerifyTimer = null;
   let lastRoomPanelBootCloseHref = '';
+  let novelModelIndicatorScanTimer = null;
+  let novelModelIndicatorScanRaf = 0;
+  let novelModelIndicatorLastScanAt = 0;
+  let novelModelIndicatorCleanupPending = true;
+  let pendingNovelModelCapture = null;
+  let pendingNovelModelObserver = null;
+  let pendingNovelModelExpiryTimer = null;
+  let novelModelNetworkCaptureInstalled = false;
+  let novelModelNetworkPayloadCount = 0;
+  let novelModelNetworkLastUrl = '';
+  let novelModelNetworkLastMatchCount = 0;
+  let novelModelNetworkMessageRevision = 0;
+  let novelModelStaticScanRoomKey = '';
+  let novelModelStaticScanCount = 0;
+  const novelModelNetworkCandidates = new Map();
+  const novelModelNetworkMessages = new Map();
+  const novelModelFingerprintIndex = new Map();
+  const novelModelNetworkInfoByName = new Map();
+  let lastCrackUiError = null;
 
   if (autoHideHeader) {
     document.documentElement.classList.add(CLS.autoHide);
@@ -358,6 +497,10 @@
       </path>
     </svg>
   `;
+
+  // =====================================================
+  // Core: style injection
+  // =====================================================
 
   function addStyle() {
     const css = `
@@ -408,6 +551,33 @@
 
       #${ID.chatListHandle} {
         display: none !important;
+      }
+
+      html.${CLS.chatListEnabled}:not(.${CLS.phoneViewport}) #${ID.chatListHandle} {
+        display: none !important;
+      }
+
+      html.${CLS.chatListEnabled}:not(.${CLS.phoneViewport}) #${ID.chatListZone} {
+        width: 22px;
+      }
+
+      html.${CLS.chatListEnabled}:not(.${CLS.phoneViewport}) [data-crack-ui-chat-list-panel="1"][data-crack-ui-chat-list-forced="closed"] {
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        flex-basis: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+        border-right-width: 0 !important;
+      }
+
+      html.${CLS.chatListEnabled}:not(.${CLS.phoneViewport}) [data-crack-ui-chat-list-panel="1"][data-crack-ui-chat-list-forced="open"] {
+        width: 260px !important;
+        min-width: 260px !important;
+        max-width: 260px !important;
+        flex-basis: 260px !important;
+        overflow: hidden !important;
+        pointer-events: auto !important;
       }
 
       #${ID.roomMenuZone} {
@@ -475,6 +645,22 @@
         box-shadow: none;
       }
 
+      html.${CLS.chatListMobilePopoverOpen} #${ID.chatListZone},
+      html.${CLS.chatListMobilePopoverOpen} #${ID.chatListHandle} {
+        pointer-events: none !important;
+        opacity: 0 !important;
+      }
+
+      /* Mobile chat list popover is native Crack UI. Crack UI Plus only proxies the hidden hamburger button on phones.
+         When the global header is hidden, Crack's popover can keep the native height calc(100dvh - 56px)
+         while starting at y=0, which leaves a header-sized blank area at the bottom. Only compensate height. */
+      html.${CLS.autoHide}.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"].md\:hidden:has([role="tablist"]),
+      html.${CLS.autoHide}.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"].md\:hidden:has([data-testid="virtuoso-scroller"]),
+      html.${CLS.autoHide}.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"].md\:hidden:has([data-virtuoso-scroller="true"]) {
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+      }
+
       html.${CLS.roomTopBarHidden} [data-crack-ui-room-top-bar="1"] {
         opacity: 0 !important;
         pointer-events: none !important;
@@ -482,6 +668,10 @@
         transition:
           opacity 160ms ease,
           transform 160ms ease !important;
+      }
+
+      html.${CLS.roomTopBarHidden} [data-crack-ui-room-stat-bar="1"] {
+        transform: translateY(-3rem) !important;
       }
 
 
@@ -497,6 +687,36 @@
       }
 
       html.${CLS.autoHide} body .pt-\\[88px\\] {
+        padding-top: 0 !important;
+      }
+
+      html.${CLS.autoHide} body .pt-\[120px\],
+      html.${CLS.autoHide} body .md\:pt-\[56px\],
+      html.${CLS.autoHide} body [class*="pt-[120px]"],
+      html.${CLS.autoHide} body [class*="md:pt-[56px]"] {
+        padding-top: 0 !important;
+      }
+
+      html.${CLS.autoHide} body [class*="min-h-[100dvh]"][class*="pt-[120px]"],
+      html.${CLS.autoHide} body [class*="h-[100dvh]"][class*="pt-[120px]"] {
+        padding-top: 0 !important;
+      }
+
+      /* Crack DOM 2026-06: the app shell now uses pt-[56px] / pt-[120px] to reserve header space.
+         When Crack UI Plus hides the global header, remove that reserved padding too.
+         Keep these as attribute selectors only; raw Tailwind bracket class selectors can invalidate a selector list. */
+      html.${CLS.autoHide} body [class*="pt-[56px]"],
+      html.${CLS.autoHide} body [class*="pt-[120px]"],
+      html.${CLS.autoHide} body [class*="md:pt-[56px]"],
+      html.${CLS.autoHide} body [class*="h-[100dvh]"][class*="pt-[56px]"],
+      html.${CLS.autoHide} body [class*="min-h-[100dvh]"][class*="pt-[56px]"],
+      html.${CLS.autoHide} body [class*="h-[100dvh]"][class*="pt-[120px]"],
+      html.${CLS.autoHide} body [class*="min-h-[100dvh]"][class*="pt-[120px]"] {
+        padding-top: 0 !important;
+      }
+
+      html.${CLS.autoHide} body [class*="bg-bg_screen"][class*="h-[100dvh]"],
+      html.${CLS.autoHide} body [class*="bg-bg_screen"][class*="min-h-[100dvh]"] {
         padding-top: 0 !important;
       }
 
@@ -655,58 +875,11 @@
         pointer-events: none !important;
       }
 
-      #${ID.panel} {
-        position: fixed;
-        z-index: var(--crack-ui-z-panel);
-        width: 318px;
-        max-width: calc(100vw - 16px);
-        max-height: calc(100dvh - 16px);
-        overflow-x: hidden;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        display: none;
-        box-sizing: border-box;
-        padding: 8px;
-        border: 1px solid rgba(255, 255, 255, .11);
-        border-radius: 22px;
-        background: rgba(28, 28, 30, .74);
-        color: rgba(255, 255, 255, .94);
-        box-shadow:
-          0 18px 46px rgba(0, 0, 0, .30),
-          inset 0 1px 0 rgba(255, 255, 255, .07);
-        backdrop-filter: blur(24px) saturate(1.18);
-        -webkit-backdrop-filter: blur(24px) saturate(1.18);
-        font-family: inherit;
-        animation: crackUiPop .14s ease-out;
-      }
-
-      #${ID.panel}[data-open="1"] {
-        display: block;
-      }
-
-      @keyframes crackUiPop {
-        from {
-          opacity: 0;
-          transform: translateY(-6px) scale(.985);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-
-      .crack-ui-panel-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 2px 7px;
-        min-height: 26px;
-      }
-
       .crack-ui-title-wrap {
         display: flex;
-        flex-direction: column;
-        gap: 0;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
         min-width: 0;
       }
 
@@ -717,99 +890,14 @@
         letter-spacing: -.02em;
       }
 
-      .crack-ui-panel-body {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .crack-ui-section {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        padding: 6px;
-        border-radius: 20px;
-        background: rgba(255, 255, 255, .035);
-        border: 1px solid rgba(255, 255, 255, .055);
-        overflow: hidden;
-      }
-
-      .crack-ui-section-head {
-        width: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        min-height: 28px;
-        padding: 3px 7px 4px;
-        box-sizing: border-box;
-        border: 0;
-        border-radius: 14px;
-        background: transparent;
-        color: rgba(255, 255, 255, .92);
-        cursor: pointer;
-        font-family: inherit;
-        transform: none !important;
-        transition: background-color 130ms ease;
-      }
-
-      .crack-ui-section-head:hover {
-        background: rgba(255, 255, 255, .055);
-      }
-
-      .crack-ui-section-head:active {
-        transform: none !important;
-      }
-
-      .crack-ui-section-head:focus,
-      .crack-ui-section-head:focus-visible {
-        outline: none !important;
-        box-shadow: none !important;
-      }
-
-      .crack-ui-section-title {
-        font-size: 12px;
-        font-weight: 900;
-        line-height: 1;
-        letter-spacing: -.02em;
-        color: rgba(255, 255, 255, .94);
-      }
-
-
-      .crack-ui-section-chevron {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 18px;
-        height: 18px;
-        border-radius: 0;
-        color: rgba(255, 255, 255, .54);
+      .crack-ui-panel-version {
+        flex: 0 0 auto;
         font-size: 10px;
-        font-weight: 900;
+        font-weight: 700;
         line-height: 1;
-        transform: rotate(0deg);
-        transition:
-          transform 150ms ease,
-          color 130ms ease;
-      }
-
-      .crack-ui-section-head:hover .crack-ui-section-chevron {
-        background: transparent;
-        color: rgba(255, 255, 255, .80);
-      }
-
-      .crack-ui-section[data-open="0"] .crack-ui-section-chevron {
-        transform: rotate(-90deg);
-      }
-
-      .crack-ui-section-body {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .crack-ui-section[data-open="0"] .crack-ui-section-body {
-        display: none;
+        letter-spacing: -.01em;
+        color: rgba(255, 255, 255, .42);
+        user-select: none;
       }
 
       .crack-ui-panel-close {
@@ -876,23 +964,33 @@
         border-color: rgba(255, 255, 255, .12);
       }
 
+      .crack-ui-row[data-disabled="1"],
       .crack-ui-range-row[data-disabled="1"] {
-        opacity: .52;
-        filter: grayscale(.35);
+        opacity: .58;
+        filter: grayscale(.70);
       }
 
+      .crack-ui-row[data-disabled="1"],
+      .crack-ui-row[data-disabled="1"] *,
       .crack-ui-range-row[data-disabled="1"],
       .crack-ui-range-row[data-disabled="1"] * {
         cursor: not-allowed !important;
       }
 
+      .crack-ui-row[data-disabled="1"]:hover,
       .crack-ui-range-row[data-disabled="1"]:hover {
         background: rgba(0, 0, 0, .42);
         border-color: rgba(255, 255, 255, .07);
       }
 
+      .crack-ui-row[data-disabled="1"] .crack-ui-row-name,
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-row-name,
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range-value {
+        color: rgba(255, 255, 255, .48) !important;
+      }
+
       .crack-ui-range:disabled {
-        opacity: .42;
+        opacity: .46;
       }
 
       .crack-ui-row-text {
@@ -1229,6 +1327,218 @@
       }
 
 
+      .crack-ui-novel-model-indicator {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        flex: 0 0 20px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 6px !important;
+        background: transparent !important;
+        color: var(--text_secondary, #9ca3af) !important;
+        overflow: hidden !important;
+        vertical-align: middle !important;
+        font-family: inherit !important;
+        font-size: 13px !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+        cursor: pointer !important;
+        -webkit-tap-highlight-color: transparent !important;
+      }
+
+      .crack-ui-novel-model-indicator:hover {
+        opacity: .78 !important;
+      }
+
+      .crack-ui-novel-model-indicator:focus-visible {
+        outline: 2px solid var(--focus, rgba(254, 69, 50, .72)) !important;
+        outline-offset: 2px !important;
+      }
+
+      .crack-ui-novel-model-indicator > img {
+        display: block !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        object-fit: cover !important;
+        border-radius: 6px !important;
+        pointer-events: none !important;
+      }
+
+      .crack-ui-novel-model-menu-backdrop {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 2147483645 !important;
+        background: transparent !important;
+      }
+
+      .crack-ui-novel-model-menu {
+        position: fixed !important;
+        z-index: 2147483646 !important;
+        width: min(232px, calc(100vw - 16px)) !important;
+        max-height: min(420px, calc(100dvh - 16px)) !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain !important;
+        padding: 6px !important;
+        border: 1px solid rgba(255, 255, 255, .11) !important;
+        border-radius: 16px !important;
+        background-color: rgb(28, 28, 30) !important;
+        background-image: none !important;
+        color: rgba(255, 255, 255, .94) !important;
+        box-shadow:
+          0 18px 46px rgba(0, 0, 0, .30),
+          inset 0 1px 0 rgba(255, 255, 255, .07) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        isolation: isolate !important;
+        filter: none !important;
+        mix-blend-mode: normal !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        font-family: inherit !important;
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(255, 255, 255, .34) transparent !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] {
+        border-color: rgba(17, 24, 39, .10) !important;
+        background-color: rgb(255, 255, 255) !important;
+        color: rgba(17, 24, 39, .94) !important;
+        box-shadow:
+          0 18px 46px rgba(15, 23, 42, .16),
+          inset 0 1px 0 rgba(255, 255, 255, .92) !important;
+        scrollbar-color: rgba(75, 85, 99, .34) transparent !important;
+      }
+
+      .crack-ui-novel-model-menu::-webkit-scrollbar {
+        width: 8px !important;
+      }
+
+      .crack-ui-novel-model-menu::-webkit-scrollbar-track {
+        background: transparent !important;
+      }
+
+      .crack-ui-novel-model-menu::-webkit-scrollbar-thumb {
+        border: 2px solid transparent !important;
+        border-radius: 999px !important;
+        background: rgba(255, 255, 255, .30) !important;
+        background-clip: padding-box !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"]::-webkit-scrollbar-thumb {
+        background: rgba(75, 85, 99, .28) !important;
+        background-clip: padding-box !important;
+      }
+
+      .crack-ui-novel-model-menu-item,
+      .crack-ui-novel-model-menu-clear {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        width: 100% !important;
+        min-height: 36px !important;
+        padding: 8px 9px !important;
+        border: 1px solid transparent !important;
+        border-radius: 10px !important;
+        background: transparent !important;
+        color: inherit !important;
+        font-family: inherit !important;
+        font-size: 13px !important;
+        line-height: 1.2 !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        transform: none !important;
+      }
+
+      .crack-ui-novel-model-menu-item:hover,
+      .crack-ui-novel-model-menu-item:focus-visible,
+      .crack-ui-novel-model-menu-clear:hover,
+      .crack-ui-novel-model-menu-clear:focus-visible {
+        border-color: rgba(255, 255, 255, .08) !important;
+        background: rgba(255, 255, 255, .07) !important;
+        outline: none !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-item:hover,
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-item:focus-visible,
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-clear:hover,
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-clear:focus-visible {
+        border-color: rgba(17, 24, 39, .07) !important;
+        background: rgba(17, 24, 39, .055) !important;
+      }
+
+      .crack-ui-novel-model-menu-item > img {
+        width: 18px !important;
+        height: 18px !important;
+        flex: 0 0 18px !important;
+        object-fit: contain !important;
+        border-radius: 5px !important;
+      }
+
+      .crack-ui-novel-model-menu-label {
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+
+      .crack-ui-novel-model-menu-item[data-retired="1"] .crack-ui-novel-model-menu-label {
+        opacity: .76 !important;
+      }
+
+      .crack-ui-novel-model-menu-clear {
+        margin-top: 4px !important;
+        padding-top: 9px !important;
+        border-top-color: rgba(255, 255, 255, .10) !important;
+        border-radius: 8px !important;
+        color: rgba(255, 255, 255, .62) !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-clear {
+        border-top-color: rgba(17, 24, 39, .10) !important;
+        color: rgba(75, 85, 99, .78) !important;
+      }
+
+      #${ID.fullscreenButton} {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        padding: 0 !important;
+        border-radius: 999px !important;
+        cursor: pointer !important;
+        line-height: 1 !important;
+        flex: 0 0 auto !important;
+      }
+
+      #${ID.fullscreenButton} > span {
+        position: absolute !important;
+        inset: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        height: 100% !important;
+        line-height: 0 !important;
+        pointer-events: none !important;
+      }
+
+      #${ID.fullscreenButton} svg {
+        display: block !important;
+        width: 19px !important;
+        height: 20px !important;
+        margin: 0 !important;
+        overflow: visible !important;
+        pointer-events: none !important;
+      }
+
       #${ID.bottomModelButton} {
         display: inline-flex !important;
         align-items: center !important;
@@ -1240,7 +1550,7 @@
         max-width: 28px !important;
         box-sizing: border-box !important;
         padding: 0 !important;
-        margin-left: auto !important;
+        margin-left: 0 !important;
         margin-right: 8px !important;
         border-radius: 999px !important;
         border: 1px solid var(--border, rgba(120, 120, 128, .28)) !important;
@@ -1261,6 +1571,41 @@
           opacity 130ms ease !important;
       }
 
+
+      #${ID.bottomModelButton}[data-crack-ui-placement="cooperative-group"] {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        flex: 0 0 auto !important;
+      }
+
+      #${ID.bottomModelButton}[data-crack-ui-placement="send-sibling"] {
+        margin-left: 0 !important;
+        margin-right: 8px !important;
+        flex: 0 0 auto !important;
+      }
+
+      /* Bottom composer row can be justify-between. If our model button is inserted as a
+         separate sibling before the send button, justify-between may spread it into the
+         middle of the composer. Keep the native left toolbar on the left and pack our
+         model button + send button on the right without wrapping/moving the send button. */
+      [data-crack-ui-bottom-model-group="1"] {
+        justify-content: flex-start !important;
+        gap: 0 !important;
+      }
+
+      [data-crack-ui-bottom-model-group="1"] > :first-child:not(#${ID.bottomModelButton}) {
+        margin-right: auto !important;
+      }
+
+      [data-crack-ui-bottom-model-group="1"] > #${ID.bottomModelButton}[data-crack-ui-placement="send-sibling"] {
+        margin-left: 0 !important;
+        margin-right: 8px !important;
+      }
+
+      [data-crack-ui-bottom-model-group="1"] > #crack-pure-send-left-group[data-crack-ui-pure-group-right="1"] {
+        margin-left: 0 !important;
+      }
+
       #${ID.bottomModelButton}:hover {
         background: var(--secondary, var(--accent, rgba(120, 120, 128, .16))) !important;
       }
@@ -1274,6 +1619,16 @@
       #${ID.bottomModelButton}:focus-visible {
         outline: none !important;
         box-shadow: 0 0 0 2px hsl(var(--focus, 222 84% 60%) / .30) !important;
+      }
+
+      .crack-ui-empty-send-blocked {
+        opacity: .50 !important;
+        cursor: not-allowed !important;
+        filter: grayscale(.22) !important;
+      }
+
+      .crack-ui-empty-send-blocked svg {
+        pointer-events: none !important;
       }
 
       .crack-ui-bottom-model-icon-wrap {
@@ -1394,6 +1749,15 @@
         object-fit: cover !important;
       }
 
+      [role="menuitem"][data-crack-ui-official-model-hidden="1"] {
+        display: none !important;
+      }
+
+      /* Crack 원본 모델 메뉴의 모델별 설명문은 UI+ 활성화 시 항상 숨김. */
+      [data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[src*="model-icon"]) > div:first-child > div[class*="text-text_secondary"] {
+        display: none !important;
+      }
+
       .crack-ui-model-option-main {
         display: flex;
         align-items: center;
@@ -1472,6 +1836,10 @@
         display: none !important;
       }
 
+      html.${CLS.hideSituationImage} [data-crack-ui-situation-image-button="1"] {
+        display: none !important;
+      }
+
       .crack-ui-toggle {
         position: absolute;
         opacity: 0;
@@ -1522,6 +1890,260 @@
         transform: translateX(15px);
       }
 
+      .crack-ui-row[data-disabled="1"] .crack-ui-switch,
+      .crack-ui-row[data-disabled="1"] .crack-ui-toggle:checked + .crack-ui-switch,
+      .crack-ui-row[data-disabled="1"] .crack-ui-toggle:disabled:checked + .crack-ui-switch {
+        background: rgba(120, 120, 128, .34) !important;
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, .07),
+          inset 0 1px 2px rgba(0, 0, 0, .18) !important;
+      }
+
+      .crack-ui-row[data-disabled="1"] .crack-ui-switch::after {
+        background: rgba(245, 245, 247, .92) !important;
+        box-shadow:
+          0 1px 3px rgba(0, 0, 0, .24),
+          0 0 1px rgba(0, 0, 0, .12) !important;
+      }
+
+      .crack-ui-menu-assist-row {
+        grid-template-columns: minmax(0, 1fr) 66px 35px;
+        column-gap: 8px;
+        cursor: default;
+      }
+
+      .crack-ui-menu-toggle-wrap {
+        display: block;
+        justify-self: end;
+        cursor: pointer;
+      }
+
+      .crack-ui-menu-mode-button {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 66px;
+        height: 28px;
+        box-sizing: border-box;
+        padding: 0 7px;
+        border: 1px solid rgba(255, 255, 255, .10);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, .055);
+        color: rgba(255, 255, 255, .76);
+        font-family: inherit;
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        transform: none !important;
+      }
+
+      .crack-ui-menu-mode-button:hover,
+      .crack-ui-menu-mode-button[aria-expanded="true"] {
+        background: rgba(255, 255, 255, .09);
+        border-color: rgba(255, 255, 255, .16);
+        color: rgba(255, 255, 255, .94);
+      }
+
+      .crack-ui-menu-mode-popover {
+        position: fixed !important;
+        z-index: 2147483646 !important;
+        display: block !important;
+        width: 180px !important;
+        box-sizing: border-box !important;
+        padding: 6px !important;
+        border: 1px solid rgba(255, 255, 255, .12) !important;
+        border-radius: 16px !important;
+        background: rgba(32, 32, 35, .97) !important;
+        color: rgba(255, 255, 255, .94) !important;
+        box-shadow:
+          0 16px 42px rgba(0, 0, 0, .34),
+          inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+        backdrop-filter: blur(20px) saturate(1.16) !important;
+        -webkit-backdrop-filter: blur(20px) saturate(1.16) !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        transform: translateY(0) scale(1) !important;
+        transform-origin: top right;
+        animation: crackUiMenuModePopoverIn 130ms ease-out;
+      }
+
+      @keyframes crackUiMenuModePopoverIn {
+        from {
+          opacity: 0;
+          transform: translateY(-7px) scale(.985);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .crack-ui-menu-mode-choice {
+        appearance: none;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 20px;
+        align-items: center;
+        width: 100%;
+        min-height: 40px;
+        box-sizing: border-box;
+        padding: 0 10px 0 12px;
+        border: 0;
+        border-radius: 11px;
+        background: transparent;
+        color: rgba(255, 255, 255, .82);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 760;
+        line-height: 1.2;
+        text-align: left;
+        cursor: pointer;
+        transform: none !important;
+      }
+
+      .crack-ui-menu-mode-choice:hover,
+      .crack-ui-menu-mode-choice:active {
+        background: rgba(255, 255, 255, .075);
+        color: rgba(255, 255, 255, .98);
+      }
+
+      .crack-ui-menu-mode-choice::after {
+        content: "";
+        justify-self: end;
+        width: 7px;
+        height: 12px;
+        box-sizing: border-box;
+        border-right: 2px solid transparent;
+        border-bottom: 2px solid transparent;
+        transform: rotate(45deg) translateY(-1px);
+      }
+
+      .crack-ui-menu-mode-choice[data-selected="1"] {
+        color: #ff5b49;
+        background: rgba(254, 69, 50, .10);
+      }
+
+      .crack-ui-menu-mode-choice[data-selected="1"]::after {
+        border-right-color: currentColor;
+        border-bottom-color: currentColor;
+      }
+
+      .crack-ui-row[data-disabled="1"] .crack-ui-menu-mode-button {
+        opacity: .62;
+        pointer-events: none;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button,
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button {
+        border-color: rgba(17, 24, 39, .09);
+        background: rgba(15, 23, 42, .045);
+        color: rgba(17, 24, 39, .66);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button:hover,
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button:hover,
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button[aria-expanded="true"],
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button[aria-expanded="true"] {
+        background: rgba(15, 23, 42, .08);
+        color: rgba(17, 24, 39, .92);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-popover,
+      html[data-theme="light"] .crack-ui-menu-mode-popover {
+        border-color: rgba(17, 24, 39, .10) !important;
+        background: rgba(250, 250, 252, .97) !important;
+        color: rgba(17, 24, 39, .94) !important;
+        box-shadow:
+          0 16px 42px rgba(15, 23, 42, .18),
+          inset 0 1px 0 rgba(255, 255, 255, .86) !important;
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice,
+      html[data-theme="light"] .crack-ui-menu-mode-choice {
+        color: rgba(17, 24, 39, .80);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice:hover,
+      html[data-theme="light"] .crack-ui-menu-mode-choice:hover,
+      body[data-theme="light"] .crack-ui-menu-mode-choice:active,
+      html[data-theme="light"] .crack-ui-menu-mode-choice:active {
+        background: rgba(15, 23, 42, .06);
+        color: rgba(17, 24, 39, .96);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"],
+      html[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"] {
+        background: rgba(254, 69, 50, .10);
+        color: #e43e2d;
+      }
+
+      html:not(.${CLS.phoneViewport}):not(.${CLS.tabletViewport}) .crack-ui-menu-assist-row {
+        grid-template-columns: minmax(0, 1fr) 35px !important;
+      }
+
+      html:not(.${CLS.phoneViewport}):not(.${CLS.tabletViewport}) .crack-ui-menu-mode-button {
+        display: none !important;
+      }
+
+      html.${CLS.tabletViewport} [data-crack-ui-menu-assist-row="chat-list"] {
+        grid-template-columns: minmax(0, 1fr) 35px !important;
+      }
+
+      html.${CLS.tabletViewport} #${ID.chatListModeButton} {
+        display: none !important;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .crack-ui-menu-mode-popover {
+          animation: none !important;
+        }
+      }
+
+      #${ID.menuSwipeZone} {
+        position: fixed !important;
+        left: max(24px, env(safe-area-inset-left)) !important;
+        right: max(24px, env(safe-area-inset-right)) !important;
+        top: auto !important;
+        bottom: calc(98px + env(safe-area-inset-bottom)) !important;
+        height: 48px !important;
+        z-index: calc(var(--crack-ui-z-header) + 5) !important;
+        display: block !important;
+        pointer-events: none !important;
+        background: transparent !important;
+        border: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        opacity: 1 !important;
+        touch-action: pan-y !important;
+        -webkit-tap-highlight-color: transparent !important;
+        user-select: none !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-webkit-slider-runnable-track {
+        background: rgba(120, 120, 128, .24) !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-webkit-slider-thumb {
+        background: rgba(245, 245, 247, .88) !important;
+        box-shadow:
+          0 1px 4px rgba(0, 0, 0, .22),
+          0 0 1px rgba(0, 0, 0, .12) !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-moz-range-track {
+        background: rgba(120, 120, 128, .24) !important;
+      }
+
+      .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-moz-range-thumb {
+        background: rgba(245, 245, 247, .88) !important;
+        box-shadow:
+          0 1px 4px rgba(0, 0, 0, .22),
+          0 0 1px rgba(0, 0, 0, .12) !important;
+      }
+
 
       body[data-theme="light"] #${ID.panel},
       html[data-theme="light"] #${ID.panel} {
@@ -1535,13 +2157,16 @@
 
       body[data-theme="light"] #${ID.panel} .crack-ui-panel-title,
       html[data-theme="light"] #${ID.panel} .crack-ui-panel-title,
-      body[data-theme="light"] #${ID.panel} .crack-ui-section-title,
-      html[data-theme="light"] #${ID.panel} .crack-ui-section-title,
       body[data-theme="light"] #${ID.panel} .crack-ui-row-name,
       html[data-theme="light"] #${ID.panel} .crack-ui-row-name,
       body[data-theme="light"] #${ID.panel} .crack-ui-choice-title,
       html[data-theme="light"] #${ID.panel} .crack-ui-choice-title {
         color: rgba(17, 24, 39, .94);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-panel-version,
+      html[data-theme="light"] #${ID.panel} .crack-ui-panel-version {
+        color: rgba(75, 85, 99, .54);
       }
 
       body[data-theme="light"] #${ID.panel} .crack-ui-row-desc,
@@ -1554,33 +2179,6 @@
       body[data-theme="light"] #${ID.panel} .crack-ui-choice-value,
       html[data-theme="light"] #${ID.panel} .crack-ui-choice-value {
         color: rgba(75, 85, 99, .86);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-section,
-      html[data-theme="light"] #${ID.panel} .crack-ui-section {
-        background: rgba(17, 24, 39, .035);
-        border-color: rgba(17, 24, 39, .065);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-section-head,
-      html[data-theme="light"] #${ID.panel} .crack-ui-section-head {
-        color: rgba(17, 24, 39, .92);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover,
-      html[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover {
-        background: rgba(17, 24, 39, .055);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-section-chevron,
-      html[data-theme="light"] #${ID.panel} .crack-ui-section-chevron {
-        color: rgba(75, 85, 99, .62);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover .crack-ui-section-chevron,
-      html[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover .crack-ui-section-chevron {
-        background: transparent;
-        color: rgba(17, 24, 39, .82);
       }
 
       body[data-theme="light"] #${ID.panel} .crack-ui-panel-close,
@@ -1693,6 +2291,27 @@
           inset 0 1px 2px rgba(0, 0, 0, .08);
       }
 
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-switch,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-switch,
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:checked + .crack-ui-switch,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:checked + .crack-ui-switch,
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:disabled:checked + .crack-ui-switch,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-toggle:disabled:checked + .crack-ui-switch {
+        background: rgba(120, 120, 128, .30) !important;
+        box-shadow:
+          inset 0 0 0 1px rgba(17, 24, 39, .07),
+          inset 0 1px 2px rgba(0, 0, 0, .06) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-row-name,
+      html[data-theme="light"] #${ID.panel} .crack-ui-row[data-disabled="1"] .crack-ui-row-name,
+      body[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-row-name,
+      html[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-row-name,
+      body[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-range-value,
+      html[data-theme="light"] #${ID.panel} .crack-ui-range-row[data-disabled="1"] .crack-ui-range-value {
+        color: rgba(17, 24, 39, .40) !important;
+      }
+
       body[data-theme="light"] #${ID.panel} .crack-ui-choice-row[data-selected="1"] .crack-ui-choice-mark,
       html[data-theme="light"] #${ID.panel} .crack-ui-choice-row[data-selected="1"] .crack-ui-choice-mark {
         border-color: #FE4532;
@@ -1773,6 +2392,15 @@
           width: 26px;
         }
 
+        html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone}[data-crack-ui-handle-enabled="0"] {
+          width: 0 !important;
+          pointer-events: none !important;
+        }
+
+        html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone}[data-crack-ui-handle-enabled="0"] #${ID.chatListHandle} {
+          display: none !important;
+        }
+
         html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListHandle} {
           display: block !important;
           position: fixed;
@@ -1808,7 +2436,16 @@
           width: 26px;
           height: auto;
           transform: none;
-          pointer-events: auto !important;
+          pointer-events: none !important;
+        }
+
+        html.${CLS.roomMenuEnabled} #${ID.roomMenuZone}[data-crack-ui-handle-enabled="0"] {
+          width: 0 !important;
+          pointer-events: none !important;
+        }
+
+        html.${CLS.roomMenuEnabled} #${ID.roomMenuZone}[data-crack-ui-handle-enabled="0"] #${ID.roomMenuHandle} {
+          display: none !important;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle} {
@@ -1821,7 +2458,8 @@
           transform: translateY(-50%);
           pointer-events: auto !important;
           z-index: calc(var(--crack-ui-z-header) + 4);
-          touch-action: none;
+          touch-action: pan-y;
+          -webkit-tap-highlight-color: transparent;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle}::after {
@@ -1856,13 +2494,6 @@
           z-index: 1;
         }
 
-        #${ID.panel} {
-          width: min(318px, calc(100vw - 16px));
-          border-radius: 21px;
-          padding: 8px;
-        }
-
-
         #${ID.bottomModelButton} {
           max-width: 28px !important;
           width: 28px !important;
@@ -1886,6 +2517,613 @@
           height: 26px !important;
           min-width: 26px !important;
         }
+
+      }
+
+      /* Backdrop and settings surface share one isolated stacking context.
+         This prevents Android Chromium from compositing the blur above the panel. */
+      #${ID.panelRoot} {
+        position: fixed;
+        inset: 0;
+        z-index: var(--crack-ui-z-panel);
+        pointer-events: none;
+      }
+
+      /* Visual-only backdrop: local layer 0 always stays behind the panel. */
+      #${ID.panelBackdrop} {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        display: none;
+        pointer-events: none;
+        background: rgba(0, 0, 0, .16);
+        backdrop-filter: blur(5px) saturate(.96);
+        -webkit-backdrop-filter: blur(5px) saturate(.96);
+      }
+
+      html.${CLS.panelOpen} #${ID.panelBackdrop} {
+        display: block;
+      }
+
+      body[data-theme="light"] #${ID.panelBackdrop},
+      html[data-theme="light"] #${ID.panelBackdrop} {
+        background: rgba(15, 23, 42, .10);
+      }
+
+      html.${CLS.androidFirefox} #${ID.panelBackdrop} {
+        background: rgba(0, 0, 0, .08);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      /* =====================================================
+         Settings workspace — final layout.
+         Header auto-hide/reveal behavior is intentionally untouched.
+         ===================================================== */
+      #${ID.panel} {
+        position: absolute;
+        z-index: 1;
+        pointer-events: auto;
+        top: 50%;
+        left: 50%;
+        right: auto;
+        bottom: auto;
+        width: min(980px, calc(100vw - 32px));
+        height: min(760px, calc(100dvh - 32px));
+        max-width: calc(100vw - 32px);
+        max-height: calc(100dvh - 32px);
+        display: none;
+        box-sizing: border-box;
+        transform: translate(-50%, -50%);
+        padding: 10px;
+        overflow: hidden;
+        overscroll-behavior: contain;
+        border: 1px solid rgba(255, 255, 255, .11);
+        border-radius: 22px;
+        background: rgba(28, 28, 30, .74);
+        color: rgba(255, 255, 255, .94);
+        box-shadow:
+          0 18px 46px rgba(0, 0, 0, .30),
+          inset 0 1px 0 rgba(255, 255, 255, .07);
+        backdrop-filter: blur(24px) saturate(1.18);
+        -webkit-backdrop-filter: blur(24px) saturate(1.18);
+        font-family: inherit;
+        animation: crackUiWorkspacePop .14s ease-out;
+      }
+
+      #${ID.panel}[data-open="1"] {
+        display: flex;
+        flex-direction: column;
+      }
+
+      @keyframes crackUiWorkspacePop {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      #${ID.panel} > .crack-ui-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex: 0 0 auto;
+        min-height: 38px;
+        padding: 2px 6px 10px;
+        margin: 0;
+        position: relative;
+        top: auto;
+        background: transparent;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+
+      #${ID.panel} > .crack-ui-panel-shell {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      /* Theme stays visible above both pages. Only these compact controls get a surface. */
+      #${ID.panel} .crack-ui-panel-theme-strip {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: stretch;
+        gap: 8px;
+        max-height: 160px;
+        padding: 0 0 10px;
+        min-width: 0;
+        overflow: hidden;
+        opacity: 1;
+        transform: translateY(0);
+        background: transparent;
+        transition:
+          max-height 160ms ease,
+          padding-bottom 160ms ease,
+          opacity 120ms ease,
+          transform 160ms ease;
+      }
+
+      #${ID.panel}[data-crack-ui-theme-strip-hidden="1"] .crack-ui-panel-theme-strip {
+        max-height: 0;
+        padding-bottom: 0;
+        opacity: 0;
+        transform: translateY(-12px);
+        pointer-events: none;
+      }
+
+      /* Returning the strip used to animate its height and push the scroller down.
+         Restore the layout immediately at the absolute top, then only fade it in. */
+      #${ID.panel}[data-crack-ui-theme-strip-restoring="1"] .crack-ui-panel-theme-strip {
+        transition: opacity 110ms ease;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #${ID.panel} .crack-ui-panel-theme-strip {
+          transition: none;
+        }
+      }
+
+      /* While any panel range slider is being adjusted, leave only that control visible.
+         Removing the panel/backdrop surface lets the chat remain visible as a live preview. */
+      html.${CLS.rangePreview} #${ID.panelBackdrop} {
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] {
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] > .crack-ui-panel-head,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-theme-strip,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-nav {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] > .crack-ui-panel-shell,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-workspace,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-content,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-body,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section-body {
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section-body > :not([data-crack-ui-range-preview-active="1"]) {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] [data-crack-ui-range-preview-active="1"] {
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #${ID.panel}[data-crack-ui-range-preview="1"] * {
+          transition: none !important;
+        }
+      }
+
+      #${ID.panel} .crack-ui-theme-strip-title {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        padding: 0 2px;
+        color: rgba(255, 255, 255, .90);
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      #${ID.panel} .crack-ui-theme-strip-group {
+        display: flex;
+        flex: 1 1 0;
+        min-width: 0;
+        align-items: center;
+        gap: 9px;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 1px solid rgba(255, 255, 255, .07);
+        border-radius: 14px;
+        background: rgba(0, 0, 0, .28);
+      }
+
+      #${ID.panel} .crack-ui-theme-strip-label {
+        flex: 0 0 auto;
+        min-width: 30px;
+        color: rgba(255, 255, 255, .58);
+        font-size: 11px;
+        font-weight: 850;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      #${ID.panel} .crack-ui-theme-strip-options {
+        display: flex;
+        flex: 1 1 auto;
+        min-width: 0;
+        gap: 5px;
+      }
+
+      #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-row {
+        display: flex;
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        min-height: 32px;
+        padding: 0 9px;
+        gap: 0;
+        border-radius: 10px;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-name {
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      #${ID.panel} .crack-ui-panel-workspace {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr);
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        border: 0;
+        background: transparent;
+      }
+
+      #${ID.panel} .crack-ui-panel-nav {
+        display: flex;
+        flex-direction: column;
+        width: auto;
+        min-width: 0;
+        padding: 4px 8px 4px 0;
+        gap: 6px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        border-right: 1px solid rgba(255, 255, 255, .065);
+        background: transparent;
+      }
+
+      #${ID.panel} .crack-ui-panel-nav-button {
+        appearance: none;
+        display: flex;
+        flex: 0 0 auto;
+        width: 100%;
+        min-width: 0;
+        min-height: 42px;
+        align-items: center;
+        justify-content: flex-start;
+        box-sizing: border-box;
+        padding: 0 11px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: transparent;
+        color: rgba(255, 255, 255, .68);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 850;
+        line-height: 1;
+        text-align: left;
+        cursor: pointer;
+        transform: none;
+        transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease;
+      }
+
+      #${ID.panel} .crack-ui-panel-nav-button:hover {
+        background: rgba(255, 255, 255, .055);
+        color: rgba(255, 255, 255, .92);
+      }
+
+      #${ID.panel} .crack-ui-panel-nav-button[data-active="1"] {
+        background: rgba(254, 69, 50, .14);
+        border-color: rgba(254, 69, 50, .38);
+        color: rgba(255, 255, 255, .96);
+      }
+
+      #${ID.panel} .crack-ui-panel-content {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      #${ID.panel} .crack-ui-panel-body {
+        display: block;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        padding: 4px 10px 12px 14px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(120, 120, 128, .38) transparent;
+        background: transparent;
+      }
+
+      #${ID.panel} .crack-ui-panel-body::-webkit-scrollbar,
+      #${ID.panel} .crack-ui-panel-nav::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+
+      #${ID.panel} .crack-ui-panel-body::-webkit-scrollbar-track,
+      #${ID.panel} .crack-ui-panel-nav::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      #${ID.panel} .crack-ui-panel-body::-webkit-scrollbar-thumb,
+      #${ID.panel} .crack-ui-panel-nav::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(120, 120, 128, .32);
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      #${ID.panel} .crack-ui-section {
+        display: flex;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        overflow: visible;
+      }
+
+      #${ID.panel} .crack-ui-section[hidden] {
+        display: none;
+      }
+
+      #${ID.panel} .crack-ui-section-body {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        gap: 10px;
+      }
+
+      /* Keep the final three chat rows in a fixed, user-requested order on all layouts. */
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="1"] { order: 10; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="2"] { order: 11; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="3"] { order: 12; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="4"] { order: 13; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="5"] { order: 14; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="6"] { order: 15; }
+
+      /* Chat page uses the wide workspace only on tablet/desktop.
+         Phone layout intentionally remains the existing single column. */
+      @media (min-width: 768px) {
+        #${ID.panel} .crack-ui-section-body.crack-ui-chat-layout-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          align-items: stretch;
+          gap: 10px;
+        }
+
+        #${ID.panel} .crack-ui-chat-layout-grid > .crack-ui-chat-layout-full {
+          grid-column: 1 / -1;
+          min-width: 0;
+        }
+
+        #${ID.panel} .crack-ui-chat-layout-grid > .crack-ui-chat-layout-half {
+          min-width: 0;
+          height: 100%;
+        }
+
+        #${ID.panel} .crack-ui-chat-layout-grid > label.crack-ui-chat-layout-half {
+          align-self: stretch;
+        }
+
+        #${ID.panel} .crack-ui-chat-layout-grid .crack-ui-visible-model-list {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-title,
+      html[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-title {
+        color: rgba(17, 24, 39, .94);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-group,
+      html[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-group {
+        border-color: rgba(17, 24, 39, .075);
+        background: rgba(255, 255, 255, .68);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-label,
+      html[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-label {
+        color: rgba(75, 85, 99, .72);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav,
+      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav {
+        border-right-color: rgba(17, 24, 39, .075);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button,
+      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button {
+        color: rgba(75, 85, 99, .82);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button:hover,
+      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button:hover {
+        background: rgba(17, 24, 39, .055);
+        color: rgba(17, 24, 39, .94);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button[data-active="1"],
+      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button[data-active="1"] {
+        background: rgba(254, 69, 50, .11);
+        border-color: rgba(254, 69, 50, .34);
+        color: rgba(17, 24, 39, .96);
+      }
+
+      @media (max-width: 767px) {
+        /* Keep the same visual backdrop treatment as tablet/desktop on phones.
+           The later reduced-motion rule still disables blur for accessibility. */
+        #${ID.panelBackdrop},
+        html.${CLS.androidFirefox} #${ID.panelBackdrop} {
+          background: rgba(0, 0, 0, .16);
+          backdrop-filter: blur(5px) saturate(.96);
+          -webkit-backdrop-filter: blur(5px) saturate(.96);
+        }
+
+        body[data-theme="light"] #${ID.panelBackdrop},
+        html[data-theme="light"] #${ID.panelBackdrop},
+        body[data-theme="light"].${CLS.androidFirefox} #${ID.panelBackdrop},
+        html[data-theme="light"].${CLS.androidFirefox} #${ID.panelBackdrop} {
+          background: rgba(15, 23, 42, .10);
+        }
+
+        #${ID.panel} {
+          /* Use a pure viewport-relative ratio for phone breathing room.
+             This avoids fixed CSS-pixel caps making different phone sizes look alike. */
+          top: max(8%, env(safe-area-inset-top));
+          left: 6px;
+          right: 6px;
+          bottom: max(8%, env(safe-area-inset-bottom));
+          z-index: 1;
+          width: auto;
+          height: auto;
+          max-width: none;
+          max-height: none;
+          transform: translateZ(0);
+          isolation: isolate;
+          padding: 7px;
+          background: rgba(28, 28, 30, .94);
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+        }
+
+        body[data-theme="light"] #${ID.panel},
+        html[data-theme="light"] #${ID.panel} {
+          background: rgba(255, 255, 255, .94);
+        }
+
+        #${ID.panel} > .crack-ui-panel-head {
+          min-height: 38px;
+          padding: 2px 3px 8px;
+        }
+
+        #${ID.panel} .crack-ui-panel-theme-strip {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 6px;
+          padding-bottom: 7px;
+        }
+
+        #${ID.panel} .crack-ui-theme-strip-title {
+          grid-column: 1 / -1;
+          padding: 0 2px 1px;
+          font-size: 11px;
+        }
+
+        #${ID.panel} .crack-ui-theme-strip-group {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 6px;
+          padding: 7px;
+          border-radius: 13px;
+        }
+
+        #${ID.panel} .crack-ui-theme-strip-label {
+          min-width: 0;
+          padding-left: 2px;
+          font-size: 10px;
+        }
+
+        #${ID.panel} .crack-ui-theme-strip-options {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 4px;
+        }
+
+        #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-row {
+          grid-template-columns: minmax(0, 1fr);
+          min-height: 34px;
+          padding: 0 5px;
+          gap: 0;
+        }
+
+        #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-name {
+          font-size: 10px;
+          text-align: center;
+        }
+
+        #${ID.panel} .crack-ui-panel-workspace {
+          display: flex;
+          flex-direction: column;
+        }
+
+        #${ID.panel} .crack-ui-panel-nav {
+          flex: 0 0 auto;
+          width: auto;
+          flex-direction: row;
+          gap: 6px;
+          padding: 0 0 7px;
+          border-right: 0;
+          border-bottom: 1px solid rgba(255, 255, 255, .065);
+          overflow-x: auto;
+          overflow-y: hidden;
+          background: transparent;
+        }
+
+        #${ID.panel} .crack-ui-panel-nav-button {
+          flex: 1 1 0;
+          width: auto;
+          min-height: 38px;
+          justify-content: center;
+          padding: 0 10px;
+          border-radius: 12px;
+          font-size: 12px;
+          text-align: center;
+          white-space: nowrap;
+        }
+
+        #${ID.panel} .crack-ui-panel-body {
+          padding: 9px 2px 12px;
+        }
+
+        body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav,
+        html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav {
+          border-bottom-color: rgba(17, 24, 39, .075);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #${ID.panel},
+        #${ID.panel} *,
+        #${ID.panelBackdrop} {
+          animation: none !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          scroll-behavior: auto !important;
+          transition-duration: .01ms !important;
+          transition-delay: 0ms !important;
+        }
       }
     `;
     if (typeof GM_addStyle === 'function') {
@@ -1906,6 +3144,21 @@
 
   function isTouchLikeDevice() {
     return window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)').matches;
+  }
+
+  function isAndroidFirefoxBrowser() {
+    if (cachedAndroidFirefoxBrowser != null) return cachedAndroidFirefoxBrowser;
+    const ua = String(navigator.userAgent || '');
+    cachedAndroidFirefoxBrowser = /Android/i.test(ua) && /Firefox\//i.test(ua);
+    return cachedAndroidFirefoxBrowser;
+  }
+
+  function isIosDevice() {
+    if (cachedIosDevice != null) return cachedIosDevice;
+    const ua = String(navigator.userAgent || '');
+    cachedIosDevice = /iPad|iPhone|iPod/i.test(ua) ||
+      (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+    return cachedIosDevice;
   }
 
   function getCrackUiViewportWidth() {
@@ -1934,12 +3187,31 @@
   function updateDeviceViewportClasses() {
     document.documentElement.classList.toggle(CLS.phoneViewport, isPhoneLikeViewport());
     document.documentElement.classList.toggle(CLS.tabletViewport, isTabletLikeViewport());
+    document.documentElement.classList.toggle(CLS.androidFirefox, isAndroidFirefoxBrowser());
   }
 
   updateDeviceViewportClasses();
 
   function isChatWidthSupportedViewport() {
     return window.matchMedia('(min-width: 768px)').matches;
+  }
+
+  function isDesktopChatListAutoHideViewport() {
+    return window.matchMedia('(min-width: 768px)').matches && !isTouchLikeDevice();
+  }
+
+  function getChatListAutoHideMode() {
+    if (!chatListAutoHide) return 'off';
+    if (isPhoneLikeViewport()) return 'phone';
+    if (isTabletLikeViewport()) return 'tablet-swipe';
+    if (isDesktopChatListAutoHideViewport()) return 'desktop';
+    return 'unsupported';
+  }
+
+  function isChatListAutoHideSupportedViewport() {
+    return isPhoneLikeViewport() ||
+      isTabletLikeViewport() ||
+      isDesktopChatListAutoHideViewport();
   }
 
   function getResolvedThemeMode(mode = themeMode) {
@@ -1953,18 +3225,44 @@
 
     root.classList.toggle('dark', resolved === 'dark');
     root.classList.toggle('light', resolved === 'light');
-    root.dataset.theme = resolved;
-    root.dataset.crackUiThemeMode = resolved;
-    root.style.colorScheme = resolved;
+    if (root.dataset.theme !== resolved) root.dataset.theme = resolved;
+    if (root.dataset.crackUiThemeMode !== resolved) root.dataset.crackUiThemeMode = resolved;
+    if (root.style.colorScheme !== resolved) root.style.colorScheme = resolved;
 
     if (body) {
-      body.dataset.theme = resolved;
-      body.style.colorScheme = resolved;
+      if (body.dataset.theme !== resolved) body.dataset.theme = resolved;
+      if (body.style.colorScheme !== resolved) body.style.colorScheme = resolved;
     }
   }
 
   function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isUsableElement(node) {
+    return node instanceof HTMLElement && node.isConnected;
+  }
+
+  function getElementDebugInfo(node) {
+    if (!isUsableElement(node)) return null;
+
+    const rect = node.getBoundingClientRect();
+    return {
+      tag: node.tagName.toLowerCase(),
+      id: node.id || '',
+      role: node.getAttribute('role') || '',
+      ariaLabel: node.getAttribute('aria-label') || '',
+      ariaExpanded: node.getAttribute('aria-expanded') || '',
+      dataState: node.getAttribute('data-state') || '',
+      text: normalizeText(node.textContent).slice(0, 120),
+      rect: {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      },
+      visible: isVisibleElement(node),
+    };
   }
 
   function findOriginalSettingRow(label) {
@@ -2000,43 +3298,90 @@
   }
 
   function dispatchSyntheticClick(target) {
-    if (!target) return false;
+    return !!dispatchSingleClickOnly(target, 'synthetic-click');
+  }
 
-    const pointerOptions = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      pointerId: 1,
-      pointerType: 'mouse',
-      isPrimary: true,
-      button: 0,
-      buttons: 1,
-    };
-    const mouseOptions = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      button: 0,
-      buttons: 1,
-    };
+  function getActivationPoint(target) {
+    try {
+      const r = target?.getBoundingClientRect?.();
+      if (!r) return { clientX: 0, clientY: 0 };
+      return {
+        clientX: Math.max(0, Math.round(r.left + r.width / 2)),
+        clientY: Math.max(0, Math.round(r.top + r.height / 2)),
+      };
+    } catch {
+      return { clientX: 0, clientY: 0 };
+    }
+  }
+
+  function dispatchSingleClickOnly(target, methodLabel = 'single-click') {
+    if (!target) return '';
+    const point = getActivationPoint(target);
 
     try {
-      target.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
-      target.dispatchEvent(new MouseEvent('mousedown', mouseOptions));
-      target.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
-      target.dispatchEvent(new MouseEvent('mouseup', { ...mouseOptions, buttons: 0 }));
-      target.dispatchEvent(new MouseEvent('click', { ...mouseOptions, buttons: 0 }));
-      if (typeof target.click === 'function') target.click();
-      return true;
-    } catch {
-      try {
-        target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        if (typeof target.click === 'function') target.click();
-        return true;
-      } catch {
-        return false;
+      if (typeof target.click === 'function') {
+        target.click();
+        return `${methodLabel}:native-click`;
       }
+    } catch {
     }
+
+    try {
+      target.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        buttons: 0,
+        ...point,
+      }));
+      return `${methodLabel}:mouse-click`;
+    } catch {
+      return '';
+    }
+  }
+
+  function dispatchTouchLikeActivation(target, methodLabel = 'touch-activation') {
+    if (!target) return '';
+    const point = getActivationPoint(target);
+
+    // iPad Safari can accept both a synthetic click and HTMLElement.click(), which can toggle Radix twice.
+    // For touch-like devices, use exactly one activation first, then delayed fallback if the panel still did not open.
+    const singleClick = dispatchSingleClickOnly(target, methodLabel);
+    if (singleClick) return singleClick;
+
+    try {
+      const pointerOptions = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        pointerId: 1,
+        pointerType: 'touch',
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        ...point,
+      };
+      target.dispatchEvent(new PointerEvent('pointerdown', pointerOptions));
+      target.dispatchEvent(new PointerEvent('pointerup', { ...pointerOptions, buttons: 0 }));
+      target.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        buttons: 0,
+        ...point,
+      }));
+      return `${methodLabel}:touch-pointer-click`;
+    } catch {
+      return '';
+    }
+  }
+
+  function dispatchRoomPanelToggleActivation(toggle, reason = '') {
+    if (!toggle) return '';
+    if (isTouchLikeDevice()) return dispatchTouchLikeActivation(toggle, reason || 'room-panel-touch');
+    return dispatchSyntheticClick(toggle) ? (reason ? `${reason}:synthetic-click` : 'synthetic-click') : '';
   }
 
   function clickOriginalSettingRow(label) {
@@ -2047,9 +3392,7 @@
       ? row
       : row.querySelector('[role="checkbox"]');
 
-    const clickedControl = dispatchSyntheticClick(control);
-    const clickedRow = dispatchSyntheticClick(row);
-    return clickedControl || clickedRow;
+    return dispatchSyntheticClick(control || row);
   }
 
   function applyOriginalSettingChoice(mode, labels, pendingKey) {
@@ -2062,12 +3405,16 @@
       return true;
     }
 
+    writeStorage(pendingKey, mode);
+
     if (clickOriginalSettingRow(label)) {
-      removeStorage(pendingKey);
+      setTimeout(() => {
+        const checkedAfterClick = isOriginalSettingChecked(label);
+        if (checkedAfterClick === true) removeStorage(pendingKey);
+        else if (checkedAfterClick === false) writeStorage(pendingKey, mode);
+      }, 180);
       return true;
     }
-
-    writeStorage(pendingKey, mode);
     return false;
   }
 
@@ -2088,7 +3435,7 @@
         window.location.reload();
       } catch {
         try {
-          window.location.href = window.location.href;
+          window.location.replace(window.location.href);
         } catch {
         }
       }
@@ -2164,26 +3511,43 @@
   }
 
   async function requestEpisodeUiModeWithFetch(payload) {
-    const response = await fetch(CRACK_API.episodeUiSetting, {
-      method: 'PATCH',
-      mode: 'cors',
-      credentials: 'include',
-      cache: 'no-store',
-      headers: getCrackUiSettingHeaders(),
-      body: JSON.stringify(payload),
-    });
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), EPISODE_UI_REQUEST_TIMEOUT_MS)
+      : null;
 
-    const text = await response.text().catch(() => '');
-    const result = parseEpisodeUiResponseText(text);
+    try {
+      const response = await fetch(CRACK_API.episodeUiSetting, {
+        method: 'PATCH',
+        mode: 'cors',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: getCrackUiSettingHeaders(),
+        body: JSON.stringify(payload),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
 
-    if (!response.ok) {
-      const error = new Error(`fetch ui-setting ${response.status}`);
-      error.status = response.status;
-      error.result = result;
+      const text = await response.text().catch(() => '');
+      const result = parseEpisodeUiResponseText(text);
+
+      if (!response.ok) {
+        const error = new Error(`fetch ui-setting ${response.status}`);
+        error.status = response.status;
+        error.result = result;
+        throw error;
+      }
+
+      return result;
+    } catch (error) {
+      if (controller?.signal.aborted) {
+        const timeoutError = new Error('fetch ui-setting timeout');
+        timeoutError.name = 'TimeoutError';
+        throw timeoutError;
+      }
       throw error;
+    } finally {
+      if (timeoutId != null) window.clearTimeout(timeoutId);
     }
-
-    return result;
   }
 
   function requestEpisodeUiModeWithGm(payload) {
@@ -2200,7 +3564,7 @@
         data: JSON.stringify(payload),
         withCredentials: true,
         anonymous: false,
-        timeout: 10000,
+        timeout: EPISODE_UI_REQUEST_TIMEOUT_MS,
         onload: (response) => {
           const result = parseEpisodeUiResponseText(response.responseText || '');
           if (response.status >= 200 && response.status < 300) {
@@ -2233,6 +3597,7 @@
       : 'access_token 쿠키를 못 찾음';
     const message = `Crack UI Plus: ${label} 저장 실패\n${describeEpisodeUiError(error)}\n${tokenHint}\n\n원본 설정에서는 되는 상태면 이 문구를 그대로 보내줘.`;
     writeStorage(LS.lastEpisodeUiError, message);
+    reportCrackUiError('episode-ui-save', error);
     console.warn('[Crack UI Plus] episode UI setting save failed', error);
     try {
       window.alert(message);
@@ -2253,10 +3618,17 @@
       result = await requestEpisodeUiModeWithFetch(payload);
     } catch (error) {
       errors.push(error);
+
+      // A newer selection supersedes this request. Do not start a second network
+      // fallback for a value that is no longer current.
+      if (requestSeq !== episodeUiSaveRequestSeq) return null;
+
       try {
         result = await requestEpisodeUiModeWithGm(payload);
       } catch (gmError) {
         errors.push(gmError);
+        if (requestSeq !== episodeUiSaveRequestSeq) return null;
+
         const combined = new Error(errors.map(describeEpisodeUiError).join(' | '));
         combined.errors = errors;
         throw combined;
@@ -2718,9 +4090,10 @@
   function updateImageSizeUi() {
     const slider = document.getElementById(ID.imageSlider);
     const value = document.getElementById(ID.imageValue);
+    const nextText = formatImageSizeDisplay(imageSize);
 
     if (slider) slider.value = String(imageSize);
-    if (value) value.textContent = formatImageSizeDisplay(imageSize);
+    if (value && value.textContent !== nextText) value.textContent = nextText;
   }
 
   function updateChatWidthUi() {
@@ -2740,10 +4113,41 @@
       slider.title = supported ? '' : 'PC/태블릿 전용';
     }
 
-    if (value) {
-      value.textContent = supported ? formatChatWidthDisplay(chatWidthPercent) : 'PC/태블릿 전용';
-    }
+    const nextText = supported ? formatChatWidthDisplay(chatWidthPercent) : 'PC/태블릿 전용';
+    if (value && value.textContent !== nextText) value.textContent = nextText;
   }
+
+  function updateChatListAutoHideUi() {
+    const input = document.getElementById(ID.toggleChatListAutoHide);
+    const row = input?.closest('[data-crack-ui-chat-list-auto-hide-row]');
+    const tablet = isTabletLikeViewport();
+    const supported = isChatListAutoHideSupportedViewport();
+
+    if (row) {
+      row.dataset.disabled = supported ? '0' : '1';
+      row.setAttribute('aria-disabled', supported ? 'false' : 'true');
+    }
+
+    if (input) {
+      input.disabled = !supported;
+      input.title = supported
+        ? (tablet ? '태블릿 채팅 목록 슬라이더 켜기/끄기' : '')
+        : 'PC/모바일 전용';
+    }
+
+    const modeButton = document.getElementById(ID.chatListModeButton);
+    if (modeButton) {
+      modeButton.disabled = !supported;
+      modeButton.title = supported
+        ? (tablet ? '태블릿에서는 슬라이더 전용' : '모바일 동작 방식 선택')
+        : 'PC/모바일 전용';
+    }
+
+    const label = row?.querySelector('.crack-ui-row-name');
+    const nextLabel = tablet ? '채팅 목록 슬라이더' : '채팅 목록 자동 숨김';
+    if (label && label.textContent !== nextLabel) label.textContent = nextLabel;
+  }
+
 
   function updateThemeUi() {
     document.querySelectorAll('[data-crack-ui-theme-mode]').forEach((button) => {
@@ -2797,17 +4201,95 @@
     });
   }
 
-  function startChatWidthDrag() {
-    isChatWidthDragging = true;
-    document.documentElement.classList.add(CLS.widthDragging);
+  function getPanelRangeInput(target) {
+    if (!(target instanceof HTMLInputElement) || target.type !== 'range') return null;
+    return target.closest?.(`#${ID.panel}`) ? target : null;
   }
 
-  function stopChatWidthDrag() {
-    if (!isChatWidthDragging) return;
+  function startPanelRangePreview(input) {
+    if (!input || input.disabled) return;
 
-    isChatWidthDragging = false;
-    document.documentElement.classList.remove(CLS.widthDragging);
-    flushChatWidthSave();
+    const panel = input.closest?.(`#${ID.panel}`);
+    const row = input.closest?.('.crack-ui-range-row');
+    if (!panel || !row) return;
+
+    activePanelRangePreviewInput = input;
+    panel.querySelectorAll('[data-crack-ui-range-preview-active="1"]').forEach((element) => {
+      if (element !== row) delete element.dataset.crackUiRangePreviewActive;
+    });
+
+    row.dataset.crackUiRangePreviewActive = '1';
+    panel.dataset.crackUiRangePreview = '1';
+    document.documentElement.classList.add(CLS.rangePreview);
+  }
+
+  function stopPanelRangePreview() {
+    const panel = document.getElementById(ID.panel);
+    panel?.querySelectorAll('[data-crack-ui-range-preview-active="1"]').forEach((element) => {
+      delete element.dataset.crackUiRangePreviewActive;
+    });
+
+    if (panel) delete panel.dataset.crackUiRangePreview;
+    activePanelRangePreviewInput = null;
+    document.documentElement.classList.remove(CLS.rangePreview);
+  }
+
+  function startPanelRangeDrag(input) {
+    if (!input || input.disabled) return;
+
+    if (activePanelRangePreviewInput === input) {
+      if (input.id === ID.chatWidthSlider && !isChatWidthDragging) {
+        isChatWidthDragging = true;
+        document.documentElement.classList.add(CLS.widthDragging);
+      }
+      return;
+    }
+
+    if (activePanelRangePreviewInput) stopPanelRangeDrag();
+
+    startPanelRangePreview(input);
+
+    // Chat width additionally disables its layout transition while dragging.
+    // Every other current or future range input still gets the transparent preview automatically.
+    if (input.id === ID.chatWidthSlider) {
+      isChatWidthDragging = true;
+      document.documentElement.classList.add(CLS.widthDragging);
+    }
+  }
+
+  function stopPanelRangeDrag() {
+    const input = activePanelRangePreviewInput;
+
+    if (isChatWidthDragging) {
+      isChatWidthDragging = false;
+      document.documentElement.classList.remove(CLS.widthDragging);
+      flushChatWidthSave();
+    }
+
+    if (input) stopPanelRangePreview();
+  }
+
+  function bindPanelRangeDragDelegation(panel) {
+    if (!panel || panel.dataset.crackUiRangeDragBound === '1') return;
+    panel.dataset.crackUiRangeDragBound = '1';
+
+    const startFromEvent = (event) => {
+      const input = getPanelRangeInput(event.target);
+      if (input) startPanelRangeDrag(input);
+    };
+
+    const stopFromEvent = (event) => {
+      const input = getPanelRangeInput(event.target);
+      if (!input || input === activePanelRangePreviewInput) stopPanelRangeDrag();
+    };
+
+    // Event delegation means newly added range sliders are handled without extra binding code.
+    panel.addEventListener('pointerdown', startFromEvent, { passive: true });
+    panel.addEventListener('touchstart', startFromEvent, { passive: true });
+    panel.addEventListener('mousedown', startFromEvent);
+    panel.addEventListener('input', startFromEvent);
+    panel.addEventListener('change', stopFromEvent);
+    panel.addEventListener('blur', stopFromEvent, true);
   }
 
   function clearMobileHideTimer() {
@@ -2848,7 +4330,7 @@
       }
       cluster.remove();
     });
-    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}`)
+    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panelRoot}, #${ID.panelBackdrop}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}, .crack-ui-novel-model-indicator, .crack-ui-novel-model-menu, .crack-ui-novel-model-menu-backdrop`)
       .forEach((el) => el.remove());
     document.documentElement.classList.remove(
       'crack-wrtn-ui-autohide',
@@ -2973,7 +4455,7 @@
       e.preventDefault();
       e.stopPropagation();
       clearMobileHideTimer();
-      togglePanel(btn);
+      togglePanel();
     });
     return btn;
   }
@@ -3053,6 +4535,10 @@
     handle.addEventListener('click', openFromHandle, { passive: false });
   }
 
+  // =====================================================
+  // Feature: header auto hide / settings panel
+  // =====================================================
+
   function ensureRevealZone() {
     let zone = document.getElementById(ID.zone);
     if (!zone) {
@@ -3086,66 +4572,129 @@
     bindMobileHandle(handle);
   }
 
-  function setPanelSectionOpen(sectionName, isOpen) {
-    const section = document.querySelector(`[data-crack-ui-section="${sectionName}"]`);
-    if (!section) return;
+  const PANEL_SECTION_LABEL = Object.freeze({
+    chat: '채팅',
+    display: '화면',
+  });
 
-    const button = section.querySelector(`[data-crack-ui-section-toggle="${sectionName}"]`);
-    const body = section.querySelector(`[data-crack-ui-section-body="${sectionName}"]`);
+  function setActivePanelSection(sectionName, options = {}) {
+    if (!Object.prototype.hasOwnProperty.call(PANEL_SECTION_LABEL, sectionName)) return;
 
-    section.dataset.open = isOpen ? '1' : '0';
-    if (button) {
-      button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    activePanelSection = sectionName;
+    if (options.persist !== false) {
+      writeStorage(LS.panelActiveSection, activePanelSection);
     }
 
-    if (body) {
-      body.hidden = !isOpen;
-    }
-  }
+    const panel = document.getElementById(ID.panel);
+    if (!panel) return;
 
-  function syncPanelSections() {
-    setPanelSectionOpen('display', displaySectionOpen);
-    setPanelSectionOpen('theme', themeSectionOpen);
-    setPanelSectionOpen('chat', chatSectionOpen);
-  }
+    panel.querySelectorAll('[data-crack-ui-section-nav]').forEach((button) => {
+      const active = button.dataset.crackUiSectionNav === activePanelSection;
+      button.dataset.active = active ? '1' : '0';
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      button.tabIndex = active ? 0 : -1;
+    });
 
-  function setSavedPanelSectionOpen(sectionName, isOpen) {
-    if (sectionName === 'display') {
-      displaySectionOpen = isOpen;
-      writeStorage(LS.sectionDisplayOpen, isOpen ? '1' : '0');
-    } else if (sectionName === 'theme') {
-      themeSectionOpen = isOpen;
-      writeStorage(LS.sectionThemeOpen, isOpen ? '1' : '0');
-    } else if (sectionName === 'chat') {
-      chatSectionOpen = isOpen;
-      writeStorage(LS.sectionChatOpen, isOpen ? '1' : '0');
-    }
+    panel.querySelectorAll('[data-crack-ui-section]').forEach((section) => {
+      section.hidden = section.dataset.crackUiSection !== activePanelSection;
+    });
 
-    setPanelSectionOpen(sectionName, isOpen);
-    if (panelOpen) {
+    if (options.resetScroll !== false) {
+      const scroller = panel.querySelector('.crack-ui-panel-body');
+      if (scroller) scroller.scrollTop = 0;
+      panel.dataset.crackUiThemeStripRestoring = '1';
+      panel.dataset.crackUiThemeStripHidden = '0';
       requestAnimationFrame(() => {
-        const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
-        positionPanel(anchor);
+        requestAnimationFrame(() => {
+          delete panel.dataset.crackUiThemeStripRestoring;
+        });
       });
     }
   }
 
+  function syncPanelSections() {
+    setActivePanelSection(activePanelSection, { persist: false, resetScroll: false });
+  }
+
   function bindPanelSections(panel) {
-    panel.querySelectorAll('[data-crack-ui-section-toggle]').forEach((button) => {
+    const sectionOrder = Object.keys(PANEL_SECTION_LABEL);
+    const buttons = [...panel.querySelectorAll('[data-crack-ui-section-nav]')];
+
+    buttons.forEach((button) => {
       if (button.dataset.crackUiBound === '1') return;
       button.dataset.crackUiBound = '1';
 
       button.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        setActivePanelSection(button.dataset.crackUiSectionNav);
+      });
 
-        const sectionName = button.dataset.crackUiSectionToggle;
-        const section = panel.querySelector(`[data-crack-ui-section="${sectionName}"]`);
-        const isOpen = section?.dataset.open !== '0';
+      button.addEventListener('keydown', (e) => {
+        const currentIndex = sectionOrder.indexOf(button.dataset.crackUiSectionNav);
+        if (currentIndex < 0) return;
 
-        setSavedPanelSectionOpen(sectionName, !isOpen);
+        let nextIndex = -1;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+          nextIndex = (currentIndex + 1) % sectionOrder.length;
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          nextIndex = (currentIndex - 1 + sectionOrder.length) % sectionOrder.length;
+        } else if (e.key === 'Home') {
+          nextIndex = 0;
+        } else if (e.key === 'End') {
+          nextIndex = sectionOrder.length - 1;
+        }
+
+        if (nextIndex < 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const nextSection = sectionOrder[nextIndex];
+        setActivePanelSection(nextSection);
+        panel.querySelector(`[data-crack-ui-section-nav="${nextSection}"]`)?.focus?.();
       });
     });
+  }
+
+  function bindPanelThemeStripScroll(panel) {
+    const scroller = panel.querySelector('.crack-ui-panel-body');
+    if (!scroller || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
+
+    scroller.dataset.crackUiThemeStripScrollBound = '1';
+    let restoreCleanupRaf = 0;
+
+    const clearRestoreMode = () => {
+      if (restoreCleanupRaf) cancelAnimationFrame(restoreCleanupRaf);
+      restoreCleanupRaf = requestAnimationFrame(() => {
+        restoreCleanupRaf = requestAnimationFrame(() => {
+          delete panel.dataset.crackUiThemeStripRestoring;
+          restoreCleanupRaf = 0;
+        });
+      });
+    };
+
+    const updateThemeStripVisibility = () => {
+      const scrollTop = Math.max(0, scroller.scrollTop);
+      const hidden = panel.dataset.crackUiThemeStripHidden === '1';
+
+      // Hysteresis prevents rapid hide/show changes around the boundary.
+      if (!hidden && scrollTop > 12) {
+        delete panel.dataset.crackUiThemeStripRestoring;
+        panel.dataset.crackUiThemeStripHidden = '1';
+        return;
+      }
+
+      // Restore only after the scroller has actually reached the top.
+      // Height/padding return immediately, avoiding the upward "thud" effect.
+      if (hidden && scrollTop <= 1) {
+        panel.dataset.crackUiThemeStripRestoring = '1';
+        panel.dataset.crackUiThemeStripHidden = '0';
+        clearRestoreMode();
+      }
+    };
+
+    scroller.addEventListener('scroll', updateThemeStripVisibility, { passive: true });
+    updateThemeStripVisibility();
   }
 
   function bindCheckbox(panel, id, checked, onChange) {
@@ -3157,6 +4706,214 @@
     });
 
     return input;
+  }
+
+  function getMenuAssistModePopoverId(target) {
+    return target === 'room' ? ID.roomMenuModePanel : ID.chatListModePanel;
+  }
+
+  function closeMenuAssistModePanels(panel = document.getElementById(ID.panel)) {
+    document.querySelectorAll('[data-crack-ui-menu-mode-popover]').forEach((popover) => {
+      popover.remove();
+    });
+
+    panel?.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
+      button.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function syncMenuAssistModeUi(panel = document.getElementById(ID.panel)) {
+    if (!panel) return;
+
+    const values = {
+      room: roomMenuAssistMode,
+      'chat-list': chatListAssistMode,
+    };
+
+    Object.entries(values).forEach(([target, mode]) => {
+      const normalized = target === 'chat-list' && isTabletLikeViewport()
+        ? 'swipe'
+        : normalizeMenuAssistMode(mode);
+      const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
+      const nextLabel = MENU_ASSIST_MODE_LABEL[normalized];
+      if (button && button.textContent !== nextLabel) button.textContent = nextLabel;
+
+      const popover = document.querySelector(`[data-crack-ui-menu-mode-popover="${target}"]`);
+      popover?.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
+        const selected = choice.dataset.crackUiMenuModeChoice === normalized;
+        choice.dataset.selected = selected ? '1' : '0';
+        choice.setAttribute('aria-checked', selected ? 'true' : 'false');
+      });
+    });
+  }
+
+  function positionMenuAssistModePopover(button, popover) {
+    if (!button || !popover) return;
+
+    const rect = button.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportLeft = Number(viewport?.offsetLeft || 0);
+    const viewportTop = Number(viewport?.offsetTop || 0);
+    const viewportWidth = Math.max(1, Number(viewport?.width || window.innerWidth || 1));
+    const viewportHeight = Math.max(1, Number(viewport?.height || window.innerHeight || 1));
+    const width = Math.min(180, viewportWidth - 20);
+
+    popover.style.setProperty('width', `${width}px`, 'important');
+
+    const measuredHeight = popover.getBoundingClientRect().height;
+    const popoverHeight = measuredHeight > 20 ? measuredHeight : 132;
+    const viewportRight = viewportLeft + viewportWidth;
+    const viewportBottom = viewportTop + viewportHeight;
+
+    const left = Math.max(
+      viewportLeft + 10,
+      Math.min(viewportRight - width - 10, viewportLeft + rect.right - width)
+    );
+
+    let top = viewportTop + rect.bottom + 8;
+
+    if (top + popoverHeight > viewportBottom - 10) {
+      top = Math.max(viewportTop + 10, viewportTop + rect.top - popoverHeight - 8);
+      popover.style.transformOrigin = 'bottom right';
+    } else {
+      popover.style.transformOrigin = 'top right';
+    }
+
+    popover.style.setProperty('left', `${Math.round(left)}px`, 'important');
+    popover.style.setProperty('top', `${Math.round(top)}px`, 'important');
+  }
+
+  function setMenuAssistMode(target, value) {
+    const mode = target === 'chat-list' && isTabletLikeViewport()
+      ? 'swipe'
+      : normalizeMenuAssistMode(value);
+
+    if (target === 'room') {
+      roomMenuAssistMode = mode;
+      writeStorage(LS.roomMenuAssistMode, mode);
+      ensureRoomMenuHandle();
+    } else if (target === 'chat-list') {
+      chatListAssistMode = mode;
+      writeStorage(LS.chatListAssistMode, mode);
+      ensureChatListAutoHide();
+    } else {
+      return;
+    }
+
+    closeMenuAssistModePanels();
+    applyState();
+  }
+
+  function openMenuAssistModePopover(target, button) {
+    try {
+      if (
+        !button ||
+        (!isPhoneLikeViewport() && !isTabletLikeViewport()) ||
+        (target === 'chat-list' && isTabletLikeViewport())
+      ) {
+        closeMenuAssistModePanels();
+        return;
+      }
+
+      const selector = `[data-crack-ui-menu-mode-popover="${target}"]`;
+      const wasOpen = !!document.querySelector(selector);
+      closeMenuAssistModePanels();
+      if (wasOpen) return;
+
+      const popover = document.createElement('div');
+      popover.id = getMenuAssistModePopoverId(target);
+      popover.className = 'crack-ui-menu-mode-popover';
+      popover.dataset.crackUiMenuModePopover = target;
+      popover.setAttribute('role', 'menu');
+      popover.setAttribute('aria-label', '메뉴 열기 방식 선택');
+
+      const choices = target === 'chat-list' && isTabletLikeViewport()
+        ? [['swipe', '슬라이더']]
+        : [
+            ['handle', '핸들'],
+            ['swipe', '슬라이더'],
+            ['both', '핸들 + 슬라이더'],
+          ];
+
+      for (const [value, label] of choices) {
+        const choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'crack-ui-menu-mode-choice';
+        choice.dataset.crackUiMenuModeTarget = target;
+        choice.dataset.crackUiMenuModeChoice = value;
+        choice.setAttribute('role', 'menuitemradio');
+        choice.textContent = label;
+        popover.appendChild(choice);
+      }
+
+      popover.addEventListener('click', (event) => {
+        const choice = event.target.closest?.('[data-crack-ui-menu-mode-choice]');
+        if (!choice || !popover.contains(choice)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        setMenuAssistMode(
+          choice.dataset.crackUiMenuModeTarget,
+          choice.dataset.crackUiMenuModeChoice
+        );
+      });
+
+      document.body.appendChild(popover);
+      button.setAttribute('aria-expanded', 'true');
+      syncMenuAssistModeUi();
+      positionMenuAssistModePopover(button, popover);
+    } catch (error) {
+      reportCrackUiError('menu-mode-popover', error);
+      closeMenuAssistModePanels();
+    }
+  }
+
+  function bindMenuAssistModeControls(panel) {
+    if (!panel || panel.dataset.crackUiMenuModeBound === '1') return;
+    panel.dataset.crackUiMenuModeBound = '1';
+
+    panel.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
+      if (button.dataset.crackUiMenuModeButtonBound === '1') return;
+      button.dataset.crackUiMenuModeButtonBound = '1';
+
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const target = button.dataset.crackUiMenuModeToggle || '';
+        openMenuAssistModePopover(target, button);
+      });
+    });
+
+    const root = document.documentElement;
+    if (root.dataset.crackUiMenuModePopoverBound !== '1') {
+      root.dataset.crackUiMenuModePopoverBound = '1';
+
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('[data-crack-ui-menu-mode-popover]')) return;
+        if (target.closest('[data-crack-ui-menu-mode-toggle]')) return;
+        closeMenuAssistModePanels();
+      });
+
+      document.addEventListener('scroll', () => {
+        if (document.querySelector('[data-crack-ui-menu-mode-popover]')) {
+          closeMenuAssistModePanels();
+        }
+      }, true);
+
+      window.addEventListener('resize', () => {
+        closeMenuAssistModePanels();
+      }, { passive: true });
+
+      window.visualViewport?.addEventListener?.('resize', () => {
+        closeMenuAssistModePanels();
+      }, { passive: true });
+    }
+
+    syncMenuAssistModeUi(panel);
   }
 
   function bindRangeInput(panel, id, onInput, onCommit = null) {
@@ -3222,7 +4979,26 @@
   }
 
   function ensurePanel() {
-    if (document.getElementById(ID.panel)) return;
+    let panelRoot = document.getElementById(ID.panelRoot);
+    if (!panelRoot) {
+      panelRoot = document.createElement('div');
+      panelRoot.id = ID.panelRoot;
+      document.body.appendChild(panelRoot);
+    }
+
+    let panelBackdrop = document.getElementById(ID.panelBackdrop);
+    if (!panelBackdrop) {
+      panelBackdrop = document.createElement('div');
+      panelBackdrop.id = ID.panelBackdrop;
+      panelBackdrop.setAttribute('aria-hidden', 'true');
+    }
+    if (panelBackdrop.parentElement !== panelRoot) panelRoot.appendChild(panelBackdrop);
+
+    const existingPanel = document.getElementById(ID.panel);
+    if (existingPanel) {
+      if (existingPanel.parentElement !== panelRoot) panelRoot.appendChild(existingPanel);
+      return;
+    }
 
     const panel = document.createElement('div');
     panel.id = ID.panel;
@@ -3233,74 +5009,51 @@
       <div class="crack-ui-panel-head">
         <div class="crack-ui-title-wrap">
           <div class="crack-ui-panel-title">Crack UI Plus</div>
+          <div class="crack-ui-panel-version" aria-label="버전 ${CRACK_UI_VERSION}">v${CRACK_UI_VERSION}</div>
         </div>
         <button type="button" class="crack-ui-panel-close" aria-label="닫기">×</button>
       </div>
 
-      <div class="crack-ui-panel-body">
-        <div class="crack-ui-section" data-crack-ui-section="theme" data-open="${themeSectionOpen ? '1' : '0'}">
-          <button
-            type="button"
-            class="crack-ui-section-head"
-            data-crack-ui-section-toggle="theme"
-            aria-expanded="${themeSectionOpen ? 'true' : 'false'}"
-          >
-            <span>
-              <span class="crack-ui-section-title">테마</span>
-            </span>
-            <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
-          </button>
+      <div class="crack-ui-panel-shell">
+        <div class="crack-ui-panel-theme-strip" aria-label="빠른 테마 설정">
+          <span class="crack-ui-theme-strip-title">테마</span>
 
-          <div class="crack-ui-section-body" data-crack-ui-section-body="theme">
-            <div class="crack-ui-choice-group">
-              <div class="crack-ui-choice-head">
-                <span class="crack-ui-choice-title">색상</span>
-              </div>
-              <div class="crack-ui-choice-list">
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="light" data-selected="${themeMode === 'light' ? '1' : '0'}" aria-checked="${themeMode === 'light' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">라이트 모드</span>
-                </button>
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="dark" data-selected="${themeMode === 'dark' ? '1' : '0'}" aria-checked="${themeMode === 'dark' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">다크 모드</span>
-                </button>
-              </div>
+          <div class="crack-ui-theme-strip-group">
+            <span class="crack-ui-theme-strip-label">색상</span>
+            <div class="crack-ui-theme-strip-options">
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="light" data-selected="${themeMode === 'light' ? '1' : '0'}" aria-checked="${themeMode === 'light' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">라이트 모드</span>
+              </button>
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-theme-mode="dark" data-selected="${themeMode === 'dark' ? '1' : '0'}" aria-checked="${themeMode === 'dark' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">다크 모드</span>
+              </button>
             </div>
+          </div>
 
-            <div class="crack-ui-choice-group">
-              <div class="crack-ui-choice-head">
-                <span class="crack-ui-choice-title">작품</span>
-              </div>
-              <div class="crack-ui-choice-list">
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="novel" data-selected="${episodeUiMode === 'novel' ? '1' : '0'}" aria-checked="${episodeUiMode === 'novel' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">소설형 UI</span>
-                </button>
-                <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="chat" data-selected="${episodeUiMode === 'chat' ? '1' : '0'}" aria-checked="${episodeUiMode === 'chat' ? 'true' : 'false'}">
-                  <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <span class="crack-ui-choice-name">채팅형 UI</span>
-                </button>
-              </div>
+          <div class="crack-ui-theme-strip-group">
+            <span class="crack-ui-theme-strip-label">작품</span>
+            <div class="crack-ui-theme-strip-options">
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="novel" data-selected="${episodeUiMode === 'novel' ? '1' : '0'}" aria-checked="${episodeUiMode === 'novel' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">소설형 UI</span>
+              </button>
+              <button type="button" role="checkbox" class="crack-ui-choice-row" data-crack-ui-episode-ui-mode="chat" data-selected="${episodeUiMode === 'chat' ? '1' : '0'}" aria-checked="${episodeUiMode === 'chat' ? 'true' : 'false'}">
+                <span class="crack-ui-choice-name">채팅형 UI</span>
+              </button>
             </div>
           </div>
         </div>
 
-        <div class="crack-ui-section" data-crack-ui-section="chat" data-open="${chatSectionOpen ? '1' : '0'}">
-          <button
-            type="button"
-            class="crack-ui-section-head"
-            data-crack-ui-section-toggle="chat"
-            aria-expanded="${chatSectionOpen ? 'true' : 'false'}"
-          >
-            <span>
-              <span class="crack-ui-section-title">채팅</span>
-            </span>
-            <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
-          </button>
+        <div class="crack-ui-panel-workspace">
+          <nav class="crack-ui-panel-nav" role="tablist" aria-label="설정 카테고리">
+            <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="chat" data-active="${activePanelSection === 'chat' ? '1' : '0'}" aria-selected="${activePanelSection === 'chat' ? 'true' : 'false'}">채팅</button>
+            <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="display" data-active="${activePanelSection === 'display' ? '1' : '0'}" aria-selected="${activePanelSection === 'display' ? 'true' : 'false'}">화면</button>
+          </nav>
 
-          <div class="crack-ui-section-body" data-crack-ui-section-body="chat">
-            <div class="crack-ui-range-row" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
+          <div class="crack-ui-panel-content">
+            <div class="crack-ui-panel-body">
+        <div class="crack-ui-section" data-crack-ui-section="chat">
+          <div class="crack-ui-section-body crack-ui-chat-layout-grid" data-crack-ui-section-body="chat">
+            <div class="crack-ui-range-row crack-ui-chat-layout-half" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
               <div class="crack-ui-range-head">
                 <span class="crack-ui-row-name">대화창 폭 조절</span>
                 <span id="${ID.chatWidthValue}" class="crack-ui-range-value">${formatChatWidthDisplay(chatWidthPercent)}</span>
@@ -3317,7 +5070,7 @@
               >
             </div>
 
-            <div class="crack-ui-range-row">
+            <div class="crack-ui-range-row crack-ui-chat-layout-half">
               <div class="crack-ui-range-head">
                 <span class="crack-ui-row-name">이미지 사이즈 조절</span>
                 <span id="${ID.imageValue}" class="crack-ui-range-value">${formatImageSizeDisplay(imageSize)}</span>
@@ -3335,7 +5088,7 @@
               >
             </div>
 
-            <div class="crack-ui-model-settings-card">
+            <div class="crack-ui-model-settings-card crack-ui-chat-layout-full">
               <label class="crack-ui-row crack-ui-model-toggle-row">
                 <span class="crack-ui-row-text">
                   <span class="crack-ui-row-name">입력창 모델 변경 버튼</span>
@@ -3374,18 +5127,23 @@
               </div>
             </div>
 
-            <label class="crack-ui-row">
+            <div class="crack-ui-row crack-ui-menu-assist-row crack-ui-chat-layout-half" data-crack-ui-menu-assist-row="room" data-crack-ui-chat-order="1">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅방 설정 자동 숨김</span>
               </span>
 
-              <span>
+              <button id="${ID.roomMenuModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="room" aria-haspopup="menu" aria-expanded="false">
+                ${MENU_ASSIST_MODE_LABEL[roomMenuAssistMode]}
+              </button>
+
+              <label class="crack-ui-menu-toggle-wrap">
                 <input id="${ID.toggleRoomMenuHandle}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
-              </span>
-            </label>
+              </label>
 
-            <label class="crack-ui-row">
+            </div>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="2">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">스탯창 숨김</span>
               </span>
@@ -3396,7 +5154,44 @@
               </span>
             </label>
 
-            <label class="crack-ui-row">
+            <label class="crack-ui-row crack-ui-empty-send-guard-row crack-ui-chat-layout-half" data-crack-ui-chat-order="3">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">스토리 자동 재생 끄기</span>
+                <span class="crack-ui-row-desc">입력창이 비어 있으면 전송을 막음</span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleEmptySendGuard}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="4">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">상황 이미지 끄기</span>
+                <span class="crack-ui-row-desc">
+                  세이프티 작품 전용
+                </span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleHideSituationImage}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="5">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">소설형 UI 모델 표기</span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleNovelModelIndicator}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="6">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">줄바꿈 최적화</span>
                 <span class="crack-ui-row-desc">
@@ -3409,22 +5204,14 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
+
+
+
+
           </div>
         </div>
 
-        <div class="crack-ui-section" data-crack-ui-section="display" data-open="${displaySectionOpen ? '1' : '0'}">
-          <button
-            type="button"
-            class="crack-ui-section-head"
-            data-crack-ui-section-toggle="display"
-            aria-expanded="${displaySectionOpen ? 'true' : 'false'}"
-          >
-            <span>
-              <span class="crack-ui-section-title">화면</span>
-            </span>
-            <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
-          </button>
-
+        <div class="crack-ui-section" data-crack-ui-section="display">
           <div class="crack-ui-section-body" data-crack-ui-section-body="display">
             <label class="crack-ui-row">
               <span class="crack-ui-row-text">
@@ -3437,16 +5224,33 @@
               </span>
             </label>
 
-            <label class="crack-ui-row">
+            <label class="crack-ui-row" data-disabled="${isIosDevice() ? '1' : '0'}" aria-disabled="${isIosDevice() ? 'true' : 'false'}">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">전체화면 버튼</span>
+                ${isIosDevice() ? '<span class="crack-ui-row-desc">iOS 미지원</span>' : ''}
+              </span>
+
+              <span>
+                <input id="${ID.toggleFullscreenButton}" class="crack-ui-toggle" type="checkbox" ${isIosDevice() ? 'disabled' : ''}>
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <div class="crack-ui-row crack-ui-menu-assist-row" data-crack-ui-chat-list-auto-hide-row data-crack-ui-menu-assist-row="chat-list" data-disabled="${isChatListAutoHideSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatListAutoHideSupportedViewport() ? 'false' : 'true'}">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅 목록 자동 숨김</span>
               </span>
 
-              <span>
+              <button id="${ID.chatListModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="chat-list" aria-haspopup="menu" aria-expanded="false">
+                ${MENU_ASSIST_MODE_LABEL[chatListAssistMode]}
+              </button>
+
+              <label class="crack-ui-menu-toggle-wrap">
                 <input id="${ID.toggleChatListAutoHide}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
-              </span>
-            </label>
+              </label>
+
+            </div>
 
             <label class="crack-ui-row">
               <span class="crack-ui-row-text">
@@ -3460,6 +5264,9 @@
             </label>
           </div>
         </div>
+            </div>
+          </div>
+        </div>
       </div>
     `;
     panel.addEventListener('click', (e) => e.stopPropagation());
@@ -3469,14 +5276,17 @@
       e.stopPropagation();
       closePanel();
     });
-    document.body.appendChild(panel);
+    panelRoot.appendChild(panel);
 
     bindPanelSections(panel);
+    bindPanelThemeStripScroll(panel);
     bindChoiceButtons(panel);
+    bindMenuAssistModeControls(panel);
     syncPanelSections();
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
     updateThemeUi();
+    updateChatListAutoHideUi();
 
     bindCheckbox(panel, ID.toggleHeader, autoHideHeader, (checked) => {
       autoHideHeader = checked;
@@ -3513,67 +5323,79 @@
       writeStorage(LS.bottomModelPicker, bottomModelPicker ? '1' : '0');
       ensureBottomModelPicker();
     });
+    bindCheckbox(panel, ID.toggleEmptySendGuard, emptySendGuard, (checked) => {
+      emptySendGuard = checked;
+      writeStorage(LS.emptySendGuard, emptySendGuard ? '1' : '0');
+      applyEmptySendGuardState();
+    });
+
+    bindCheckbox(panel, ID.toggleNovelModelIndicator, novelModelIndicator, (checked) => {
+      novelModelIndicator = checked;
+      writeStorage(LS.novelModelIndicator, novelModelIndicator ? '1' : '0');
+      if (novelModelIndicator) {
+        novelModelIndicatorCleanupPending = true;
+        installNovelModelNetworkCapture();
+        scheduleNovelModelIndicatorScan({ immediate: true });
+      } else {
+        disableNovelModelIndicatorUi();
+      }
+    });
+
+    bindCheckbox(panel, ID.toggleHideSituationImage, hideSituationImage, (checked) => {
+      hideSituationImage = checked;
+      writeStorage(LS.hideSituationImage, hideSituationImage ? '1' : '0');
+      applyState();
+      // User activation should reflect immediately; routine init scans stay throttled.
+      scheduleSituationImageButtonMark({ immediate: true });
+    });
     bindCheckbox(panel, ID.toggleRoomMenuHandle, roomMenuHandle, (checked) => {
       roomMenuHandle = checked;
       writeStorage(LS.roomMenuHandle, roomMenuHandle ? '1' : '0');
       ensureRoomMenuHandle();
       applyState();
     });
+    bindCheckbox(panel, ID.toggleFullscreenButton, fullscreenButtonEnabled, (checked, input) => {
+      if (isIosDevice()) {
+        fullscreenButtonEnabled = false;
+        writeStorage(LS.fullscreenButton, '0');
+        if (input) input.checked = false;
+        removeFullscreenButton();
+        return;
+      }
+
+      fullscreenButtonEnabled = checked;
+      writeStorage(LS.fullscreenButton, fullscreenButtonEnabled ? '1' : '0');
+      ensureFullscreenButton();
+    });
     bindCheckbox(panel, ID.toggleChatListAutoHide, chatListAutoHide, (checked) => {
+      if (checked && isTabletLikeViewport()) {
+        chatListAssistMode = 'swipe';
+        writeStorage(LS.chatListAssistMode, chatListAssistMode);
+      }
+
       chatListAutoHide = checked;
       writeStorage(LS.chatListAutoHide, chatListAutoHide ? '1' : '0');
       ensureChatListAutoHide();
       applyState();
-      if (checked) scheduleChatListClose(450);
+
+      if (checked && isDesktopChatListAutoHideViewport()) scheduleChatListClose(450);
     });
     bindRangeInput(panel, ID.imageSlider, setImageSize, flushImageSizeSave);
+    bindRangeInput(panel, ID.chatWidthSlider, setChatWidthPercent);
 
-    const chatWidthSlider = bindRangeInput(panel, ID.chatWidthSlider, setChatWidthPercent);
-
-    if (chatWidthSlider) {
-      chatWidthSlider.addEventListener('pointerdown', startChatWidthDrag);
-      chatWidthSlider.addEventListener('touchstart', startChatWidthDrag, { passive: true });
-      chatWidthSlider.addEventListener('mousedown', startChatWidthDrag);
-      chatWidthSlider.addEventListener('pointerup', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('pointercancel', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('touchend', stopChatWidthDrag, { passive: true });
-      chatWidthSlider.addEventListener('touchcancel', stopChatWidthDrag, { passive: true });
-      chatWidthSlider.addEventListener('mouseup', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('change', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('blur', stopChatWidthDrag);
-    }
+    // One delegated handler covers every current and future range slider in the panel.
+    bindPanelRangeDragDelegation(panel);
 
     updateImageSizeUi();
     updateChatWidthUi();
   }
 
-  function positionPanel(anchor) {
-    const panel = document.getElementById(ID.panel);
-    if (!panel) return;
-
-    anchor ||= document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
-    const panelWidth = Math.min(318, window.innerWidth - 16);
-    panel.style.width = `${panelWidth}px`;
-
-    const rect = anchor?.getBoundingClientRect();
-    const panelHeight = panel.offsetHeight || 330;
-    let left = rect ? rect.left : window.innerWidth - panelWidth - 8;
-    let top = rect ? rect.bottom + 10 : 64;
-
-    left = Math.max(8, Math.min(left, window.innerWidth - panelWidth - 8));
-    top = Math.max(8, Math.min(top, window.innerHeight - panelHeight - 8));
-
-    panel.style.left = `${left}px`;
-    panel.style.top = `${top}px`;
-  }
-
-  function openPanel(anchor) {
+  function openPanel() {
     const panel = document.getElementById(ID.panel);
     if (!panel) return;
 
     panelOpen = true;
     panel.dataset.open = '1';
-    panel.style.visibility = 'hidden';
 
     clearMobileHideTimer();
 
@@ -3582,8 +5404,13 @@
     syncCheckbox(ID.toggleStatBar, hideStatBar);
     syncCheckbox(ID.toggleLineBreak, lineBreakOptimize);
     syncCheckbox(ID.toggleBottomModelPicker, bottomModelPicker);
+    syncCheckbox(ID.toggleEmptySendGuard, emptySendGuard);
+    syncCheckbox(ID.toggleHideSituationImage, hideSituationImage);
+    syncCheckbox(ID.toggleNovelModelIndicator, novelModelIndicator);
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
+    syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
+    closeMenuAssistModePanels(panel);
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
 
@@ -3593,10 +5420,6 @@
     updateImageSizeUi();
     updateChatWidthUi();
     applyState();
-    requestAnimationFrame(() => {
-      positionPanel(anchor);
-      panel.style.visibility = '';
-    });
   }
 
   function closePanel() {
@@ -3605,6 +5428,8 @@
 
     panelOpen = false;
     panel.dataset.open = '0';
+    closeMenuAssistModePanels(panel);
+    stopPanelRangeDrag();
     isChatWidthDragging = false;
     document.documentElement.classList.remove(CLS.widthDragging);
     flushImageSizeSave();
@@ -3617,9 +5442,9 @@
     applyState();
   }
 
-  function togglePanel(anchor) {
+  function togglePanel() {
     if (panelOpen) closePanel();
-    else openPanel(anchor);
+    else openPanel();
   }
 
   function bindHeaderHover(header) {
@@ -3653,21 +5478,650 @@
 
   function applyState() {
     updateDeviceViewportClasses();
-    markStatBars();
+    if (hideStatBar) markStatBars();
+    // init can run repeatedly while the chat DOM is streaming. Keep later full
+    // button scans on the existing throttle, while preserving an immediate first scan.
+    scheduleSituationImageButtonMark({
+      immediate: hideSituationImage && situationImageLastScanAt === 0,
+    });
     document.documentElement.classList.toggle(CLS.autoHide, autoHideHeader);
     document.documentElement.classList.toggle(CLS.lineBreak, lineBreakOptimize);
     document.documentElement.classList.toggle(CLS.pauseAnimatedThumbs, pauseAnimatedThumbs);
     document.documentElement.classList.toggle(CLS.hideStatBar, hideStatBar);
+    document.documentElement.classList.toggle(CLS.hideSituationImage, hideSituationImage);
     document.documentElement.classList.toggle(CLS.roomMenuEnabled, roomMenuHandle && crackUiIsChatRoute());
-    document.documentElement.classList.toggle(CLS.chatListEnabled, chatListAutoHide);
+    document.documentElement.classList.toggle(CLS.chatListEnabled, chatListAutoHide && isChatListAutoHideSupportedViewport());
+    markMobileChatListOpenState();
+    updateChatListAutoHideUi();
+    syncMenuAssistModeUi();
+    ensureMenuSwipeZone();
     updateRoomMenuRevealClass();
+    applyEmptySendGuardState();
     applyThemeModeHint();
     applyChatWidth();
     updateReveal();
   }
 
 
-  const CHAT_MODEL_INFO = {
+
+  function isMobileMenuSwipeViewport() {
+    return (isPhoneLikeViewport() || isTabletLikeViewport()) && isTouchLikeDevice();
+  }
+
+  function isLeftMenuSwipeEnabled() {
+    const swipeModeEnabled = isTabletLikeViewport() || menuAssistModeHasSwipe(chatListAssistMode);
+    return chatListAutoHide &&
+      swipeModeEnabled &&
+      isMobileMenuSwipeViewport() &&
+      crackUiIsChatRoute();
+  }
+
+  function isRightMenuSwipeEnabled() {
+    return roomMenuHandle &&
+      menuAssistModeHasSwipe(roomMenuAssistMode) &&
+      isMobileMenuSwipeViewport() &&
+      crackUiIsChatRoute();
+  }
+
+  function isMenuSwipeZoneActive() {
+    return !panelOpen && (isLeftMenuSwipeEnabled() || isRightMenuSwipeEnabled());
+  }
+
+  function findMenuSwipeComposerShell(editable = DOM.composerEditable()) {
+    if (!editable) return null;
+    return editable.closest?.('form') ||
+      editable.closest?.('div.flex.flex-col.rounded-lg.border, div.rounded-lg.border.bg-background, div[class*="rounded"][class*="border"]') ||
+      editable.parentElement;
+  }
+
+  function positionMenuSwipeZone() {
+    const zone = document.getElementById(ID.menuSwipeZone);
+    if (!zone || !isMenuSwipeZoneActive()) return;
+
+    const shell = findMenuSwipeComposerShell();
+    let top = NaN;
+
+    try {
+      const rect = shell?.getBoundingClientRect?.();
+      if (rect && rect.width > 40 && rect.height > 20 && rect.top > 0) {
+        top = Math.max(54, Math.round(rect.top - MENU_SWIPE.topOffset));
+      }
+    } catch (error) {
+      reportCrackUiError('menu-swipe-position', error);
+    }
+
+    if (Number.isFinite(top)) {
+      zone.style.setProperty('top', `${top}px`, 'important');
+      zone.style.setProperty('bottom', 'auto', 'important');
+    } else {
+      zone.style.removeProperty('top');
+      zone.style.setProperty('bottom', 'calc(98px + env(safe-area-inset-bottom))', 'important');
+    }
+  }
+
+  function scheduleMenuSwipeZonePosition() {
+    if (menuSwipePositionRaf) return;
+    menuSwipePositionRaf = requestAnimationFrame(() => {
+      menuSwipePositionRaf = 0;
+      positionMenuSwipeZone();
+    });
+  }
+
+  function pointInMenuSwipeZone(event) {
+    if (!isMenuSwipeZoneActive()) return false;
+    const zone = document.getElementById(ID.menuSwipeZone);
+    if (!zone) return false;
+
+    let rect = null;
+    try {
+      rect = zone.getBoundingClientRect();
+    } catch (error) {
+      reportCrackUiError('menu-swipe-hit-test', error);
+      return false;
+    }
+
+    if (!rect || rect.width < 20 || rect.height < 12) return false;
+    const x = Number(event?.clientX);
+    const y = Number(event?.clientY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function menuSwipeEventTargetBlocked(target) {
+    if (!(target instanceof Element)) return false;
+    return !!target.closest?.(
+      `#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.chatListZone}, input, textarea, select, [contenteditable="true"]`
+    );
+  }
+
+  function bindMenuSwipeGesture() {
+    const root = document.documentElement;
+    if (root.dataset.crackUiMenuSwipeBound === '1') return;
+    root.dataset.crackUiMenuSwipeBound = '1';
+
+    let tracking = null;
+    let suppressClickUntil = 0;
+    let suppressClickX = 0;
+    let suppressClickY = 0;
+
+    const cancel = () => {
+      tracking = null;
+    };
+
+    document.addEventListener('click', (event) => {
+      if (Date.now() > suppressClickUntil) return;
+      const x = Number(event.clientX || 0);
+      const y = Number(event.clientY || 0);
+      if (Math.abs(x - suppressClickX) > 18 || Math.abs(y - suppressClickY) > 18) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    }, true);
+
+    document.addEventListener('pointerdown', (event) => {
+      if (!isMenuSwipeZoneActive()) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (event.isPrimary === false) return;
+      if (tracking) {
+        cancel();
+        return;
+      }
+
+      scheduleMenuSwipeZonePosition();
+      if (!pointInMenuSwipeZone(event)) return;
+      if (menuSwipeEventTargetBlocked(event.target)) return;
+
+      tracking = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        at: Date.now(),
+      };
+    }, { capture: true, passive: true });
+
+    document.addEventListener('pointercancel', (event) => {
+      if (!tracking || event.pointerId !== tracking.id) return;
+      cancel();
+    }, { capture: true, passive: true });
+
+    document.addEventListener('pointerup', (event) => {
+      if (!tracking || event.pointerId !== tracking.id) return;
+      const data = tracking;
+      cancel();
+
+      if (!isMenuSwipeZoneActive()) return;
+
+      const dx = Number(event.clientX) - data.x;
+      const dy = Number(event.clientY) - data.y;
+      const ax = Math.abs(dx);
+      const ay = Math.abs(dy);
+      const elapsed = Date.now() - data.at;
+
+      if (
+        elapsed > MENU_SWIPE.maxMs ||
+        ax < MENU_SWIPE.minDx ||
+        ay > MENU_SWIPE.maxDy ||
+        ax <= ay * MENU_SWIPE.ratio ||
+        Date.now() - lastMenuSwipeAt < MENU_SWIPE.cooldownMs
+      ) {
+        return;
+      }
+
+      let handled = false;
+
+      if (dx > 0 && isLeftMenuSwipeEnabled()) {
+        if (!DOM.mobileChatListPopover()) {
+          handled = clickMobileChatListNativeButton('swipe');
+        }
+      } else if (dx < 0 && isRightMenuSwipeEnabled()) {
+        const panel = DOM.roomPanel();
+        if (!panel || !isRoomPanelOpen(panel)) {
+          roomMenuReveal = true;
+          updateRoomMenuRevealClass();
+          setRoomTopBarHidden(false);
+          handled = clickRoomPanelToggle(true, 'swipe');
+        }
+      }
+
+      if (!handled) return;
+
+      lastMenuSwipeAt = Date.now();
+      suppressClickUntil = Date.now() + 450;
+      suppressClickX = Number(event.clientX || 0);
+      suppressClickY = Number(event.clientY || 0);
+      event.preventDefault();
+    }, { capture: true, passive: false });
+  }
+
+  function ensureMenuSwipeZone() {
+    let zone = document.getElementById(ID.menuSwipeZone);
+
+    if (!isMenuSwipeZoneActive()) {
+      zone?.remove();
+      return;
+    }
+
+    if (!zone) {
+      zone = document.createElement('div');
+      zone.id = ID.menuSwipeZone;
+      zone.setAttribute('aria-hidden', 'true');
+      document.body?.appendChild(zone);
+    }
+
+    scheduleMenuSwipeZonePosition();
+  }
+
+  // =====================================================
+  // Feature: situation image button hide
+  // =====================================================
+
+  function getSvgPathText(root) {
+    if (!root?.querySelectorAll) return '';
+    return [...root.querySelectorAll('path')]
+      .map((path) => String(path.getAttribute('d') || ''))
+      .join(' ')
+      .replace(/\s+/g, ' ');
+  }
+
+  function scoreSituationImageButton(button) {
+    if (!button || !button.isConnected) return -1;
+    if (button.id && button.id.startsWith('crack-ui-')) return -1;
+    if (button.closest?.(`#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.chatListZone}`)) return -1;
+
+    const r = crackUiEdgeRect(button);
+    if (!r || r.width < 20 || r.width > 48 || r.height < 20 || r.height > 48) return -1;
+
+    const pathText = getSvgPathText(button);
+    if (!pathText) return -1;
+
+    let score = 0;
+    if (pathText.includes('m17.01 2.2') && pathText.includes('M18.63 1.44')) score += 28;
+    if (pathText.includes('clip-rule') || pathText.includes('m13.8 2.58')) score += 4;
+
+    const classes = `${String(button.className || '')} ${String(button.parentElement?.className || '')} ${String(button.parentElement?.parentElement?.className || '')}`;
+    if (classes.includes('size-7')) score += 4;
+    if (classes.includes('bg-secondary')) score += 3;
+    if (classes.includes('space-x-3')) score += 3;
+    if (classes.includes('justify-between')) score += 2;
+    if (classes.includes('mt-2')) score += 2;
+
+    const actionRow = button.closest?.('div.flex.items-center.justify-between');
+    if (actionRow) {
+      const rowRect = crackUiEdgeRect(actionRow);
+      if (rowRect && rowRect.top > 40 && rowRect.bottom <= (window.innerHeight || 0) + 120) score += 2;
+      if (actionRow.querySelector('button[aria-label="메시지 옵션"]')) score += 8;
+      if (actionRow.textContent && actionRow.textContent.length < 80) score += 1;
+    }
+
+    return score;
+  }
+
+  function findSituationImageButtons() {
+    const result = [];
+    for (const button of document.querySelectorAll('button')) {
+      if (scoreSituationImageButton(button) >= 30) result.push(button);
+    }
+    return result;
+  }
+
+  function clearSituationImageButtonMarks() {
+    for (const old of document.querySelectorAll('[data-crack-ui-situation-image-button="1"]')) {
+      old.removeAttribute('data-crack-ui-situation-image-button');
+      old.removeAttribute('aria-hidden');
+      old.removeAttribute('tabindex');
+    }
+  }
+
+  function markSituationImageButtons() {
+    situationImageLastScanAt = performance.now();
+    clearSituationImageButtonMarks();
+
+    if (!hideSituationImage) return;
+
+    for (const button of findSituationImageButtons()) {
+      button.dataset.crackUiSituationImageButton = '1';
+      button.setAttribute('aria-hidden', 'true');
+      button.tabIndex = -1;
+    }
+  }
+
+  function scheduleSituationImageButtonMark({ immediate = false } = {}) {
+    if (!hideSituationImage && !document.querySelector('[data-crack-ui-situation-image-button="1"]')) return;
+
+    if (immediate) {
+      clearTimeout(situationImageMarkTimer);
+      situationImageMarkTimer = null;
+      if (situationImageMarkRaf) cancelAnimationFrame(situationImageMarkRaf);
+      situationImageMarkRaf = requestAnimationFrame(() => {
+        situationImageMarkRaf = 0;
+        markSituationImageButtons();
+      });
+      return;
+    }
+
+    if (situationImageMarkTimer || situationImageMarkRaf) return;
+
+    const elapsed = performance.now() - situationImageLastScanAt;
+    const delay = Math.max(120, 500 - elapsed);
+    situationImageMarkTimer = setTimeout(() => {
+      situationImageMarkTimer = null;
+      situationImageMarkRaf = requestAnimationFrame(() => {
+        situationImageMarkRaf = 0;
+        markSituationImageButtons();
+      });
+    }, delay);
+  }
+
+  // =====================================================
+  // Feature: empty composer send guard
+  // =====================================================
+
+  function normalizeComposerText(text) {
+    return String(text || '')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\u00a0/g, ' ')
+      .trim();
+  }
+
+  function getEditableText(editable) {
+    if (!editable) return '';
+    const tag = String(editable.tagName || '').toLowerCase();
+    if (tag === 'textarea' || tag === 'input') return editable.value || '';
+    if (editable.isContentEditable || editable.getAttribute('contenteditable') === 'true') {
+      return editable.innerText || editable.textContent || '';
+    }
+    return editable.value || editable.innerText || editable.textContent || '';
+  }
+
+  function isComposerEditableCandidate(editable, sendButton = DOM.sendButton()) {
+    if (!editable || !editable.isConnected) return false;
+    if (editable.closest?.(`#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}`)) return false;
+    if (editable.closest?.('[data-crack-ui-room-panel="1"], [data-crack-ui-chat-list-panel="1"], [data-crack-ui-room-top-bar="1"]')) return false;
+
+    const tag = String(editable.tagName || '').toLowerCase();
+    if (tag === 'input') {
+      const type = String(editable.type || '').toLowerCase();
+      if (type && !['text', 'search'].includes(type)) return false;
+      const placeholder = String(editable.getAttribute('placeholder') || '');
+      if (/검색|search/i.test(placeholder)) return false;
+    }
+
+    const rect = editable.getBoundingClientRect();
+    if (rect.width <= 40 || rect.height <= 8) return false;
+    if (rect.top < Math.max(220, window.innerHeight * 0.35)) return false;
+
+    if (sendButton?.isConnected) {
+      const sendRect = sendButton.getBoundingClientRect();
+      const verticalDistance = Math.abs((rect.top + rect.height / 2) - (sendRect.top + sendRect.height / 2));
+      const horizontalDistance = Math.abs((rect.right + rect.left) / 2 - (sendRect.right + sendRect.left) / 2);
+      if (verticalDistance > 120 && horizontalDistance > 280) return false;
+    }
+
+    return true;
+  }
+
+  function isDirectChatComposerEditable(editable) {
+    if (!editable?.isConnected || !crackUiIsChatRoute()) return false;
+    if (editable.matches?.('.__chat_input_textarea[contenteditable="true"]')) return true;
+
+    const placeholder = normalizeText(
+      editable.getAttribute?.('data-placeholder') || editable.getAttribute?.('placeholder') || ''
+    );
+    return placeholder === '메시지 보내기' &&
+      !!editable.matches?.('textarea, [contenteditable="true"], [role="textbox"]');
+  }
+
+  function findChatComposerEditable() {
+    if (!crackUiIsChatRoute()) {
+      cachedComposerEditable = null;
+      return null;
+    }
+
+    const sendButton = DOM.sendButton();
+
+    if (cachedComposerEditable?.isConnected) {
+      if (isDirectChatComposerEditable(cachedComposerEditable)) return cachedComposerEditable;
+      if (isComposerEditableCandidate(cachedComposerEditable, sendButton)) return cachedComposerEditable;
+    }
+    cachedComposerEditable = null;
+
+    const direct = document.querySelector(
+      '.__chat_input_textarea[contenteditable="true"], [contenteditable="true"][data-placeholder="메시지 보내기"], textarea[placeholder="메시지 보내기"]'
+    );
+    if (direct && isComposerEditableCandidate(direct, sendButton)) {
+      cachedComposerEditable = direct;
+      return direct;
+    }
+
+    const roots = [];
+    let node = sendButton?.parentElement || null;
+    for (let i = 0; node && i < 7; i += 1) {
+      roots.push(node);
+      node = node.parentElement;
+    }
+    roots.push(document.body);
+
+    const selector = 'textarea, input, [contenteditable="true"], [role="textbox"]';
+    const seen = new Set();
+    const candidates = [];
+
+    roots.forEach((root, rootIndex) => {
+      if (!root?.querySelectorAll) return;
+      root.querySelectorAll(selector).forEach((editable) => {
+        if (seen.has(editable)) return;
+        seen.add(editable);
+        if (!isComposerEditableCandidate(editable, sendButton)) return;
+
+        const rect = editable.getBoundingClientRect();
+        const sendRect = sendButton?.getBoundingClientRect?.();
+        let score = 0;
+        score += Math.max(0, 20 - rootIndex * 2);
+        score += rect.width >= 180 ? 12 : 0;
+        score += rect.bottom > window.innerHeight * 0.62 ? 10 : 0;
+        if (sendRect) {
+          const verticalDistance = Math.abs((rect.top + rect.height / 2) - (sendRect.top + sendRect.height / 2));
+          score += Math.max(0, 22 - verticalDistance / 4);
+          if (rect.left <= sendRect.left && rect.right <= sendRect.right + 80) score += 8;
+        }
+        if (editable.matches?.('textarea, [contenteditable="true"], [role="textbox"]')) score += 6;
+        candidates.push({ editable, score });
+      });
+    });
+
+    candidates.sort((a, b) => b.score - a.score);
+    cachedComposerEditable = candidates[0]?.editable || null;
+    return cachedComposerEditable;
+  }
+
+  function isComposerEmptyForSend() {
+    const editable = DOM.composerEditable();
+    if (!editable) return false;
+    return normalizeComposerText(getEditableText(editable)).length === 0;
+  }
+
+  function shouldBlockEmptyComposerSend() {
+    return emptySendGuard && crackUiIsChatRoute() && isComposerEmptyForSend();
+  }
+
+  function isEmptySendGuardEventTarget(target) {
+    const el = target?.nodeType === 1 ? target : target?.parentElement;
+    const button = el?.closest?.('button');
+    if (!button) return false;
+
+    const sendButton = DOM.sendButton();
+    if (sendButton && button === sendButton) return true;
+    return isChatComposerSendButton(button);
+  }
+
+  function stopEmptySendEvent(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+  }
+
+  const EMPTY_SEND_ABSENT_ATTRIBUTE = '__crack_ui_absent__';
+
+  function preserveEmptySendButtonState(sendButton) {
+    if (!sendButton) return;
+
+    if (!Object.prototype.hasOwnProperty.call(sendButton.dataset, 'crackUiOriginalTitle')) {
+      sendButton.dataset.crackUiOriginalTitle = sendButton.hasAttribute('title')
+        ? sendButton.getAttribute('title') || ''
+        : EMPTY_SEND_ABSENT_ATTRIBUTE;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(sendButton.dataset, 'crackUiOriginalAriaDisabled')) {
+      sendButton.dataset.crackUiOriginalAriaDisabled = sendButton.hasAttribute('aria-disabled')
+        ? sendButton.getAttribute('aria-disabled') || ''
+        : EMPTY_SEND_ABSENT_ATTRIBUTE;
+    }
+  }
+
+  function restoreEmptySendButtonState(sendButton) {
+    if (!sendButton) return;
+
+    const originalTitle = sendButton.dataset.crackUiOriginalTitle;
+    if (originalTitle != null) {
+      if (originalTitle === EMPTY_SEND_ABSENT_ATTRIBUTE) sendButton.removeAttribute('title');
+      else sendButton.setAttribute('title', originalTitle);
+      delete sendButton.dataset.crackUiOriginalTitle;
+    }
+
+    const originalAriaDisabled = sendButton.dataset.crackUiOriginalAriaDisabled;
+    if (originalAriaDisabled != null) {
+      if (originalAriaDisabled === EMPTY_SEND_ABSENT_ATTRIBUTE) sendButton.removeAttribute('aria-disabled');
+      else sendButton.setAttribute('aria-disabled', originalAriaDisabled);
+      delete sendButton.dataset.crackUiOriginalAriaDisabled;
+    }
+  }
+
+  function guardEmptyComposerSendEvent(e) {
+    if (!emptySendGuard || !crackUiIsChatRoute()) return;
+    if (!isEmptySendGuardEventTarget(e.target)) return;
+    if (!shouldBlockEmptyComposerSend()) return;
+
+    const sendButton = DOM.sendButton();
+    if (sendButton) {
+      preserveEmptySendButtonState(sendButton);
+      sendButton.classList.add('crack-ui-empty-send-blocked');
+      sendButton.dataset.crackUiEmptySendBlocked = '1';
+      sendButton.title = '입력창이 비어 있어 자동 재생 전송을 막음';
+    }
+
+    stopEmptySendEvent(e);
+  }
+
+  function getFocusedComposerEditableForEnterEvent(e) {
+    const editable = DOM.composerEditable();
+    if (!editable?.isConnected) return null;
+
+    const target = e.target?.nodeType === 1 ? e.target : e.target?.parentElement;
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    const eventFromComposer = target === editable || editable.contains?.(target) || path.includes(editable);
+    if (!eventFromComposer) return null;
+
+    const active = document.activeElement;
+    const composerFocused = active === editable || editable.contains?.(active);
+    return composerFocused ? editable : null;
+  }
+
+  function guardEmptyComposerEnterEvent(e) {
+    if (!emptySendGuard || !crackUiIsChatRoute()) return;
+    if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
+
+    const editable = getFocusedComposerEditableForEnterEvent(e);
+    if (!editable) return;
+    if (normalizeComposerText(getEditableText(editable)).length !== 0) return;
+
+    stopEmptySendEvent(e);
+  }
+
+  function applyEmptySendGuardState() {
+    const sendButton = DOM.sendButton();
+    if (!sendButton) return;
+
+    const blocked = shouldBlockEmptyComposerSend();
+    sendButton.classList.toggle('crack-ui-empty-send-blocked', blocked);
+    sendButton.dataset.crackUiEmptySendGuard = emptySendGuard ? '1' : '0';
+    sendButton.dataset.crackUiEmptySendBlocked = blocked ? '1' : '0';
+
+    if (blocked) {
+      preserveEmptySendButtonState(sendButton);
+      sendButton.title = '입력창이 비어 있어 자동 재생 전송을 막음';
+      sendButton.setAttribute('aria-disabled', 'true');
+    } else {
+      restoreEmptySendButtonState(sendButton);
+    }
+  }
+
+  function scheduleEmptySendGuardUiUpdate() {
+    if (emptySendGuardUiRaf) return;
+    emptySendGuardUiRaf = requestAnimationFrame(() => {
+      emptySendGuardUiRaf = 0;
+      applyEmptySendGuardState();
+    });
+  }
+
+
+  // =====================================================
+  // Feature: bottom model picker
+  // =====================================================
+
+  const NOVEL_MODEL_LEGACY_INFO = Object.freeze({
+    '슈퍼챗 1.5': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat1_5.webp',
+      retired: true,
+    },
+    '프로챗 2.0': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat2_0.webp',
+      retired: true,
+    },
+    '일반챗': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/normalchat.webp',
+      retired: true,
+    },
+  });
+
+  const DEFAULT_CHAT_MODEL_ID_NAME = Object.freeze({
+    '6a2bde2b2d1852a9f41bc3df': '페이블챗 1.0',
+    '6a4ddff0c7931348699337b4': '페이블챗 1.0',
+    '6a2bda2f992c05d50c2ba7d3': '하이퍼챗 2.0',
+    '6a2bdd4cce9304265a32c6b8': '하이퍼챗 2.0',
+    '69e0f46a9530f9bfbde683a9': '하이퍼챗 1.5',
+    '69485e1b9d2a7cdc6ebf95bf': '하이퍼챗 1.0',
+    '6a441a058aa1c16926050ab4': '슈퍼챗 3.0',
+    '6994ad1b2510c2af8007cca5': '슈퍼챗 2.5',
+    '69485e1b9d2a7cdc6ebf95c0': '슈퍼챗 2.0',
+    '69485e1b9d2a7cdc6ebf95c1': '슈퍼챗 1.5',
+    '699877c92d18b3f5dec84f49': '프로챗 2.5',
+    '69485e1b9d2a7cdc6ebf95c2': '프로챗 2.0',
+    '69485e1c9d2a7cdc6ebf95c3': '프로챗 1.0',
+    '69485e1c9d2a7cdc6ebf95c4': '파워챗',
+    '69485e1c9d2a7cdc6ebf95c5': '일반챗',
+  });
+
+  const DEFAULT_CRACKER_MODEL_NAME = Object.freeze({
+    fablechat_1_0: '페이블챗 1.0',
+    hyperchat_2_0: '하이퍼챗 2.0',
+    hyperchat_1_5: '하이퍼챗 1.5',
+    hyperchat: '하이퍼챗 1.0',
+    superchat_3_0: '슈퍼챗 3.0',
+    superchat_2_5: '슈퍼챗 2.5',
+    superchat_2_0: '슈퍼챗 2.0',
+    superchat_1_5: '슈퍼챗 1.5',
+    prochat_2_5: '프로챗 2.5',
+    prochat_2_0: '프로챗 2.0',
+    prochat_1_0: '프로챗 1.0',
+    powerchat: '파워챗',
+    normalchat: '일반챗',
+  });
+
+  let CHAT_MODEL_ID_NAME = { ...DEFAULT_CHAT_MODEL_ID_NAME };
+
+  const DEFAULT_CHAT_MODEL_INFO = {
+    '페이블챗 1.0': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/fablechat1_0.webp',
+    },
     '하이퍼챗 2.0': {
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat2_0.webp',
     },
@@ -3676,6 +6130,9 @@
     },
     '하이퍼챗 1.0': {
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat.webp',
+    },
+    '슈퍼챗 3.0': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat3_0.webp',
     },
     '슈퍼챗 2.5': {
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat2_5.webp',
@@ -3694,18 +6151,131 @@
     },
   };
 
-  const CHAT_MODEL_ORDER = Object.keys(CHAT_MODEL_INFO);
+  // Crack 모델 목록 API가 제공하는 현재 선택 가능 모델 순서의 기본값.
+  // 실제 원본 모델 메뉴 또는 모델 목록 API가 잡히면 해당 순서로 즉시 갱신한다.
+  const DEFAULT_CHAT_MODEL_ORDER = Object.freeze([
+    '페이블챗 1.0',
+    '하이퍼챗 2.0',
+    '하이퍼챗 1.5',
+    '하이퍼챗 1.0',
+    '슈퍼챗 3.0',
+    '슈퍼챗 2.5',
+    '슈퍼챗 2.0',
+    '프로챗 2.5',
+    '프로챗 1.0',
+    '파워챗',
+  ]);
 
-  const CHAT_MODEL_ICON_MAP = {
-    'hyperchat2_0.webp': '하이퍼챗 2.0',
-    'hyperchat1_5.webp': '하이퍼챗 1.5',
-    'hyperchat.webp': '하이퍼챗 1.0',
-    'superchat2_5.webp': '슈퍼챗 2.5',
-    'superchat2_0.webp': '슈퍼챗 2.0',
-    'prochat2_5.webp': '프로챗 2.5',
-    'prochat1_0.webp': '프로챗 1.0',
-    'powerchat.webp': '파워챗',
-  };
+  function cloneDefaultChatModelInfo() {
+    return Object.fromEntries(
+      Object.entries(DEFAULT_CHAT_MODEL_INFO).map(([name, info]) => [name, { ...info }])
+    );
+  }
+
+  function getModelIconFileFromUrl(value) {
+    let text = String(value || '').trim();
+    if (!text) return '';
+
+    // Next 이미지 최적화 URL처럼 원본 model-icon 경로가 쿼리 안에 들어간 경우도 복원한다.
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const decoded = decodeURIComponent(text);
+        if (decoded === text) break;
+        text = decoded;
+      } catch {
+        break;
+      }
+    }
+
+    const nested = text.match(/model-icon\/([^/?#"'<>\s]+\.(?:webp|png|svg|avif))/i);
+    if (nested?.[1]) return nested[1];
+
+    return text.split(/[?#]/)[0].split('/').pop() || '';
+  }
+
+  function buildChatModelIconMap(infoMap) {
+    const map = {};
+    for (const [name, info] of Object.entries(infoMap || {})) {
+      const file = getModelIconFileFromUrl(info?.image);
+      if (file) map[file] = name;
+    }
+    return map;
+  }
+
+  let chatModelRegistryCleanupNeeded = false;
+
+  function isNovelOnlyRetiredModelRegistryEntry(name) {
+    const normalized = normalizeText(name);
+    if (!normalized) return false;
+
+    // 소설형 메시지 수동 선택 메뉴를 원본 모델 메뉴로 오인했던 구버전에서
+    // `표시할 모델` 저장소로 들어간 종료 모델/표시 문구를 제거한다.
+    if (/\s*·\s*서비스\s*종료\s*$/.test(normalized)) return true;
+    return Object.prototype.hasOwnProperty.call(NOVEL_MODEL_LEGACY_INFO, normalized);
+  }
+
+  let chatModelRegistryLoadedFromStorage = false;
+
+  function loadChatModelRegistry() {
+    const raw = readStorage(LS.bottomModelRegistry);
+    if (!raw) return cloneDefaultChatModelInfo();
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return cloneDefaultChatModelInfo();
+
+      const next = {};
+      for (const entry of parsed) {
+        const name = normalizeText(entry?.name);
+        const image = String(entry?.image || '').trim();
+        if (!name || !image.includes('model-icon')) continue;
+        if (isNovelOnlyRetiredModelRegistryEntry(name)) {
+          chatModelRegistryCleanupNeeded = true;
+          continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(next, name)) next[name] = { image };
+      }
+
+      if (Object.keys(next).length) {
+        chatModelRegistryLoadedFromStorage = true;
+        return next;
+      }
+      return cloneDefaultChatModelInfo();
+    } catch {
+      return cloneDefaultChatModelInfo();
+    }
+  }
+
+  let CHAT_MODEL_INFO = loadChatModelRegistry();
+  let CHAT_MODEL_ORDER = chatModelRegistryLoadedFromStorage
+    ? Object.keys(CHAT_MODEL_INFO)
+    : [
+      ...DEFAULT_CHAT_MODEL_ORDER.filter((name) => Object.prototype.hasOwnProperty.call(CHAT_MODEL_INFO, name)),
+      ...Object.keys(CHAT_MODEL_INFO).filter((name) => !DEFAULT_CHAT_MODEL_ORDER.includes(name)),
+    ];
+  let CHAT_MODEL_ICON_MAP = buildChatModelIconMap(CHAT_MODEL_INFO);
+
+  function saveChatModelRegistry() {
+    writeJsonStorage(
+      LS.bottomModelRegistry,
+      CHAT_MODEL_ORDER.map((name) => ({
+        name,
+        image: String(CHAT_MODEL_INFO[name]?.image || ''),
+      }))
+    );
+  }
+
+  if (chatModelRegistryCleanupNeeded) saveChatModelRegistry();
+
+  function escapeModelHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch] || ch));
+  }
 
   function loadVisibleChatModelNames() {
     const raw = readStorage(LS.bottomModelVisibleModels);
@@ -3727,6 +6297,7 @@
   }
 
   let visibleChatModelNames = loadVisibleChatModelNames();
+  if (chatModelRegistryCleanupNeeded) saveVisibleChatModelNames();
 
   function loadVisibleModelListOpen() {
     return readStorage(LS.bottomModelVisibleModelsOpen) === '1';
@@ -3774,18 +6345,20 @@
     return CHAT_MODEL_ORDER.map((name) => {
       const selected = visible.has(name);
       const image = CHAT_MODEL_INFO[name]?.image || '';
+      const safeName = escapeModelHtml(name);
+      const safeImage = escapeModelHtml(image);
       return `
                 <button
                   type="button"
                   role="checkbox"
                   class="crack-ui-choice-row crack-ui-visible-model-row"
-                  data-crack-ui-visible-model="${name}"
+                  data-crack-ui-visible-model="${safeName}"
                   data-selected="${selected ? '1' : '0'}"
                   aria-checked="${selected ? 'true' : 'false'}"
                 >
                   <span class="crack-ui-choice-mark" aria-hidden="true"></span>
-                  <img class="crack-ui-visible-model-icon" src="${image}" alt="">
-                  <span class="crack-ui-choice-name">${name}</span>
+                  <img class="crack-ui-visible-model-icon" src="${safeImage}" alt="">
+                  <span class="crack-ui-choice-name">${safeName}</span>
                 </button>
       `;
     }).join('');
@@ -3801,6 +6374,24 @@
       button.setAttribute('aria-checked', selected ? 'true' : 'false');
     });
 
+  }
+
+  function refreshVisibleModelChoicesPanel() {
+    const panel = document.getElementById(ID.panel);
+    const list = panel?.querySelector?.('.crack-ui-visible-model-list');
+    if (!list) return;
+
+    const signature = CHAT_MODEL_ORDER
+      .map((name) => `${name}|${String(CHAT_MODEL_INFO[name]?.image || '')}`)
+      .join('\n');
+
+    if (list.dataset.crackUiModelRegistrySignature !== signature) {
+      list.innerHTML = renderVisibleModelChoicesHtml();
+      list.dataset.crackUiModelRegistrySignature = signature;
+      bindChoiceButtons(panel);
+    }
+
+    updateVisibleModelChoicesUi();
   }
 
   function toggleVisibleChatModel(name) {
@@ -3820,6 +6411,7 @@
 
     saveVisibleChatModelNames();
     updateVisibleModelChoicesUi();
+    syncOfficialModelVisibility();
 
     if (isBottomModelPopupOpen()) {
       renderBottomModelPopup(document.getElementById(ID.bottomModelButton), getStaticModelList());
@@ -3827,6 +6419,16 @@
   }
 
   let syncingOfficialModelInfo = false;
+  let lastOfficialModelVisibilityHiddenCount = 0;
+  let lastOfficialModelRegistryAdded = [];
+  let lastOfficialModelRegistryRemoved = [];
+  let lastOfficialModelRegistryCount = CHAT_MODEL_ORDER.length;
+  let lastOfficialModelRegistrySignature = '';
+  let pendingOfficialModelRegistryRemovalSignature = '';
+  let officialModelRegistryRemovalConfirmTimer = null;
+  let officialModelRegistryScanTimers = [];
+
+  const MODEL_REGISTRY_REMOVAL_CONFIRM_MS = 500;
 
   function modelSleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -3842,73 +6444,97 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  function getModelNameFromNode(node) {
+  function getModelIconSourceFromNode(node) {
+    if (!node) return '';
+    const icon = node.matches?.('img[src*="model-icon"], img[srcset*="model-icon"]')
+      ? node
+      : node.querySelector?.('img[src*="model-icon"], img[srcset*="model-icon"]');
+    if (!icon) return '';
+
+    const src = String(icon.currentSrc || icon.getAttribute?.('src') || icon.src || '').trim();
+    if (src) return src;
+
+    const srcset = String(icon.getAttribute?.('srcset') || '').trim();
+    return srcset.split(',')[0]?.trim().split(/\s+/)[0] || '';
+  }
+
+  function getRawModelNameFromNode(node) {
     if (!node) return '';
 
-    const imgAlt = normalizeText(node.querySelector?.('img[alt]')?.getAttribute('alt'));
-    if (isKnownChatModelName(imgAlt)) return imgAlt;
+    const icon = node.matches?.('img[src*="model-icon"], img[srcset*="model-icon"], img[alt]')
+      ? node
+      : node.querySelector?.('img[src*="model-icon"], img[srcset*="model-icon"], img[alt]');
 
-    const src = String(node.querySelector?.('img[src*="model-icon"]')?.getAttribute('src') || '');
-    const fromSrc = Object.entries(CHAT_MODEL_ICON_MAP).find(([file]) => src.includes(file));
-    if (fromSrc?.[1]) return fromSrc[1];
+    const imgAlt = normalizeText(icon?.getAttribute?.('alt'));
+    if (imgAlt) return imgAlt;
 
-    const spanText = [...(node.querySelectorAll?.('span') || [])]
+    const src = getModelIconSourceFromNode(node);
+    const fromSrc = CHAT_MODEL_ICON_MAP[getModelIconFileFromUrl(src)];
+    if (fromSrc) return fromSrc;
+
+    const row = icon?.closest?.('.flex.items-center, [class*="items-center"]') || node;
+    const spanText = [...(row.querySelectorAll?.('span') || [])]
       .map((span) => normalizeText(span.textContent))
-      .find(isKnownChatModelName);
+      .find((text) => text && text.length <= 40 && !/변경\s*예정|권장|\d+\s*개/.test(text));
     if (spanText) return spanText;
 
     const text = normalizeText(node.textContent);
     return CHAT_MODEL_ORDER.find((model) => text.includes(model)) || '';
   }
 
+  function getModelNameFromNode(node) {
+    return getRawModelNameFromNode(node);
+  }
+
   function getDisplayModelInfo(modelName) {
-    const name = isKnownChatModelName(modelName) ? modelName : '파워챗';
-    return {
-      name,
-      ...CHAT_MODEL_INFO[name],
-    };
+    const name = normalizeText(modelName);
+    if (isKnownChatModelName(name)) {
+      return {
+        name,
+        ...CHAT_MODEL_INFO[name],
+      };
+    }
+
+    return { name: name || '모델', image: '' };
   }
 
   function getCurrentModelName() {
-    const officialButton = findOriginalModelButton();
+    const officialButton = DOM.modelButton();
     const buttonName = getModelNameFromNode(officialButton);
-    if (isKnownChatModelName(buttonName)) return buttonName;
+    if (buttonName) return buttonName;
 
-    const icons = [...document.querySelectorAll('img[src*="model-icon"], img[alt]')];
+    const icons = [...document.querySelectorAll('img[src*="model-icon"], img[srcset*="model-icon"]')];
     for (const icon of icons) {
       if (icon.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}, [role="menuitem"], [role="dialog"]`)) continue;
 
       const alt = normalizeText(icon.getAttribute('alt'));
-      if (isKnownChatModelName(alt)) return alt;
+      if (alt) return alt;
 
       const src = String(icon.getAttribute('src') || icon.src || '');
-      const fromSrc = Object.entries(CHAT_MODEL_ICON_MAP).find(([file]) => src.includes(file));
-      if (fromSrc?.[1]) return fromSrc[1];
-    }
-
-    const spans = [...document.querySelectorAll('span')];
-    for (const span of spans) {
-      if (span.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}, [role="menuitem"], [role="dialog"]`)) continue;
-      const text = normalizeText(span.textContent);
-      if (isKnownChatModelName(text)) return text;
+      const fromSrc = CHAT_MODEL_ICON_MAP[getModelIconFileFromUrl(src)];
+      if (fromSrc) return fromSrc;
     }
 
     return '';
   }
 
   function getCurrentModelInfo() {
+    const officialButton = DOM.modelButton();
     const name = getCurrentModelName();
     if (isKnownChatModelName(name)) return getDisplayModelInfo(name);
-    return { name: '모델', image: '' };
+    return {
+      name: name || '모델',
+      image: getModelIconSourceFromNode(officialButton),
+    };
   }
 
   function isOriginalModelButtonCandidate(button, panel = document.getElementById(ID.panel), popup = document.getElementById(ID.bottomModelPopup)) {
     if (!button || button.id === ID.bottomModelButton || !button.isConnected) return false;
     if (panel?.contains(button) || popup?.contains(button)) return false;
-    if (!button.querySelector('img[alt], img[src*="model-icon"]')) return false;
+    const icon = button.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]');
+    if (!icon) return false;
 
-    const name = getModelNameFromNode(button);
-    return isKnownChatModelName(name);
+    return !!getRawModelNameFromNode(button) || !!getModelIconSourceFromNode(button);
   }
 
   function findOriginalModelButton() {
@@ -3929,9 +6555,322 @@
   function getOfficialModelMenu() {
     const popup = document.getElementById(ID.bottomModelPopup);
     return [...document.querySelectorAll('[role="menu"]')].find((menu) => {
-      if (popup?.contains(menu)) return false;
-      return CHAT_MODEL_ORDER.some((model) => normalizeText(menu.textContent).includes(model));
+      if (popup?.contains(menu) || menu.closest?.(`#${ID.panel}`)) return false;
+      if (
+        menu.classList?.contains('crack-ui-novel-model-menu') ||
+        menu.dataset?.crackUiMenuOwner === 'novel-model-indicator'
+      ) {
+        return false;
+      }
+      const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
+        .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
+      return modelItems.length >= 2;
     }) || null;
+  }
+
+  function scanOfficialModelMenuEntries(menu = DOM.modelMenu()) {
+    if (!menu) return [];
+    if (
+      menu.classList?.contains('crack-ui-novel-model-menu') ||
+      menu.dataset?.crackUiMenuOwner === 'novel-model-indicator'
+    ) {
+      return [];
+    }
+
+    const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
+      .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
+    if (modelItems.length < 2) return [];
+
+    const entries = [];
+    const seenNames = new Set();
+
+    for (const item of modelItems) {
+      const image = getModelIconSourceFromNode(item);
+      const name = normalizeText(getRawModelNameFromNode(item));
+      const iconFile = getModelIconFileFromUrl(image);
+      if (!name || !image || !iconFile || seenNames.has(name)) continue;
+      seenNames.add(name);
+      entries.push({ name, image });
+    }
+
+    // 메뉴가 덜 렌더된 순간의 부분 스캔으로 기존 모델을 대량 삭제하지 않게 한다.
+    if (entries.length !== modelItems.length) return [];
+    return entries;
+  }
+
+  function syncVisibleChatModelsToRegistry(previousOrder, nextOrder) {
+    const raw = readStorage(LS.bottomModelVisibleModels);
+    if (!raw) {
+      visibleChatModelNames = [...nextOrder];
+      saveVisibleChatModelNames();
+      return;
+    }
+
+    let storedVisible = [];
+    try {
+      const parsed = JSON.parse(raw);
+      storedVisible = Array.isArray(parsed) ? parsed.map(normalizeText).filter(Boolean) : [];
+    } catch {
+      storedVisible = [];
+    }
+
+    const previousKnown = new Set(previousOrder);
+    const visibleSet = new Set(storedVisible);
+    let nextVisible = nextOrder.filter((name) => visibleSet.has(name) || !previousKnown.has(name));
+
+    // 모든 기존 선택 모델이 사이트에서 제거된 경우에도 새 모델은 최소 1개 이상 보이게 한다.
+    if (!nextVisible.length) nextVisible = [...nextOrder];
+    visibleChatModelNames = nextVisible;
+    saveVisibleChatModelNames();
+  }
+
+
+  function getActiveChatModelEntriesFromApiList(models) {
+    if (!Array.isArray(models)) return [];
+
+    const entries = [];
+    const seenNames = new Set();
+    let storyModelLikeCount = 0;
+
+    for (const item of models) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      if (item.serviceType && item.serviceType !== 'story') continue;
+
+      const image = normalizeNovelModelIconUrl(
+        item.assets?.icon?.default || item.icon?.default || item.modelIcon || item.iconUrl
+      );
+      const name = normalizeText(item.name || item.displayName || item.modelName);
+      const id = String(item._id || item.id || '').trim();
+      if (!name || !image || !/^[a-f0-9]{24}$/i.test(id)) continue;
+
+      storyModelLikeCount += 1;
+      if (item.deletedAt || item.isBlock === true || seenNames.has(name)) continue;
+      seenNames.add(name);
+      entries.push({ name, image });
+    }
+
+    // 메시지 배열을 모델 목록으로 오인하지 않고, 충분히 완성된 모델 목록 응답만 사용한다.
+    if (storyModelLikeCount < 4 || entries.length < 2) return [];
+    return entries;
+  }
+
+  function syncChatModelRegistryFromApiModelList(models) {
+    const entries = getActiveChatModelEntriesFromApiList(models);
+    if (!entries.length) return false;
+
+    const previousOrder = [...CHAT_MODEL_ORDER];
+    const previousInfo = CHAT_MODEL_INFO;
+    const previousNames = new Set(previousOrder);
+    const nextOrder = entries.map((entry) => entry.name);
+    const nextNames = new Set(nextOrder);
+    const nextInfo = Object.fromEntries(entries.map((entry) => [entry.name, { image: entry.image }]));
+    const signature = entries.map((entry) => `${entry.name}|${entry.image}`).join('\n');
+    const registryChanged =
+      previousOrder.length !== nextOrder.length ||
+      previousOrder.some((name, index) => name !== nextOrder[index]) ||
+      nextOrder.some((name) => String(previousInfo[name]?.image || '') !== String(nextInfo[name]?.image || ''));
+
+    lastOfficialModelRegistrySignature = signature;
+    lastOfficialModelRegistryAdded = nextOrder.filter((name) => !previousNames.has(name));
+    lastOfficialModelRegistryRemoved = previousOrder.filter((name) => !nextNames.has(name));
+    lastOfficialModelRegistryCount = nextOrder.length;
+    clearPendingOfficialModelRegistryRemoval();
+
+    if (!registryChanged) return false;
+
+    CHAT_MODEL_INFO = nextInfo;
+    CHAT_MODEL_ORDER = nextOrder;
+    CHAT_MODEL_ICON_MAP = buildChatModelIconMap(CHAT_MODEL_INFO);
+    saveChatModelRegistry();
+    syncVisibleChatModelsToRegistry(previousOrder, nextOrder);
+    refreshVisibleModelChoicesPanel();
+    syncOfficialModelVisibilityStyle(getHiddenChatModelNames());
+
+    if (isBottomModelPopupOpen()) {
+      renderBottomModelPopup(document.getElementById(ID.bottomModelButton), getStaticModelList());
+    }
+
+    return true;
+  }
+
+  function clearPendingOfficialModelRegistryRemoval() {
+    pendingOfficialModelRegistryRemovalSignature = '';
+    if (officialModelRegistryRemovalConfirmTimer) {
+      clearTimeout(officialModelRegistryRemovalConfirmTimer);
+      officialModelRegistryRemovalConfirmTimer = null;
+    }
+  }
+
+  function scheduleOfficialModelRegistryRemovalConfirmation(signature) {
+    if (
+      pendingOfficialModelRegistryRemovalSignature === signature &&
+      officialModelRegistryRemovalConfirmTimer
+    ) {
+      return;
+    }
+
+    clearPendingOfficialModelRegistryRemoval();
+    pendingOfficialModelRegistryRemovalSignature = signature;
+    officialModelRegistryRemovalConfirmTimer = setTimeout(() => {
+      officialModelRegistryRemovalConfirmTimer = null;
+      if (pendingOfficialModelRegistryRemovalSignature !== signature) return;
+
+      const menu = DOM.modelMenu();
+      if (menu) syncChatModelRegistryFromOfficialMenu(menu, { confirmRemovalSignature: signature });
+    }, MODEL_REGISTRY_REMOVAL_CONFIRM_MS);
+  }
+
+  function syncChatModelRegistryFromOfficialMenu(menu = DOM.modelMenu(), options = {}) {
+    const entries = scanOfficialModelMenuEntries(menu);
+    if (!entries.length) return false;
+
+    const signature = entries.map((entry) => `${entry.name}|${entry.image}`).join('\n');
+    if (signature === lastOfficialModelRegistrySignature) {
+      clearPendingOfficialModelRegistryRemoval();
+      return false;
+    }
+
+    const previousOrder = [...CHAT_MODEL_ORDER];
+    const previousInfo = CHAT_MODEL_INFO;
+    const previousNames = new Set(previousOrder);
+    const nextOrder = entries.map((entry) => entry.name);
+    const nextNames = new Set(nextOrder);
+    const nextInfo = Object.fromEntries(entries.map((entry) => [entry.name, { image: entry.image }]));
+    const added = nextOrder.filter((name) => !previousNames.has(name));
+    const removed = previousOrder.filter((name) => !nextNames.has(name));
+
+    // 메뉴가 열리는 중 잠깐 일부 항목만 렌더되는 순간을 실제 삭제로 오인하면,
+    // 사용자가 숨겨둔 모델이 다시 켜질 수 있다. 삭제/이름변경은 같은 결과를 한 번 더 확인한다.
+    if (removed.length && options.confirmRemovalSignature !== signature) {
+      scheduleOfficialModelRegistryRemovalConfirmation(signature);
+      return false;
+    }
+
+    clearPendingOfficialModelRegistryRemoval();
+
+    const registryChanged =
+      previousOrder.length !== nextOrder.length ||
+      previousOrder.some((name, index) => name !== nextOrder[index]) ||
+      nextOrder.some((name) => String(previousInfo[name]?.image || '') !== String(nextInfo[name]?.image || ''));
+
+    lastOfficialModelRegistrySignature = signature;
+    lastOfficialModelRegistryAdded = added;
+    lastOfficialModelRegistryRemoved = removed;
+    lastOfficialModelRegistryCount = nextOrder.length;
+
+    if (!registryChanged) return false;
+
+    CHAT_MODEL_INFO = nextInfo;
+    CHAT_MODEL_ORDER = nextOrder;
+    CHAT_MODEL_ICON_MAP = buildChatModelIconMap(CHAT_MODEL_INFO);
+    saveChatModelRegistry();
+    syncVisibleChatModelsToRegistry(previousOrder, nextOrder);
+    refreshVisibleModelChoicesPanel();
+
+    syncOfficialModelVisibilityStyle(getHiddenChatModelNames());
+    applyOfficialModelMenuVisibility(menu);
+
+    if (isBottomModelPopupOpen()) {
+      renderBottomModelPopup(document.getElementById(ID.bottomModelButton), getStaticModelList());
+    }
+
+    return true;
+  }
+
+  function clearOfficialModelRegistryScanTimers() {
+    officialModelRegistryScanTimers.forEach((timer) => clearTimeout(timer));
+    officialModelRegistryScanTimers = [];
+  }
+
+  function scheduleOfficialModelRegistryScanBurst() {
+    clearOfficialModelRegistryScanTimers();
+    officialModelRegistryScanTimers = [80, 220, 520].map((delay) => setTimeout(() => {
+      const menu = DOM.modelMenu();
+      if (menu) syncChatModelRegistryFromOfficialMenu(menu);
+    }, delay));
+  }
+
+  function bindOfficialModelRegistryScan(button = DOM.modelButton()) {
+    if (!button || button.dataset.crackUiModelRegistryBound === '1') return;
+    button.dataset.crackUiModelRegistryBound = '1';
+    button.addEventListener('click', scheduleOfficialModelRegistryScanBurst, { passive: true });
+  }
+
+  function getHiddenChatModelNames() {
+    const visible = new Set(getVisibleChatModelNames());
+    return CHAT_MODEL_ORDER.filter((name) => !visible.has(name));
+  }
+
+  function getChatModelIconFile(name) {
+    return getModelIconFileFromUrl(CHAT_MODEL_INFO[name]?.image);
+  }
+
+  function syncOfficialModelVisibilityStyle(hiddenNames = getHiddenChatModelNames()) {
+    let style = document.getElementById(ID.officialModelVisibilityStyle);
+
+    if (!hiddenNames.length) {
+      style?.remove();
+      return;
+    }
+
+    const selectors = hiddenNames.flatMap((name) => {
+      const file = getChatModelIconFile(name);
+      const escapedName = String(name).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
+      const next = [
+        `[data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[alt="${escapedName}"])`,
+      ];
+
+      if (file) {
+        const escapedFile = String(file).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
+        next.push(`[data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[src*="${escapedFile}"])`);
+      }
+
+      return next;
+    });
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = ID.officialModelVisibilityStyle;
+      (document.head || document.documentElement).appendChild(style);
+    }
+
+    const nextCss = `${selectors.join(',\n')} {\n  display: none !important;\n}`;
+    if (style.textContent !== nextCss) style.textContent = nextCss;
+  }
+
+  function applyOfficialModelMenuVisibility(menu = DOM.modelMenu()) {
+    if (!menu) {
+      lastOfficialModelVisibilityHiddenCount = 0;
+      return 0;
+    }
+
+    const visible = new Set(getVisibleChatModelNames());
+    let hiddenCount = 0;
+
+    menu.querySelectorAll('[role="menuitem"]').forEach((item) => {
+      const name = getModelNameFromNode(item);
+      if (!isKnownChatModelName(name)) {
+        delete item.dataset.crackUiOfficialModelHidden;
+        return;
+      }
+
+      const shouldHide = !visible.has(name);
+      item.dataset.crackUiOfficialModelHidden = shouldHide ? '1' : '0';
+      if (shouldHide) hiddenCount += 1;
+    });
+
+    lastOfficialModelVisibilityHiddenCount = hiddenCount;
+    return hiddenCount;
+  }
+
+  function syncOfficialModelVisibility() {
+    const hiddenNames = getHiddenChatModelNames();
+    syncOfficialModelVisibilityStyle(hiddenNames);
+    if (!hiddenNames.length) {
+      lastOfficialModelVisibilityHiddenCount = 0;
+      return;
+    }
+    applyOfficialModelMenuVisibility();
   }
 
   function createModelMenuAutoHider() {
@@ -4024,7 +6963,7 @@
   async function waitForOfficialModelMenu(timeout = 900) {
     const start = performance.now();
     while (performance.now() - start < timeout) {
-      const menu = getOfficialModelMenu();
+      const menu = DOM.modelMenu();
       if (menu) return menu;
       await modelSleep(35);
     }
@@ -4032,7 +6971,7 @@
   }
 
   function closeOfficialModelMenuIfOpen() {
-    const trigger = findOriginalModelButton();
+    const trigger = DOM.modelButton();
     const expanded = trigger?.getAttribute('aria-expanded') === 'true' || trigger?.dataset?.state === 'open';
     if (!expanded) return;
 
@@ -4060,7 +6999,7 @@
   }
 
   function blurInvisibleModelPickerFocus() {
-    const officialBtn = findOriginalModelButton();
+    const officialBtn = DOM.modelButton();
     const active = document.activeElement;
 
     try {
@@ -4113,12 +7052,21 @@
     if (!isKnownChatModelName(targetName)) return false;
 
     const headerRevealSnapshot = takeHeaderRevealSnapshotForModelPicker();
+    const syncWaitTimeout = 6000;
 
-    while (syncingOfficialModelInfo) {
+    for (let waited = 0; waited < syncWaitTimeout; waited += 30) {
+      if (!syncingOfficialModelInfo) break;
       await modelSleep(30);
     }
 
-    const officialBtn = findOriginalModelButton();
+    if (syncingOfficialModelInfo) {
+      const error = new Error(`official model sync wait timed out after ${syncWaitTimeout}ms`);
+      reportCrackUiError('model-select-wait', error);
+      restoreHeaderRevealAfterInvisibleModelSelect(headerRevealSnapshot);
+      return false;
+    }
+
+    const officialBtn = DOM.modelButton();
     if (!officialBtn) {
       console.warn('[Crack UI Plus] 공식 모델 버튼을 못 찾음');
       return false;
@@ -4210,7 +7158,7 @@
     if (button.closest('[aria-label*="보관함"], [data-testid="virtuoso-scroller"]')) return false;
 
     const hasSendPath = !!button.querySelector(
-      'svg path[d^="M18.77 11.13"], svg path[d^="M18.77"], svg path[d*="10.27-5.93"], svg path[d*="11.86a1 1"]'
+      'svg path[d^="M18.77 11.13"], svg path[d^="M18.77"], svg path[d*="10.27-5.93"], svg path[d*="11.86a1 1"], svg path[d^="M18.38 12.88"], svg path[d*="15.38"], svg path[d*="6.62 6.63"]'
     );
     if (!hasSendPath) return false;
 
@@ -4273,20 +7221,80 @@
     const nameEl = btn.querySelector('.crack-ui-bottom-model-name');
 
     if (iconWrap) {
+      const currentImg = iconWrap.querySelector('img');
       if (info.image) {
-        iconWrap.innerHTML = `<img src="${info.image}" alt="">`;
-      } else {
+        const iconAlreadyMatches =
+          currentImg?.getAttribute('src') === info.image &&
+          iconWrap.children.length === 1;
+
+        if (!iconAlreadyMatches) {
+          const img = document.createElement('img');
+          img.src = info.image;
+          img.alt = '';
+          iconWrap.replaceChildren(img);
+        }
+      } else if (iconWrap.textContent !== '🔥' || iconWrap.children.length > 0) {
         iconWrap.textContent = '🔥';
       }
     }
 
-    if (nameEl) nameEl.textContent = info.name;
-    btn.title = `채팅 모델 변경: ${info.name}`;
-    btn.setAttribute('aria-label', `채팅 모델 변경: ${info.name}`);
+    if (nameEl && nameEl.textContent !== info.name) nameEl.textContent = info.name;
+
+    const label = `채팅 모델 변경: ${info.name}`;
+    if (btn.title !== label) btn.title = label;
+    if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+  }
+
+  function isNodeBeforeInSameParent(node, target) {
+    if (!node || !target || node.parentElement !== target.parentElement) return false;
+    let cur = node;
+    while ((cur = cur.nextElementSibling)) {
+      if (cur === target) return true;
+    }
+    return false;
+  }
+
+  function findBottomModelCooperativeGroup(sendButton) {
+    const parent = sendButton?.parentElement;
+    if (!parent) return null;
+
+    // Crack Muse Writer / 자동메모장 계열은 이 그룹을 전송 버튼 바로 앞으로
+    // 계속 되돌리므로, 우리 모델 버튼은 형제 자리를 다투지 않고 이 그룹 안으로 합류한다.
+    const pureGroup = document.getElementById('crack-pure-send-left-group');
+    if (pureGroup?.isConnected && pureGroup.parentElement === parent) return pureGroup;
+
+    return null;
+  }
+
+  function placeBottomModelButton(btn, sendButton) {
+    const parent = sendButton?.parentElement;
+    if (!btn || !parent) return false;
+
+    const cooperativeGroup = findBottomModelCooperativeGroup(sendButton);
+
+    if (cooperativeGroup) {
+      if (btn.parentElement !== cooperativeGroup) {
+        cooperativeGroup.appendChild(btn);
+      }
+      btn.dataset.crackUiPlacement = 'cooperative-group';
+      cooperativeGroup.dataset.crackUiPureGroupRight = '1';
+      parent.dataset.crackUiBottomModelGroup = '1';
+      parent.dataset.crackUiBottomModelCooperative = '1';
+      return true;
+    }
+
+    if (btn.parentElement !== parent || !isNodeBeforeInSameParent(btn, sendButton)) {
+      parent.insertBefore(btn, sendButton);
+    }
+
+    btn.dataset.crackUiPlacement = 'send-sibling';
+    parent.dataset.crackUiBottomModelGroup = '1';
+    delete parent.dataset.crackUiBottomModelCooperative;
+    return true;
   }
 
   function ensureBottomModelButton() {
-    const sendButton = findBottomSendButton();
+    const sendButton = DOM.sendButton();
     let btn = document.getElementById(ID.bottomModelButton);
 
     if (!sendButton?.parentElement) {
@@ -4299,11 +7307,7 @@
 
     if (!btn) btn = createBottomModelButton();
 
-    if (btn.parentElement !== sendButton.parentElement || btn.nextElementSibling !== sendButton) {
-      sendButton.parentElement.insertBefore(btn, sendButton);
-    }
-
-    sendButton.parentElement.dataset.crackUiBottomModelGroup = '1';
+    placeBottomModelButton(btn, sendButton);
     syncBottomModelButton();
   }
 
@@ -4476,6 +7480,1839 @@
   }
 
 
+  // =====================================================
+  // Feature: novel UI model indicator
+  // =====================================================
+
+  const NOVEL_MODEL_CACHE_LIMIT = 1200;
+  const NOVEL_MODEL_SCAN_THROTTLE_MS = 700;
+  const NOVEL_MODEL_PENDING_MAX_AGE_MS = 120000;
+  const NOVEL_MODEL_NETWORK_CANDIDATE_LIMIT = 2000;
+  const NOVEL_MODEL_NETWORK_MESSAGE_LIMIT = 2000;
+  const NOVEL_MODEL_NETWORK_MAX_BODY_CHARS = 8000000;
+  const NOVEL_MODEL_AUTO_MATCH_MIN_SCORE = 250;
+  const NOVEL_MODEL_AUTO_MATCH_AMBIGUITY_RATIO = 1.2;
+
+  function isNovelModelIndicatorRoute() {
+    return /^\/stories\/[^/]+/.test(location.pathname);
+  }
+
+  function getNovelModelRoomKey() {
+    const path = String(location.pathname || '').replace(/\/+$/, '');
+    const episodeMatch = path.match(/^\/stories\/([^/]+)\/episodes\/([^/]+)/);
+    if (episodeMatch) return `stories:${episodeMatch[1]}:episodes:${episodeMatch[2]}`;
+
+    const storyMatch = path.match(/^\/stories\/([^/]+)/);
+    if (storyMatch) return `stories:${storyMatch[1]}`;
+
+    return path || 'unknown';
+  }
+
+
+  const NOVEL_MODEL_CATALOG_LIMIT = 160;
+  const NOVEL_MODEL_BUILTIN_CATALOG = Object.freeze([
+    {
+      id: '6a2bde2b2d1852a9f41bc3df',
+      name: '페이블챗 1.0',
+      crackerModel: 'fablechat_1_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/fablechat1_0.webp',
+      retired: true,
+      deletedAt: '2026-06-13T02:02:50.208Z',
+      replacementChatModelId: '6a2bdd4cce9304265a32c6b8',
+    },
+    {
+      id: '6a4ddff0c7931348699337b4',
+      name: '페이블챗 1.0',
+      crackerModel: 'fablechat_1_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/fablechat1_0.webp',
+      retired: false,
+    },
+    {
+      id: '6a2bda2f992c05d50c2ba7d3',
+      name: '하이퍼챗 2.0',
+      crackerModel: 'hyperchat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat2_0.webp',
+      retired: true,
+      deletedAt: '2026-06-12T10:06:59.107Z',
+      replacementChatModelId: '69e0f46a9530f9bfbde683a9',
+    },
+    {
+      id: '6a2bdd4cce9304265a32c6b8',
+      name: '하이퍼챗 2.0',
+      crackerModel: 'hyperchat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat2_0.webp',
+      retired: false,
+    },
+    {
+      id: '69e0f46a9530f9bfbde683a9',
+      name: '하이퍼챗 1.5',
+      crackerModel: 'hyperchat_1_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat1_5.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95bf',
+      name: '하이퍼챗 1.0',
+      crackerModel: 'hyperchat',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat.webp',
+      retired: false,
+    },
+    {
+      id: '6a441a058aa1c16926050ab4',
+      name: '슈퍼챗 3.0',
+      crackerModel: 'superchat_3_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat3_0.webp',
+      retired: false,
+    },
+    {
+      id: '6994ad1b2510c2af8007cca5',
+      name: '슈퍼챗 2.5',
+      crackerModel: 'superchat_2_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat2_5.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95c0',
+      name: '슈퍼챗 2.0',
+      crackerModel: 'superchat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat2_0.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95c1',
+      name: '슈퍼챗 1.5',
+      crackerModel: 'superchat_1_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat1_5.webp',
+      retired: true,
+      deletedAt: '2026-06-15T15:00:02.378Z',
+      replacementChatModelId: '6994ad1b2510c2af8007cca5',
+    },
+    {
+      id: '699877c92d18b3f5dec84f49',
+      name: '프로챗 2.5',
+      crackerModel: 'prochat_2_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat2_5.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95c2',
+      name: '프로챗 2.0',
+      crackerModel: 'prochat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat2_0.webp',
+      retired: true,
+      deletedAt: '2026-03-25T15:00:06.145Z',
+      replacementChatModelId: '699877c92d18b3f5dec84f49',
+    },
+    {
+      id: '69485e1c9d2a7cdc6ebf95c3',
+      name: '프로챗 1.0',
+      crackerModel: 'prochat_1_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat1_0.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1c9d2a7cdc6ebf95c4',
+      name: '파워챗',
+      crackerModel: 'powerchat',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/powerchat.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1c9d2a7cdc6ebf95c5',
+      name: '일반챗',
+      crackerModel: 'normalchat',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/normalchat.webp',
+      retired: true,
+      deletedAt: '2026-04-16T15:00:04.531Z',
+      replacementChatModelId: '69485e1c9d2a7cdc6ebf95c4',
+    },
+  ]);
+
+  const NOVEL_MODEL_BUILTIN_NAME_ORDER = Object.freeze(
+    [...new Set(NOVEL_MODEL_BUILTIN_CATALOG.map((entry) => entry.name))]
+  );
+  let novelModelCatalogNameOrder = [...NOVEL_MODEL_BUILTIN_NAME_ORDER];
+
+  function rememberNovelModelCatalogOrderFromList(models) {
+    if (!Array.isArray(models)) return false;
+
+    const orderedNames = [];
+    const seen = new Set();
+    for (const item of models) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      if (item.serviceType && item.serviceType !== 'story') continue;
+      const name = normalizeText(item.name || item.displayName || item.modelName);
+      const image = normalizeNovelModelIconUrl(
+        item.assets?.icon?.default || item.icon?.default || item.modelIcon || item.iconUrl
+      );
+      if (!name || !image || seen.has(name)) continue;
+      seen.add(name);
+      orderedNames.push(name);
+    }
+    if (orderedNames.length < 2) return false;
+
+    const next = [
+      ...orderedNames,
+      ...novelModelCatalogNameOrder.filter((name) => !seen.has(name)),
+    ];
+    const changed =
+      next.length !== novelModelCatalogNameOrder.length ||
+      next.some((name, index) => name !== novelModelCatalogNameOrder[index]);
+    if (changed) novelModelCatalogNameOrder = next;
+    return changed;
+  }
+
+  const novelModelCatalogById = new Map();
+  const novelModelCatalogByName = new Map();
+  const novelModelCatalogByCracker = new Map();
+  let novelModelCatalogSaveTimer = null;
+  let novelModelCatalogDirty = false;
+
+  function normalizeNovelModelCatalogEntry(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const id = String(entry.id || entry._id || '').trim();
+    const name = normalizeText(entry.name || entry.displayName || entry.modelName).slice(0, 60);
+    const crackerModel = String(entry.crackerModel || entry.cracker_model || '').trim().toLowerCase();
+    const image = normalizeNovelModelIconUrl(
+      entry.image || entry.assets?.icon?.default || entry.icon?.default || entry.modelIcon || entry.iconUrl
+    );
+    const deletedAt = String(entry.deletedAt || '').trim();
+    const replacementChatModelId = String(entry.replacementChatModelId || '').trim();
+    if (!id || !name || !image || !/^[a-f0-9]{24}$/i.test(id)) return null;
+
+    return {
+      id,
+      name,
+      crackerModel,
+      image,
+      retired: entry.retired === true || !!deletedAt,
+      deletedAt,
+      replacementChatModelId,
+      updatedAt: Number(entry.updatedAt) || Date.now(),
+    };
+  }
+
+  function choosePreferredNovelModelCatalogEntry(current, next) {
+    if (!current) return next;
+    if (current.id === next.id) return next;
+    if (current.retired !== next.retired) return current.retired ? next : current;
+    return next.updatedAt >= current.updatedAt ? next : current;
+  }
+
+  function scheduleNovelModelCatalogSave() {
+    novelModelCatalogDirty = true;
+    if (novelModelCatalogSaveTimer) return;
+    novelModelCatalogSaveTimer = setTimeout(() => {
+      novelModelCatalogSaveTimer = null;
+      saveNovelModelCatalog();
+    }, 250);
+  }
+
+  function saveNovelModelCatalog() {
+    if (!novelModelCatalogDirty) return;
+    novelModelCatalogDirty = false;
+    const entries = [...novelModelCatalogById.values()]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, NOVEL_MODEL_CATALOG_LIMIT);
+    writeJsonStorage(LS.novelModelCatalog, {
+      version: 1,
+      entries,
+    });
+  }
+
+  function flushNovelModelCatalogSave() {
+    if (novelModelCatalogSaveTimer) {
+      clearTimeout(novelModelCatalogSaveTimer);
+      novelModelCatalogSaveTimer = null;
+    }
+    saveNovelModelCatalog();
+  }
+
+  function registerNovelModelCatalogEntry(entry, { persist = false } = {}) {
+    const incoming = normalizeNovelModelCatalogEntry(entry);
+    if (!incoming) return false;
+
+    const previousById = novelModelCatalogById.get(incoming.id);
+    const normalized = previousById ? {
+      ...previousById,
+      ...incoming,
+      retired: previousById.retired === true || incoming.retired === true,
+      deletedAt: incoming.deletedAt || previousById.deletedAt || '',
+      replacementChatModelId: incoming.replacementChatModelId || previousById.replacementChatModelId || '',
+      updatedAt: Math.max(previousById.updatedAt || 0, incoming.updatedAt || 0),
+    } : incoming;
+    const changed = !previousById || (
+      previousById.name !== normalized.name ||
+      previousById.crackerModel !== normalized.crackerModel ||
+      previousById.image !== normalized.image ||
+      previousById.retired !== normalized.retired ||
+      previousById.deletedAt !== normalized.deletedAt ||
+      previousById.replacementChatModelId !== normalized.replacementChatModelId
+    );
+
+    if (!novelModelCatalogNameOrder.includes(normalized.name)) {
+      novelModelCatalogNameOrder.push(normalized.name);
+    }
+
+    novelModelCatalogById.set(normalized.id, normalized);
+    novelModelCatalogByName.set(
+      normalized.name,
+      choosePreferredNovelModelCatalogEntry(novelModelCatalogByName.get(normalized.name), normalized)
+    );
+    if (normalized.crackerModel) {
+      novelModelCatalogByCracker.set(
+        normalized.crackerModel,
+        choosePreferredNovelModelCatalogEntry(novelModelCatalogByCracker.get(normalized.crackerModel), normalized)
+      );
+    }
+
+    CHAT_MODEL_ID_NAME[normalized.id] = normalized.name;
+    novelModelNetworkInfoByName.set(normalized.name, {
+      image: normalized.image,
+      retired: normalized.retired,
+      deletedAt: normalized.deletedAt,
+    });
+
+    if (changed && persist) scheduleNovelModelCatalogSave();
+    return changed;
+  }
+
+  function loadNovelModelCatalog() {
+    for (const entry of NOVEL_MODEL_BUILTIN_CATALOG) {
+      registerNovelModelCatalogEntry(entry);
+    }
+
+    const raw = readStorage(LS.novelModelCatalog);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      const entries = Array.isArray(parsed) ? parsed : parsed?.entries;
+      if (!Array.isArray(entries)) return;
+      for (const entry of entries.slice(0, NOVEL_MODEL_CATALOG_LIMIT)) {
+        registerNovelModelCatalogEntry(entry);
+      }
+    } catch {
+    }
+  }
+
+  function toNovelModelInfo(entry) {
+    if (!entry) return null;
+    const image = normalizeNovelModelIconUrl(entry.image);
+    const name = normalizeText(entry.name);
+    if (!name || !image) return null;
+    return {
+      name,
+      image,
+      chatModelId: String(entry.id || entry.chatModelId || ''),
+      crackerModel: String(entry.crackerModel || ''),
+      retired: entry.retired === true,
+      deletedAt: String(entry.deletedAt || ''),
+      replacementChatModelId: String(entry.replacementChatModelId || ''),
+    };
+  }
+
+  loadNovelModelCatalog();
+
+  function getNovelModelInfoByName(name) {
+    const normalized = normalizeText(name);
+    if (!normalized) return null;
+
+    const catalogInfo = novelModelCatalogByName.get(normalized);
+    const info = CHAT_MODEL_INFO[normalized] || catalogInfo || novelModelNetworkInfoByName.get(normalized) || DEFAULT_CHAT_MODEL_INFO[normalized] || NOVEL_MODEL_LEGACY_INFO[normalized];
+    const image = normalizeNovelModelIconUrl(info?.image);
+    if (!image) return null;
+    return {
+      name: normalized,
+      image,
+      chatModelId: String(catalogInfo?.id || ''),
+      crackerModel: String(catalogInfo?.crackerModel || ''),
+      retired: catalogInfo?.retired === true || info?.retired === true,
+      deletedAt: String(catalogInfo?.deletedAt || info?.deletedAt || ''),
+      replacementChatModelId: String(catalogInfo?.replacementChatModelId || ''),
+    };
+  }
+
+  function getNovelModelInfoByChatModelId(value) {
+    const id = String(value || '').trim();
+    if (!id) return null;
+    return toNovelModelInfo(novelModelCatalogById.get(id)) || getNovelModelInfoByName(CHAT_MODEL_ID_NAME[id]);
+  }
+
+  function getNovelModelInfoByCrackerModel(value) {
+    const code = String(value || '').trim().toLowerCase();
+    if (!code) return null;
+    return toNovelModelInfo(novelModelCatalogByCracker.get(code)) || getNovelModelInfoByName(DEFAULT_CRACKER_MODEL_NAME[code]);
+  }
+
+  function getNovelModelInfoByLooseToken(value) {
+    const token = String(value || '').trim().toLowerCase().replace(/[\s.-]+/g, '_');
+    if (!token) return null;
+    const compact = token.replace(/_/g, '');
+    const aliases = {
+      fablechat10: '페이블챗 1.0',
+      fable5: '페이블챗 1.0',
+      hyperchat20: '하이퍼챗 2.0',
+      opus48: '하이퍼챗 2.0',
+      hyperchat15: '하이퍼챗 1.5',
+      opus47: '하이퍼챗 1.5',
+      hyperchat: '하이퍼챗 1.0',
+      opus46: '하이퍼챗 1.0',
+      superchat30: '슈퍼챗 3.0',
+      sonnet50: '슈퍼챗 3.0',
+      superchat25: '슈퍼챗 2.5',
+      sonnet46: '슈퍼챗 2.5',
+      superchat20: '슈퍼챗 2.0',
+      sonnet45: '슈퍼챗 2.0',
+      superchat15: '슈퍼챗 1.5',
+      sonnet40: '슈퍼챗 1.5',
+      prochat25: '프로챗 2.5',
+      gemini31pro: '프로챗 2.5',
+      gemini31: '프로챗 2.5',
+      prochat20: '프로챗 2.0',
+      gemini30pro: '프로챗 2.0',
+      gemini30: '프로챗 2.0',
+      prochat10: '프로챗 1.0',
+      gemini25pro: '프로챗 1.0',
+      gemini25: '프로챗 1.0',
+      powerchat: '파워챗',
+      normalchat: '일반챗',
+    };
+    return getNovelModelInfoByName(aliases[compact]);
+  }
+
+  function getNovelNetworkObjectIcon(value) {
+    if (!value || typeof value !== 'object') return '';
+    const candidates = [
+      value.assets?.icon?.default,
+      value.assets?.icon?.light,
+      value.icon?.default,
+      value.icon?.light,
+      value.modelIcon,
+      value.modelIconUrl,
+      value.iconUrl,
+      typeof value.icon === 'string' ? value.icon : '',
+      typeof value.image === 'string' ? value.image : '',
+    ];
+    return candidates.map(normalizeNovelModelIconUrl).find(Boolean) || '';
+  }
+
+  function getNovelModelInfoFromNetworkObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+    const nestedCandidates = [
+      value.chatModel,
+      value.modelInfo,
+      value.generationModel,
+      value.generationInfo,
+      value.metadata?.chatModel,
+      value.metadata?.modelInfo,
+      value.metadata?.generationModel,
+      typeof value.model === 'object' ? value.model : null,
+    ].filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+
+    const idCandidates = [
+      value.chatModelId,
+      value.chat_model_id,
+      value.chatModelID,
+      value.modelId,
+      value.model_id,
+      ...nestedCandidates.flatMap((item) => [item.chatModelId, item._id, item.id, item.modelId]),
+    ];
+    for (const id of idCandidates) {
+      const info = getNovelModelInfoByChatModelId(id);
+      if (info) return info;
+    }
+
+    for (const item of [value, ...nestedCandidates]) {
+      const image = getNovelNetworkObjectIcon(item);
+      if (!image) continue;
+
+      const iconFile = getModelIconFileFromUrl(image);
+      const name =
+        CHAT_MODEL_ICON_MAP[iconFile] ||
+        normalizeText(item.name || item.displayName || item.modelName) ||
+        DEFAULT_CRACKER_MODEL_NAME[String(item.crackerModel || '').toLowerCase()] ||
+        iconFile.replace(/\.(?:webp|png|svg|avif)$/i, '') ||
+        '모델';
+      const known = getNovelModelInfoByName(name);
+      return known ? { ...known, image } : { name, image };
+    }
+
+    const directNames = [
+      value.modelName,
+      value.displayModelName,
+      value.chatModelName,
+      typeof value.model === 'string' ? value.model : '',
+      ...nestedCandidates.flatMap((item) => [item.name, item.displayName, item.modelName]),
+    ];
+    for (const name of directNames) {
+      const info = getNovelModelInfoByName(name) || getNovelModelInfoByLooseToken(name);
+      if (info) return info;
+    }
+
+    const crackerCandidates = [
+      value.crackerModel,
+      value.cracker_model,
+      ...nestedCandidates.map((item) => item.crackerModel),
+    ];
+    for (const code of crackerCandidates) {
+      const info = getNovelModelInfoByCrackerModel(code);
+      if (info) return info;
+    }
+
+    return null;
+  }
+
+  function getNovelNestedModelInfoForGroupObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+    const directChildren = [
+      value.message,
+      value.assistantMessage,
+      value.botMessage,
+      value.response,
+      value.generation,
+      value.lastMessage,
+    ];
+    for (const child of directChildren) {
+      const info = getNovelModelInfoFromNetworkObject(child);
+      if (info) return info;
+    }
+
+    const arrays = [value.messages, value.messageList, value.items, value.turns];
+    for (const array of arrays) {
+      if (!Array.isArray(array)) continue;
+      for (let index = array.length - 1; index >= 0; index -= 1) {
+        const info = getNovelModelInfoFromNetworkObject(array[index]);
+        if (info) return info;
+      }
+    }
+
+    return null;
+  }
+
+  function harvestNovelModelCatalogEntry(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const id = String(value._id || value.id || '').trim();
+    const name = normalizeText(value.name || value.displayName || value.modelName);
+    const image = getNovelNetworkObjectIcon(value);
+    if (!id || !name || !image || !/^[a-f0-9]{24}$/i.test(id)) return false;
+    if (value.serviceType && value.serviceType !== 'story') return false;
+
+    return registerNovelModelCatalogEntry({
+      id,
+      name,
+      crackerModel: value.crackerModel || value.cracker_model || '',
+      image,
+      retired: !!value.deletedAt,
+      deletedAt: value.deletedAt || '',
+      replacementChatModelId: value.replacementChatModelId || '',
+      updatedAt: Date.now(),
+    }, { persist: true });
+  }
+
+  function normalizeNovelModelMatchText(value) {
+    return String(value || '')
+      .replace(/\[\/\/\]: # \([^)]+\)/g, ' ')
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/```/g, ' ')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/[“”"]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function compactNovelModelMatchText(value) {
+    return normalizeNovelModelMatchText(value)
+      .replace(/[^\p{L}\p{N}]/gu, '')
+      .toLowerCase();
+  }
+
+  function hashNovelModelText(value) {
+    const text = String(value || '');
+    let h1 = 0xdeadbeef;
+    let h2 = 0x41c6ce57;
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      h1 = Math.imul(h1 ^ code, 2654435761);
+      h2 = Math.imul(h2 ^ code, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
+
+  function makeNovelModelFingerprints(value) {
+    const compact = compactNovelModelMatchText(value);
+    if (compact.length < 30) return [];
+
+    const positions = new Set([
+      0,
+      Math.floor(compact.length * 0.25),
+      Math.floor(compact.length * 0.5),
+      Math.floor(compact.length * 0.75),
+      Math.max(0, compact.length - 80),
+    ]);
+    const fingerprints = [];
+    for (const position of positions) {
+      const chunk = compact.slice(position, position + 55);
+      if (chunk.length >= 35) fingerprints.push(chunk);
+    }
+    return [...new Set(fingerprints)];
+  }
+
+  function getNovelNetworkMessageContent(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+
+    const direct = [
+      value.content,
+      value.text,
+      value.messageContent,
+      value.message_content,
+      value.output,
+      value.answer,
+      value.responseText,
+      value.message?.content,
+      value.message?.text,
+      value.assistantMessage?.content,
+      value.assistantMessage?.text,
+      value.botMessage?.content,
+      value.botMessage?.text,
+      value.response?.content,
+      value.response?.text,
+      value.data?.content,
+      value.payload?.content,
+    ];
+    for (const candidate of direct) {
+      if (typeof candidate === 'string' && candidate.trim()) return candidate;
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+        const nestedText = candidate.text || candidate.content || candidate.value || '';
+        if (typeof nestedText === 'string' && nestedText.trim()) return nestedText;
+      }
+      if (Array.isArray(candidate)) {
+        const joined = candidate
+          .map((item) => typeof item === 'string' ? item : item?.text || item?.content || item?.value || '')
+          .filter(Boolean)
+          .join('\n');
+        if (joined.trim()) return joined;
+      }
+    }
+    return '';
+  }
+
+  function getNovelNetworkCandidateIds(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const ids = new Set();
+    const add = (candidate) => {
+      const id = String(candidate || '').trim();
+      if (id && id.length <= 120) ids.add(id);
+    };
+
+    add(value.messageGroupId);
+    add(value.message_group_id);
+    add(value.messageGroupID);
+    add(value.groupId);
+    add(value.group_id);
+    add(value.messageId);
+    add(value.message_id);
+    add(value._id);
+    add(value.id);
+    add(value.messageGroup?._id);
+    add(value.messageGroup?.id);
+    add(value.group?._id);
+    add(value.group?.id);
+
+    return [...ids];
+  }
+
+  function isNovelNetworkAssistantMessage(value, content, modelInfo) {
+    if (!content || !modelInfo) return false;
+    const role = String(value?.role || value?.senderRole || value?.authorRole || value?.type || '').toLowerCase();
+    if (/user|human|customer|member/.test(role)) return false;
+    if (/assistant|bot|ai|model|character/.test(role)) return true;
+    if (value?.story || value?.userNote || value?.title) return false;
+    return content.length >= 30;
+  }
+
+  function hasNovelExplicitMessageIdentity(value) {
+    if (!value || typeof value !== 'object') return false;
+    return !!(
+      value.messageGroupId || value.message_group_id || value.messageGroupID ||
+      value.groupId || value.group_id || value.messageId || value.message_id ||
+      /assistant|bot|ai|model|character/i.test(String(value.role || value.senderRole || value.type || ''))
+    );
+  }
+
+  function deindexNovelModelNetworkRecord(recordKey, record) {
+    for (const fingerprint of record?.fingerprints || []) {
+      const keys = novelModelFingerprintIndex.get(fingerprint);
+      if (!keys) continue;
+      keys.delete(recordKey);
+      if (!keys.size) novelModelFingerprintIndex.delete(fingerprint);
+    }
+  }
+
+  function indexNovelModelNetworkRecord(recordKey, record) {
+    for (const fingerprint of record.fingerprints) {
+      let keys = novelModelFingerprintIndex.get(fingerprint);
+      if (!keys) {
+        keys = new Set();
+        novelModelFingerprintIndex.set(fingerprint, keys);
+      }
+      keys.add(recordKey);
+    }
+  }
+
+  function storeNovelModelNetworkCandidate(roomKey, messageGroupId, modelInfo, sourceUrl = '') {
+    const id = String(messageGroupId || '').trim();
+    const image = normalizeNovelModelIconUrl(modelInfo?.image);
+    const name = normalizeText(modelInfo?.name) || '모델';
+    if (!roomKey || !id || !image) return false;
+
+    const key = makeNovelModelCacheKey(roomKey, id);
+    if (novelModelNetworkCandidates.has(key)) novelModelNetworkCandidates.delete(key);
+    novelModelNetworkCandidates.set(key, {
+      roomKey,
+      messageGroupId: id,
+      name,
+      image,
+      chatModelId: String(modelInfo?.chatModelId || ''),
+      crackerModel: String(modelInfo?.crackerModel || ''),
+      retired: modelInfo?.retired === true,
+      deletedAt: String(modelInfo?.deletedAt || ''),
+      replacementChatModelId: String(modelInfo?.replacementChatModelId || ''),
+      sourceUrl: String(sourceUrl || '').slice(0, 500),
+      updatedAt: Date.now(),
+    });
+
+    while (novelModelNetworkCandidates.size > NOVEL_MODEL_NETWORK_CANDIDATE_LIMIT) {
+      const oldestKey = novelModelNetworkCandidates.keys().next().value;
+      if (!oldestKey) break;
+      novelModelNetworkCandidates.delete(oldestKey);
+    }
+    return true;
+  }
+
+  function storeNovelModelNetworkMessage(roomKey, value, modelInfo, sourceUrl = '') {
+    const content = getNovelNetworkMessageContent(value);
+    if (!isNovelNetworkAssistantMessage(value, content, modelInfo)) return false;
+
+    const compactContent = compactNovelModelMatchText(content);
+    const fingerprints = makeNovelModelFingerprints(content);
+    if (compactContent.length < 30 || !fingerprints.length) return false;
+
+    const ids = getNovelNetworkCandidateIds(value);
+    const primaryId = ids[0] || hashNovelModelText(`${compactContent.length}:${compactContent.slice(0, 120)}:${compactContent.slice(-120)}`);
+    const recordKey = `${roomKey}::network::${primaryId}`;
+    const normalizedModelInfo = {
+      name: normalizeText(modelInfo.name) || '모델',
+      image: normalizeNovelModelIconUrl(modelInfo.image),
+      chatModelId: String(modelInfo.chatModelId || ''),
+      crackerModel: String(modelInfo.crackerModel || ''),
+      retired: modelInfo.retired === true,
+      deletedAt: String(modelInfo.deletedAt || ''),
+      replacementChatModelId: String(modelInfo.replacementChatModelId || ''),
+    };
+    if (!normalizedModelInfo.image) return false;
+
+    for (const id of ids) storeNovelModelNetworkCandidate(roomKey, id, normalizedModelInfo, sourceUrl);
+
+    const previous = novelModelNetworkMessages.get(recordKey);
+    if (
+      previous?.compactContent === compactContent &&
+      previous?.modelInfo?.name === normalizedModelInfo.name &&
+      previous?.modelInfo?.image === normalizedModelInfo.image &&
+      previous?.modelInfo?.retired === normalizedModelInfo.retired
+    ) {
+      previous.updatedAt = Date.now();
+      return false;
+    }
+    if (previous) deindexNovelModelNetworkRecord(recordKey, previous);
+
+    const record = {
+      roomKey,
+      ids,
+      modelInfo: normalizedModelInfo,
+      compactContent,
+      fingerprints,
+      fingerprintSet: new Set(fingerprints),
+      sourceUrl: String(sourceUrl || '').slice(0, 500),
+      updatedAt: Date.now(),
+    };
+
+    if (novelModelNetworkMessages.has(recordKey)) novelModelNetworkMessages.delete(recordKey);
+    novelModelNetworkMessages.set(recordKey, record);
+    indexNovelModelNetworkRecord(recordKey, record);
+
+    while (novelModelNetworkMessages.size > NOVEL_MODEL_NETWORK_MESSAGE_LIMIT) {
+      const oldestKey = novelModelNetworkMessages.keys().next().value;
+      if (!oldestKey) break;
+      const oldest = novelModelNetworkMessages.get(oldestKey);
+      deindexNovelModelNetworkRecord(oldestKey, oldest);
+      novelModelNetworkMessages.delete(oldestKey);
+    }
+
+    novelModelNetworkMessageRevision += 1;
+    return true;
+  }
+
+  function harvestNovelModelNetworkPayload(payload, sourceUrl = '', roomKey = getNovelModelRoomKey()) {
+    if (!payload || !roomKey) return 0;
+
+    const seen = new WeakSet();
+    let visited = 0;
+    let matches = 0;
+    let catalogChanged = false;
+
+    const visit = (value, depth = 0) => {
+      if (visited >= 24000 || depth > 14 || !value || typeof value !== 'object') return;
+      if (seen.has(value)) return;
+      seen.add(value);
+      visited += 1;
+
+      if (Array.isArray(value)) {
+        for (const item of value) visit(item, depth + 1);
+        return;
+      }
+
+      if (Array.isArray(value.models)) {
+        catalogChanged = rememberNovelModelCatalogOrderFromList(value.models) || catalogChanged;
+        catalogChanged = syncChatModelRegistryFromApiModelList(value.models) || catalogChanged;
+      }
+
+      catalogChanged = harvestNovelModelCatalogEntry(value) || catalogChanged;
+      const directModelInfo = getNovelModelInfoFromNetworkObject(value);
+      const nestedModelInfo = directModelInfo || getNovelNestedModelInfoForGroupObject(value);
+      if (nestedModelInfo && storeNovelModelNetworkMessage(roomKey, value, nestedModelInfo, sourceUrl)) {
+        matches += 1;
+      } else if (nestedModelInfo && hasNovelExplicitMessageIdentity(value)) {
+        for (const id of getNovelNetworkCandidateIds(value)) {
+          if (storeNovelModelNetworkCandidate(roomKey, id, nestedModelInfo, sourceUrl)) matches += 1;
+        }
+      }
+
+      for (const child of Object.values(value)) visit(child, depth + 1);
+    };
+
+    visit(payload);
+    novelModelNetworkPayloadCount += 1;
+    novelModelNetworkLastUrl = String(sourceUrl || '').slice(0, 500);
+    novelModelNetworkLastMatchCount = matches;
+
+    if (matches || catalogChanged) scheduleNovelModelIndicatorScan({ immediate: true });
+    return matches;
+  }
+
+  function shouldInspectNovelModelNetworkUrl(value) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return false;
+    try {
+      const url = new URL(String(value || ''), location.href);
+      return url.hostname === 'crack-api.wrtn.ai' || url.hostname.endsWith('.wrtn.ai');
+    } catch {
+      return false;
+    }
+  }
+
+  function handleNovelModelPayloadText(text, sourceUrl = '', roomKey = getNovelModelRoomKey()) {
+    if (!text || text.length > NOVEL_MODEL_NETWORK_MAX_BODY_CHARS) return 0;
+    const trimmed = String(text).trim();
+    if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return 0;
+    if (!/(?:chatModelId|crackerModel|modelIcon|messageGroupId|"role"|"content")/.test(trimmed)) return 0;
+    try {
+      return harvestNovelModelNetworkPayload(JSON.parse(trimmed), sourceUrl, roomKey);
+    } catch {
+      return 0;
+    }
+  }
+
+  function inspectNovelModelFetchResponse(response, requestUrl = '') {
+    if (!response || !shouldInspectNovelModelNetworkUrl(response.url || requestUrl)) return;
+    const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+    if (contentType && !contentType.includes('json') && !contentType.includes('text')) return;
+
+    const roomKey = getNovelModelRoomKey();
+    try {
+      response.clone().text().then((text) => {
+        if (!novelModelIndicator || roomKey !== getNovelModelRoomKey()) return;
+        handleNovelModelPayloadText(text, response.url || requestUrl, roomKey);
+      }).catch(() => {});
+    } catch {
+    }
+  }
+
+  function inspectNovelModelXhrResponse(xhr) {
+    if (!xhr || !shouldInspectNovelModelNetworkUrl(xhr.responseURL)) return;
+    const roomKey = getNovelModelRoomKey();
+    try {
+      if (xhr.responseType === 'json' && xhr.response) {
+        harvestNovelModelNetworkPayload(xhr.response, xhr.responseURL, roomKey);
+        return;
+      }
+      handleNovelModelPayloadText(String(xhr.responseText || ''), xhr.responseURL, roomKey);
+    } catch {
+    }
+  }
+
+  function installNovelModelNetworkCapture() {
+    if (novelModelNetworkCaptureInstalled) return true;
+    const publicWindow = getCrackUiPublicWindow();
+    let installed = false;
+
+    try {
+      const originalFetch = publicWindow.fetch;
+      if (typeof originalFetch === 'function') {
+        if (originalFetch.__crackUiNovelModelWrapped === true) {
+          installed = true;
+        } else {
+          const wrappedFetch = function (...args) {
+            const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+            const result = originalFetch.apply(this, args);
+            if (novelModelIndicator && isNovelModelIndicatorRoute()) {
+              Promise.resolve(result).then((response) => inspectNovelModelFetchResponse(response, requestUrl)).catch(() => {});
+            }
+            return result;
+          };
+          wrappedFetch.__crackUiNovelModelWrapped = true;
+          wrappedFetch.__crackUiNovelModelOriginal = originalFetch;
+          publicWindow.fetch = wrappedFetch;
+          installed = true;
+        }
+      }
+    } catch {
+    }
+
+    try {
+      const proto = publicWindow.XMLHttpRequest?.prototype;
+      const originalSend = proto?.send;
+      if (typeof originalSend === 'function') {
+        if (originalSend.__crackUiNovelModelWrapped === true) {
+          installed = true;
+        } else {
+          const wrappedSend = function (...args) {
+            if (novelModelIndicator && isNovelModelIndicatorRoute() && !this.__crackUiNovelModelObserved) {
+              this.__crackUiNovelModelObserved = true;
+              this.addEventListener('loadend', () => inspectNovelModelXhrResponse(this), { once: true });
+            }
+            return originalSend.apply(this, args);
+          };
+          wrappedSend.__crackUiNovelModelWrapped = true;
+          wrappedSend.__crackUiNovelModelOriginal = originalSend;
+          proto.send = wrappedSend;
+          installed = true;
+        }
+      }
+    } catch {
+    }
+
+    novelModelNetworkCaptureInstalled = installed;
+    return installed;
+  }
+
+  function scanNovelModelStaticData() {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute() || !document.body) return;
+    const roomKey = getNovelModelRoomKey();
+    if (novelModelStaticScanRoomKey !== roomKey) {
+      novelModelStaticScanRoomKey = roomKey;
+      novelModelStaticScanCount = 0;
+    }
+    if (novelModelStaticScanCount >= 3) return;
+    novelModelStaticScanCount += 1;
+
+    try {
+      const nextData = document.querySelector('#__NEXT_DATA__')?.textContent;
+      if (nextData) handleNovelModelPayloadText(nextData, 'dom:__NEXT_DATA__', roomKey);
+    } catch {
+    }
+
+    try {
+      for (const script of document.querySelectorAll('script')) {
+        const text = script.textContent || '';
+        if (!text || text.length > NOVEL_MODEL_NETWORK_MAX_BODY_CHARS) continue;
+        if (!/(?:crackerModel|chatModelId|messageGroupId)/.test(text)) continue;
+        handleNovelModelPayloadText(text, 'dom:script', roomKey);
+      }
+    } catch {
+    }
+
+    try {
+      for (const storage of [localStorage, sessionStorage]) {
+        const count = Math.min(storage.length, 250);
+        for (let index = 0; index < count; index += 1) {
+          const key = storage.key(index);
+          // UI+ caches are loaded by their dedicated loaders. Re-parsing them as
+          // Crack bootstrap data only feeds captured results back into the scanner.
+          if (key?.startsWith('crack_ui_') || key === 'wrtn_img_resizer_config') continue;
+          const value = key ? storage.getItem(key) : '';
+          if (!value || value.length > NOVEL_MODEL_NETWORK_MAX_BODY_CHARS) continue;
+          if (!/(?:crackerModel|chatModelId|messageGroupId)/.test(value)) continue;
+          handleNovelModelPayloadText(value, `storage:${key}`, roomKey);
+        }
+      }
+    } catch {
+    }
+  }
+
+  function normalizeNovelModelIconUrl(value) {
+    let raw = String(value || '').trim();
+    if (!raw) return '';
+
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const decoded = decodeURIComponent(raw);
+        if (decoded === raw) break;
+        raw = decoded;
+      } catch {
+        break;
+      }
+    }
+
+    const nestedUrl = raw.match(/https:\/\/[^\s"'<>]+\/model-icon\/[^\s"'<>?]+(?:\?[^\s"'<>]*)?/i)?.[0] || '';
+    const candidate = nestedUrl || raw;
+
+    try {
+      const url = new URL(candidate, location.href);
+      if (url.protocol !== 'https:') return '';
+      if (/\/model-icon\//i.test(url.pathname)) return url.href;
+    } catch {
+    }
+
+    const iconFile = getModelIconFileFromUrl(raw);
+    const knownName = CHAT_MODEL_ICON_MAP[iconFile];
+    const knownImage = knownName ? String(CHAT_MODEL_INFO[knownName]?.image || '') : '';
+    if (!knownImage || knownImage === value) return '';
+
+    try {
+      const url = new URL(knownImage, location.href);
+      return url.protocol === 'https:' && /\/model-icon\//i.test(url.pathname) ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function normalizeNovelModelCacheEntry(entry) {
+    const roomKey = String(entry?.roomKey || '').slice(0, 180);
+    const messageGroupId = String(entry?.messageGroupId || '').slice(0, 100);
+    const image = normalizeNovelModelIconUrl(entry?.image);
+    const name = normalizeText(entry?.name).slice(0, 60) || '모델';
+    const updatedAt = Number(entry?.updatedAt) || 0;
+    const source = String(entry?.source || '').slice(0, 40);
+
+    if (!roomKey || !messageGroupId || !image) return null;
+    return { roomKey, messageGroupId, image, name, updatedAt, source };
+  }
+
+  function loadNovelModelMessageCache() {
+    const raw = readStorage(LS.novelModelMessageCache);
+    if (!raw) return {};
+
+    try {
+      const parsed = JSON.parse(raw);
+      const sourceEntries = parsed?.entries && typeof parsed.entries === 'object'
+        ? parsed.entries
+        : parsed;
+      if (!sourceEntries || typeof sourceEntries !== 'object' || Array.isArray(sourceEntries)) return {};
+
+      const entries = {};
+      for (const [key, value] of Object.entries(sourceEntries)) {
+        const entry = normalizeNovelModelCacheEntry(value);
+        if (!entry) continue;
+        entries[String(key).slice(0, 320)] = entry;
+      }
+      return entries;
+    } catch {
+      return {};
+    }
+  }
+
+  function loadNovelModelManualMap() {
+    const raw = readStorage(LS.novelModelManualMap);
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const result = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        const name = normalizeText(value).slice(0, 60);
+        if (name && getNovelModelInfoByName(name)) result[String(key).slice(0, 320)] = name;
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  let novelModelMessageCache = loadNovelModelMessageCache();
+  let novelModelManualMap = loadNovelModelManualMap();
+
+  function makeNovelModelCacheKey(roomKey, messageGroupId) {
+    return `${String(roomKey || '')}::${String(messageGroupId || '')}`;
+  }
+
+  function getNovelModelManualKey(group, roomKey = getNovelModelRoomKey()) {
+    const messageGroupId = getMessageGroupId(group);
+    if (messageGroupId) return makeNovelModelCacheKey(roomKey, messageGroupId);
+    const compact = compactNovelModelMatchText(findMessageMarkdown(group)?.textContent || '');
+    return `${roomKey}::text::${compact.length}::${hashNovelModelText(compact.slice(0, 120) + compact.slice(-120))}`;
+  }
+
+  function saveNovelModelManualMap() {
+    const keys = Object.keys(novelModelManualMap);
+    if (keys.length > NOVEL_MODEL_CACHE_LIMIT) {
+      keys.slice(0, keys.length - NOVEL_MODEL_CACHE_LIMIT).forEach((key) => delete novelModelManualMap[key]);
+    }
+    writeJsonStorage(LS.novelModelManualMap, novelModelManualMap);
+  }
+
+  function getManualNovelModelInfo(group, roomKey) {
+    const name = novelModelManualMap[getNovelModelManualKey(group, roomKey)];
+    const info = getNovelModelInfoByName(name);
+    return info ? { ...info, manual: true, source: 'manual' } : null;
+  }
+
+  function setManualNovelModelInfo(group, modelName, roomKey = getNovelModelRoomKey()) {
+    const key = getNovelModelManualKey(group, roomKey);
+    const info = getNovelModelInfoByName(modelName);
+    if (!info) return false;
+    novelModelManualMap[key] = info.name;
+    saveNovelModelManualMap();
+    return true;
+  }
+
+  function clearManualNovelModelInfo(group, roomKey = getNovelModelRoomKey()) {
+    const key = getNovelModelManualKey(group, roomKey);
+    if (!Object.prototype.hasOwnProperty.call(novelModelManualMap, key)) return false;
+    delete novelModelManualMap[key];
+    saveNovelModelManualMap();
+    return true;
+  }
+
+  function pruneNovelModelMessageCache() {
+    const keys = Object.keys(novelModelMessageCache);
+    if (keys.length <= NOVEL_MODEL_CACHE_LIMIT) return;
+
+    keys
+      .sort((a, b) => (novelModelMessageCache[b]?.updatedAt || 0) - (novelModelMessageCache[a]?.updatedAt || 0))
+      .slice(NOVEL_MODEL_CACHE_LIMIT)
+      .forEach((key) => delete novelModelMessageCache[key]);
+  }
+
+  function saveNovelModelMessageCache() {
+    pruneNovelModelMessageCache();
+    writeJsonStorage(LS.novelModelMessageCache, {
+      version: 2,
+      entries: novelModelMessageCache,
+    });
+  }
+
+  function getCachedNovelModelInfo(roomKey, messageGroupId) {
+    return novelModelMessageCache[makeNovelModelCacheKey(roomKey, messageGroupId)] || null;
+  }
+
+  function cacheNovelModelInfo(roomKey, messageGroupId, modelInfo, source = 'unknown') {
+    const image = normalizeNovelModelIconUrl(modelInfo?.image);
+    const name = normalizeText(modelInfo?.name).slice(0, 60) || '모델';
+    if (!roomKey || !messageGroupId || !image) return false;
+
+    const key = makeNovelModelCacheKey(roomKey, messageGroupId);
+    const previous = novelModelMessageCache[key];
+    const chatModelId = String(modelInfo?.chatModelId || '');
+    const crackerModel = String(modelInfo?.crackerModel || '');
+    const retired = modelInfo?.retired === true;
+    const deletedAt = String(modelInfo?.deletedAt || '');
+    const replacementChatModelId = String(modelInfo?.replacementChatModelId || '');
+    if (
+      previous?.image === image &&
+      previous?.name === name &&
+      previous?.source === source &&
+      String(previous?.chatModelId || '') === chatModelId &&
+      String(previous?.crackerModel || '') === crackerModel &&
+      previous?.retired === retired &&
+      String(previous?.deletedAt || '') === deletedAt &&
+      String(previous?.replacementChatModelId || '') === replacementChatModelId
+    ) return false;
+
+    novelModelMessageCache[key] = {
+      roomKey,
+      messageGroupId,
+      image,
+      name,
+      source,
+      chatModelId,
+      crackerModel,
+      retired,
+      deletedAt,
+      replacementChatModelId,
+      updatedAt: Date.now(),
+    };
+    return true;
+  }
+
+  function getMessageGroupId(group) {
+    return String(group?.getAttribute?.('data-message-group-id') || '').trim();
+  }
+
+  function findMessageGroups() {
+    if (!isNovelModelIndicatorRoute()) return [];
+    return [...document.querySelectorAll('[data-message-group-id]')];
+  }
+
+  function isAssistantMessageGroup(group) {
+    if (!(group instanceof HTMLElement)) return false;
+    const shell = group.firstElementChild;
+    if (!(shell instanceof HTMLElement) || !shell.classList.contains('items-start')) return false;
+    return !!group.querySelector('.wrtn-markdown, [class*="wrtn-markdown"]');
+  }
+
+  function findAssistantMessageGroups() {
+    return findMessageGroups().filter(isAssistantMessageGroup);
+  }
+
+  function findNovelAssistantMessageGroups() {
+    return findAssistantMessageGroups().filter(isNovelAssistantMessageGroup);
+  }
+
+  function findMessageMarkdown(group) {
+    return group?.querySelector?.('.wrtn-markdown, [class*="wrtn-markdown"]') || null;
+  }
+
+  function findMessageBubble(group) {
+    const markdown = findMessageMarkdown(group);
+    const bubble = markdown?.parentElement || null;
+    return bubble instanceof HTMLElement ? bubble : null;
+  }
+
+  function isNovelAssistantMessageGroup(group) {
+    if (!isAssistantMessageGroup(group)) return false;
+    const bubble = findMessageBubble(group);
+    if (!bubble) return false;
+
+    const classes = bubble.classList;
+    return (
+      classes.contains('px-0') &&
+      classes.contains('py-0') &&
+      classes.contains('rounded-none') &&
+      classes.contains('bg-transparent')
+    );
+  }
+
+  function findNativeMessageModelIcon(group) {
+    if (!(group instanceof HTMLElement)) return null;
+    return [...group.querySelectorAll('img[src*="model-icon"], img[srcset*="model-icon"]')]
+      .find((icon) => !icon.closest('.crack-ui-novel-model-indicator')) || null;
+  }
+
+  function getModelInfoFromIconElement(icon) {
+    if (!(icon instanceof HTMLImageElement)) return null;
+    const image = normalizeNovelModelIconUrl(getModelIconSourceFromNode(icon));
+    if (!image) return null;
+
+    const iconFile = getModelIconFileFromUrl(image);
+    let name = CHAT_MODEL_ICON_MAP[iconFile] || '';
+    if (!name) {
+      const alt = normalizeText(icon.getAttribute('alt'));
+      if (alt && alt.toLowerCase() !== 'model') name = alt;
+    }
+    if (!name) name = iconFile.replace(/\.(?:webp|png|svg|avif)$/i, '') || '모델';
+
+    const known = getNovelModelInfoByName(name);
+    return known ? { ...known, image } : { name, image };
+  }
+
+  function getCurrentSelectedModelInfoForNovelIndicator() {
+    const candidates = [
+      DOM.modelButton(),
+      document.getElementById(ID.bottomModelButton),
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      const image = normalizeNovelModelIconUrl(getModelIconSourceFromNode(candidate));
+      if (!image) continue;
+
+      const iconFile = getModelIconFileFromUrl(image);
+      const mappedName = CHAT_MODEL_ICON_MAP[iconFile] || '';
+      const rawName = normalizeText(getRawModelNameFromNode(candidate));
+      const name = mappedName || (isKnownChatModelName(rawName) ? rawName : '') || '모델';
+      return { name, image };
+    }
+
+    return null;
+  }
+
+  function findMessageActionFooter(group) {
+    if (!(group instanceof HTMLElement)) return null;
+
+    const candidates = [...group.querySelectorAll('div.flex.items-center.justify-between.mt-2')];
+    return candidates.find((footer) => (
+      footer.querySelector('button[aria-label="메시지 옵션"]') ||
+      footer.querySelector('svg path[d^="M3.8 12"]')
+    )) || null;
+  }
+
+  function findMessageActionFooterLeftSlot(group) {
+    const footer = findMessageActionFooter(group);
+    const left = footer?.firstElementChild || null;
+    if (!(left instanceof HTMLElement)) return null;
+    if (!left.classList.contains('flex') || !left.classList.contains('items-center')) return null;
+    return left;
+  }
+
+  function removeNovelModelIndicatorFromGroup(group) {
+    group?.querySelectorAll?.('.crack-ui-novel-model-indicator').forEach((element) => element.remove());
+  }
+
+  function closeNovelModelManualMenu() {
+    document.querySelectorAll('.crack-ui-novel-model-menu, .crack-ui-novel-model-menu-backdrop').forEach((element) => element.remove());
+  }
+
+  function getNovelModelManualChoices() {
+    const names = new Set([
+      ...CHAT_MODEL_ORDER,
+      ...novelModelCatalogNameOrder,
+      ...Object.keys(DEFAULT_CHAT_MODEL_INFO),
+      ...Object.keys(NOVEL_MODEL_LEGACY_INFO),
+      ...novelModelCatalogByName.keys(),
+    ]);
+    const officialRank = new Map(CHAT_MODEL_ORDER.map((name, index) => [name, index]));
+    const catalogRank = new Map(novelModelCatalogNameOrder.map((name, index) => [name, index]));
+    const activeFallbackBase = CHAT_MODEL_ORDER.length + 1000;
+
+    return [...names]
+      .map((name) => getNovelModelInfoByName(name))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.retired !== b.retired) return a.retired ? 1 : -1;
+
+        if (!a.retired) {
+          const aRank = officialRank.has(a.name)
+            ? officialRank.get(a.name)
+            : activeFallbackBase + (catalogRank.get(a.name) ?? 100000);
+          const bRank = officialRank.has(b.name)
+            ? officialRank.get(b.name)
+            : activeFallbackBase + (catalogRank.get(b.name) ?? 100000);
+          if (aRank !== bRank) return aRank - bRank;
+        } else {
+          const aRank = catalogRank.get(a.name) ?? 100000;
+          const bRank = catalogRank.get(b.name) ?? 100000;
+          if (aRank !== bRank) return aRank - bRank;
+        }
+
+        return a.name.localeCompare(b.name, 'ko');
+      });
+  }
+
+  function openNovelModelManualMenu(anchor, group) {
+    if (!(anchor instanceof HTMLElement) || !(group instanceof HTMLElement)) return;
+    closeNovelModelManualMenu();
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'crack-ui-novel-model-menu-backdrop';
+    backdrop.addEventListener('click', closeNovelModelManualMenu, { once: true });
+    document.body.appendChild(backdrop);
+
+    const menu = document.createElement('div');
+    menu.className = 'crack-ui-novel-model-menu';
+    menu.dataset.crackUiTheme = normalizeThemeMode(themeMode);
+    menu.dataset.crackUiMenuOwner = 'novel-model-indicator';
+    menu.setAttribute('role', 'menu');
+
+    for (const info of getNovelModelManualChoices()) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'crack-ui-novel-model-menu-item';
+      item.dataset.retired = info.retired ? '1' : '0';
+      item.setAttribute('role', 'menuitem');
+
+      const icon = document.createElement('img');
+      icon.src = info.image;
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+
+      const label = document.createElement('span');
+      label.className = 'crack-ui-novel-model-menu-label';
+      label.textContent = `${info.name}${info.retired ? ' · 서비스 종료' : ''}`;
+
+      item.append(icon, label);
+      item.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setManualNovelModelInfo(group, info.name);
+        closeNovelModelManualMenu();
+        scheduleNovelModelIndicatorScan({ immediate: true });
+      });
+      menu.appendChild(item);
+    }
+
+    const automatic = document.createElement('button');
+    automatic.type = 'button';
+    automatic.className = 'crack-ui-novel-model-menu-clear';
+    automatic.textContent = '자동 판정 다시 사용';
+    automatic.addEventListener('click', (event) => {
+      event.stopPropagation();
+      clearManualNovelModelInfo(group);
+      closeNovelModelManualMenu();
+      scheduleNovelModelIndicatorScan({ immediate: true });
+    });
+    menu.appendChild(automatic);
+    document.body.appendChild(menu);
+
+    const rect = anchor.getBoundingClientRect();
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const top = window.innerHeight - rect.bottom >= height + 12
+      ? rect.bottom + 6
+      : Math.max(8, rect.top - height - 6);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  function renderNovelModelIndicator(group, modelInfo = null) {
+    const leftSlot = findMessageActionFooterLeftSlot(group);
+    if (!leftSlot) {
+      removeNovelModelIndicatorFromGroup(group);
+      return false;
+    }
+
+    const duplicates = [...leftSlot.children]
+      .filter((element) => element.classList?.contains('crack-ui-novel-model-indicator'));
+    let indicator = duplicates.shift() || null;
+    duplicates.forEach((element) => element.remove());
+
+    if (!indicator) {
+      indicator = document.createElement('button');
+      indicator.type = 'button';
+      indicator.className = 'crack-ui-novel-model-indicator';
+      indicator.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openNovelModelManualMenu(indicator, group);
+      });
+      leftSlot.prepend(indicator);
+    }
+
+    const image = normalizeNovelModelIconUrl(modelInfo?.image);
+    const name = normalizeText(modelInfo?.name) || '';
+    const source = String(modelInfo?.source || '');
+    const manual = modelInfo?.manual === true || source === 'manual';
+    const retired = modelInfo?.retired === true;
+    const marker = `${image}|${name}|${source}|${manual ? '1' : '0'}|${retired ? '1' : '0'}`;
+    const currentIcon = indicator.querySelector('img');
+    const alreadyRendered = indicator.dataset.crackUiNovelModelMarker === marker && (
+      image
+        ? currentIcon?.getAttribute('src') === image
+        : !currentIcon && indicator.textContent === '?'
+    );
+    if (alreadyRendered) return true;
+
+    indicator.replaceChildren();
+    indicator.dataset.crackUiNovelModelMarker = marker;
+    indicator.dataset.crackUiNovelModelName = name;
+    indicator.dataset.crackUiNovelModelImage = image;
+    indicator.dataset.crackUiNovelModelSource = source;
+    indicator.dataset.crackUiNovelModelRetired = retired ? '1' : '0';
+    indicator.dataset.crackUiNovelModelUnresolved = image ? '0' : '1';
+
+    if (image) {
+      const icon = document.createElement('img');
+      icon.src = image;
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+      indicator.appendChild(icon);
+      const retiredLabel = retired ? ' · 서비스 종료' : '';
+      indicator.title = `${name || '모델'}${retiredLabel}${manual ? ' · 수동 지정' : ''}`;
+      indicator.setAttribute('aria-label', `응답 모델: ${name || '모델'}${retired ? ', 서비스 종료' : ''}${manual ? ', 수동 지정' : ''}`);
+    } else {
+      indicator.textContent = '?';
+      indicator.title = '모델을 자동으로 확인하지 못함 · 눌러서 직접 선택';
+      indicator.setAttribute('aria-label', '응답 모델 선택');
+    }
+
+    return true;
+  }
+
+  function removeAllNovelModelIndicators() {
+    closeNovelModelManualMenu();
+    document.querySelectorAll('.crack-ui-novel-model-indicator').forEach((element) => element.remove());
+    novelModelIndicatorCleanupPending = false;
+  }
+
+  function clearNovelModelIndicatorScanSchedule() {
+    if (novelModelIndicatorScanTimer) {
+      clearTimeout(novelModelIndicatorScanTimer);
+      novelModelIndicatorScanTimer = null;
+    }
+    if (novelModelIndicatorScanRaf) {
+      cancelAnimationFrame(novelModelIndicatorScanRaf);
+      novelModelIndicatorScanRaf = 0;
+    }
+  }
+
+  function clearPendingNovelModelObserver() {
+    if (!pendingNovelModelObserver) return;
+    pendingNovelModelObserver.disconnect();
+    pendingNovelModelObserver = null;
+  }
+
+  function clearPendingNovelModelCapture() {
+    pendingNovelModelCapture = null;
+    clearPendingNovelModelObserver();
+    if (pendingNovelModelExpiryTimer) {
+      clearTimeout(pendingNovelModelExpiryTimer);
+      pendingNovelModelExpiryTimer = null;
+    }
+  }
+
+  function bindPendingNovelModelObserver(targetGroup) {
+    clearPendingNovelModelObserver();
+    if (!(targetGroup instanceof HTMLElement)) return;
+
+    pendingNovelModelObserver = new MutationObserver(() => {
+      if (!pendingNovelModelCapture) {
+        clearPendingNovelModelObserver();
+        return;
+      }
+      scheduleNovelModelIndicatorScan();
+    });
+    pendingNovelModelObserver.observe(targetGroup, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+
+  function disableNovelModelIndicatorUi() {
+    clearNovelModelIndicatorScanSchedule();
+    clearPendingNovelModelCapture();
+    closeNovelModelManualMenu();
+    if (novelModelIndicatorCleanupPending) removeAllNovelModelIndicators();
+  }
+
+  function getNovelMessageContentSignature(group) {
+    const text = normalizeText(findMessageMarkdown(group)?.textContent || '');
+    if (!text) return '';
+    return `${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
+  }
+
+  function chooseNewestAssistantGroup(groups) {
+    if (!groups.length) return null;
+    let best = groups[0];
+    let bestTop = Number.NEGATIVE_INFINITY;
+
+    for (const group of groups) {
+      const top = Number(group.getBoundingClientRect?.().top);
+      if (Number.isFinite(top) && top >= bestTop) {
+        bestTop = top;
+        best = group;
+      }
+    }
+    return best;
+  }
+
+  function resolveNovelModelNetworkCandidates(groups, roomKey) {
+    let changed = false;
+    for (const group of groups) {
+      if (!isAssistantMessageGroup(group)) continue;
+      const messageGroupId = getMessageGroupId(group);
+      if (!messageGroupId) continue;
+
+      const key = makeNovelModelCacheKey(roomKey, messageGroupId);
+      const candidate = novelModelNetworkCandidates.get(key);
+      if (!candidate) continue;
+
+      changed = cacheNovelModelInfo(roomKey, messageGroupId, candidate, 'network-id') || changed;
+      novelModelNetworkCandidates.delete(key);
+    }
+    return changed;
+  }
+
+  function scoreNovelModelNetworkRecord(record, visibleCompact, visibleFingerprints, groupHtml) {
+    if (!record || record.roomKey !== getNovelModelRoomKey()) return 0;
+    if (record.ids.some((id) => id && groupHtml.includes(id))) return 100000;
+
+    let score = 0;
+    for (const fingerprint of visibleFingerprints) {
+      if (record.fingerprintSet.has(fingerprint)) score += fingerprint.length * 10;
+    }
+
+    const head = visibleCompact.slice(0, 100);
+    if (head.length >= 60 && record.compactContent.includes(head)) score += 1000;
+
+    const tail = visibleCompact.slice(-100);
+    if (tail.length >= 60 && record.compactContent.includes(tail)) score += 800;
+
+    const lengthDifference = Math.abs(record.compactContent.length - visibleCompact.length);
+    const lengthBase = Math.max(record.compactContent.length, visibleCompact.length, 1);
+    if (lengthDifference / lengthBase <= 0.03) score += 300;
+    else if (lengthDifference / lengthBase <= 0.1) score += 120;
+
+    return score;
+  }
+
+  function findNovelModelByContent(group, roomKey) {
+    const markdown = findMessageMarkdown(group);
+    const visibleCompact = compactNovelModelMatchText(markdown?.textContent || '');
+    if (visibleCompact.length < 30) return null;
+
+    const visibleFingerprints = makeNovelModelFingerprints(visibleCompact);
+    const candidateKeys = new Set();
+    for (const fingerprint of visibleFingerprints) {
+      const keys = novelModelFingerprintIndex.get(fingerprint);
+      if (!keys) continue;
+      for (const key of keys) candidateKeys.add(key);
+    }
+
+    if (!candidateKeys.size && novelModelNetworkMessages.size <= 240) {
+      for (const [key, record] of novelModelNetworkMessages) {
+        if (record.roomKey === roomKey) candidateKeys.add(key);
+      }
+    }
+    if (!candidateKeys.size) return null;
+
+    const html = group.outerHTML || '';
+    let best = null;
+    let second = null;
+    for (const key of candidateKeys) {
+      const record = novelModelNetworkMessages.get(key);
+      if (!record || record.roomKey !== roomKey) continue;
+      const score = scoreNovelModelNetworkRecord(record, visibleCompact, visibleFingerprints, html);
+      const candidate = { record, score };
+      if (!best || score > best.score) {
+        second = best;
+        best = candidate;
+      } else if (!second || score > second.score) {
+        second = candidate;
+      }
+    }
+
+    if (!best || best.score < NOVEL_MODEL_AUTO_MATCH_MIN_SCORE) return null;
+    if (second && second.score > 0 && best.score < second.score * NOVEL_MODEL_AUTO_MATCH_AMBIGUITY_RATIO) return null;
+    return { ...best.record.modelInfo, source: 'network-content', matchScore: best.score };
+  }
+
+  function resolveNovelModelContentMatches(groups, roomKey) {
+    let changed = false;
+    for (const group of groups) {
+      if (!isNovelAssistantMessageGroup(group)) continue;
+      const messageGroupId = getMessageGroupId(group);
+      if (!messageGroupId || getCachedNovelModelInfo(roomKey, messageGroupId)) continue;
+      if (getManualNovelModelInfo(group, roomKey)) continue;
+
+      const signature = `${getNovelMessageContentSignature(group)}|${novelModelNetworkMessageRevision}`;
+      if (group.dataset.crackUiNovelModelMatchAttempt === signature) continue;
+      group.dataset.crackUiNovelModelMatchAttempt = signature;
+
+      const modelInfo = findNovelModelByContent(group, roomKey);
+      if (!modelInfo) continue;
+      changed = cacheNovelModelInfo(roomKey, messageGroupId, modelInfo, 'network-content') || changed;
+    }
+    return changed;
+  }
+
+  function resolvePendingNovelModelCapture(groups, roomKey) {
+    const pending = pendingNovelModelCapture;
+    if (!pending) return false;
+
+    if (pending.roomKey !== roomKey || Date.now() - pending.createdAt > NOVEL_MODEL_PENDING_MAX_AGE_MS) {
+      clearPendingNovelModelCapture();
+      return false;
+    }
+
+    const assistantGroups = groups.filter(isAssistantMessageGroup);
+    let candidate = null;
+
+    if (pending.targetMessageGroupId) {
+      const target = assistantGroups.find((group) => getMessageGroupId(group) === pending.targetMessageGroupId) || null;
+      if (target) {
+        const targetReplaced = target !== pending.targetElement;
+        if (targetReplaced) {
+          pending.targetElement = target;
+          bindPendingNovelModelObserver(target);
+        }
+        const signature = getNovelMessageContentSignature(target);
+        if (targetReplaced || (signature && signature !== pending.targetSignature)) candidate = target;
+      }
+    }
+
+    if (!candidate) {
+      const newGroups = assistantGroups.filter((group) => {
+        const id = getMessageGroupId(group);
+        return id && !pending.knownMessageGroupIds.has(id);
+      });
+      candidate = chooseNewestAssistantGroup(newGroups);
+    }
+
+    if (!candidate) return false;
+
+    const messageGroupId = getMessageGroupId(candidate);
+    if (!messageGroupId) return false;
+
+    const isNovelMessage = isNovelAssistantMessageGroup(candidate);
+    let modelInfo = pending.modelInfo;
+    if (!isNovelMessage) {
+      const nativeInfo = getModelInfoFromIconElement(findNativeMessageModelIcon(candidate));
+      if (!nativeInfo) return false;
+      modelInfo = nativeInfo;
+    }
+
+    const changed = cacheNovelModelInfo(
+      roomKey,
+      messageGroupId,
+      modelInfo,
+      isNovelMessage ? 'generation-trigger' : 'chat-ui'
+    );
+    clearPendingNovelModelCapture();
+    return changed;
+  }
+
+  function scanNovelModelIndicators() {
+    novelModelIndicatorLastScanAt = performance.now();
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) {
+      disableNovelModelIndicatorUi();
+      return;
+    }
+
+    novelModelIndicatorCleanupPending = true;
+    const roomKey = getNovelModelRoomKey();
+    const groups = findMessageGroups();
+    let cacheChanged = false;
+
+    for (const group of groups) {
+      if (!isAssistantMessageGroup(group)) {
+        removeNovelModelIndicatorFromGroup(group);
+        continue;
+      }
+
+      if (isNovelAssistantMessageGroup(group)) continue;
+
+      removeNovelModelIndicatorFromGroup(group);
+      const messageGroupId = getMessageGroupId(group);
+      const nativeIcon = findNativeMessageModelIcon(group);
+      const modelInfo = getModelInfoFromIconElement(nativeIcon);
+      if (!messageGroupId || !modelInfo) continue;
+
+      const marker = `${modelInfo.image}|${modelInfo.name}`;
+      if (group.dataset.crackUiNovelModelHarvested === marker) continue;
+      group.dataset.crackUiNovelModelHarvested = marker;
+      cacheChanged = cacheNovelModelInfo(roomKey, messageGroupId, modelInfo, 'chat-ui') || cacheChanged;
+    }
+
+    cacheChanged = resolvePendingNovelModelCapture(groups, roomKey) || cacheChanged;
+    cacheChanged = resolveNovelModelNetworkCandidates(groups, roomKey) || cacheChanged;
+    cacheChanged = resolveNovelModelContentMatches(groups, roomKey) || cacheChanged;
+    if (cacheChanged) saveNovelModelMessageCache();
+
+    for (const group of groups) {
+      if (!isNovelAssistantMessageGroup(group)) continue;
+      const messageGroupId = getMessageGroupId(group);
+      const manualInfo = getManualNovelModelInfo(group, roomKey);
+      const exactInfo = getCachedNovelModelInfo(roomKey, messageGroupId);
+      renderNovelModelIndicator(group, manualInfo || exactInfo || null);
+    }
+  }
+
+  function scheduleNovelModelIndicatorScan({ immediate = false } = {}) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) {
+      disableNovelModelIndicatorUi();
+      return;
+    }
+
+    const elapsed = performance.now() - novelModelIndicatorLastScanAt;
+    const delay = immediate ? 0 : Math.max(0, NOVEL_MODEL_SCAN_THROTTLE_MS - elapsed);
+
+    if (immediate && novelModelIndicatorScanTimer) {
+      clearTimeout(novelModelIndicatorScanTimer);
+      novelModelIndicatorScanTimer = null;
+    }
+    if (novelModelIndicatorScanTimer || novelModelIndicatorScanRaf) return;
+
+    novelModelIndicatorScanTimer = setTimeout(() => {
+      novelModelIndicatorScanTimer = null;
+      novelModelIndicatorScanRaf = requestAnimationFrame(() => {
+        novelModelIndicatorScanRaf = 0;
+        scanNovelModelIndicators();
+      });
+    }, delay);
+  }
+
+  function ensureNovelModelIndicator() {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) {
+      disableNovelModelIndicatorUi();
+      return;
+    }
+
+    installNovelModelNetworkCapture();
+    scanNovelModelStaticData();
+    scheduleNovelModelIndicatorScan({ immediate: novelModelIndicatorLastScanAt === 0 });
+  }
+
+  function beginNovelModelCapture(triggerElement, reason = 'generation') {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return false;
+
+    const modelInfo = getCurrentSelectedModelInfoForNovelIndicator();
+    if (!modelInfo?.image) return false;
+
+    const assistantGroups = findAssistantMessageGroups();
+    const targetGroup = triggerElement?.closest?.('[data-message-group-id]') || null;
+    const targetMessageGroupId = isAssistantMessageGroup(targetGroup) ? getMessageGroupId(targetGroup) : '';
+
+    clearPendingNovelModelCapture();
+    pendingNovelModelCapture = {
+      roomKey: getNovelModelRoomKey(),
+      modelInfo,
+      reason,
+      targetMessageGroupId,
+      targetElement: targetMessageGroupId ? targetGroup : null,
+      targetSignature: targetMessageGroupId ? getNovelMessageContentSignature(targetGroup) : '',
+      knownMessageGroupIds: new Set(assistantGroups.map(getMessageGroupId).filter(Boolean)),
+      createdAt: Date.now(),
+    };
+    pendingNovelModelExpiryTimer = setTimeout(() => {
+      clearPendingNovelModelCapture();
+    }, NOVEL_MODEL_PENDING_MAX_AGE_MS);
+    if (targetMessageGroupId) bindPendingNovelModelObserver(targetGroup);
+    return true;
+  }
+
+  function getNovelModelGenerationButtonKind(button) {
+    if (!(button instanceof HTMLButtonElement)) return '';
+    if (button.closest(`#${ID.panel}, #${ID.bottomModelPopup}`)) return '';
+    if (isChatComposerSendButton(button)) return 'send';
+
+    const messageGroup = button.closest('[data-message-group-id]');
+    if (!isAssistantMessageGroup(messageGroup)) return '';
+
+    const label = normalizeText(`${button.getAttribute('aria-label') || ''} ${button.title || ''} ${button.textContent || ''}`);
+    if (/이어서\s*생성/.test(label)) return 'continue';
+    if (/재생성|다시\s*생성/.test(label)) return 'regenerate';
+    if (button.querySelector('svg path[d^="M3.8 12"]')) return 'regenerate';
+
+    return '';
+  }
+
+  function noteNovelModelGenerationTriggerFromClick(target) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return;
+    const element = target?.nodeType === 1 ? target : target?.parentElement;
+    const button = element?.closest?.('button');
+    const kind = getNovelModelGenerationButtonKind(button);
+    if (!kind) return;
+    if (kind === 'send' && shouldBlockEmptyComposerSend()) return;
+    beginNovelModelCapture(button, kind);
+  }
+
+  function noteNovelModelGenerationTriggerFromEnter(event) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return;
+    if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+    const editable = getFocusedComposerEditableForEnterEvent(event);
+    if (!editable) return;
+    if (emptySendGuard && normalizeComposerText(getEditableText(editable)).length === 0) return;
+    beginNovelModelCapture(editable, 'send-enter');
+  }
+
+  // =====================================================
+  // Feature: room settings auto hide
+  // =====================================================
+
   function updateRoomMenuRevealClass() {
     const active = roomMenuHandle && crackUiIsChatRoute() && (roomMenuReveal || isTouchLikeDevice());
     document.documentElement.classList.toggle(CLS.roomMenuReveal, active);
@@ -4492,7 +9329,7 @@
     clearRoomMenuForceRevealTimer();
     roomMenuForceRevealTimer = setTimeout(() => {
       roomMenuForceRevealTimer = null;
-      const btn = findChatRoomSettingsButton();
+      const btn = DOM.chatRoomSettingsButton();
       const menuOpen = btn?.getAttribute('aria-expanded') === 'true' || btn?.dataset?.state === 'open';
       if (menuOpen) {
         releaseRoomMenuForceRevealSoon(1600);
@@ -4519,7 +9356,7 @@
     if (button.getAttribute('aria-label')?.includes('채팅방 메뉴')) return false;
     if (button.closest('[data-testid="virtuoso-scroller"]')) return false;
 
-    const header = findHeader();
+    const header = DOM.header();
     if (header?.contains(button)) return true;
 
     const rect = button.getBoundingClientRect();
@@ -4529,7 +9366,7 @@
   function findChatRoomSettingsButton() {
     if (isChatRoomSettingsButton(cachedRoomMenuButton)) return cachedRoomMenuButton;
 
-    const header = findHeader();
+    const header = DOM.header();
     const scope = header || document;
     const found = [...scope.querySelectorAll('button')].find(isChatRoomSettingsButton) || null;
     cachedRoomMenuButton = found;
@@ -4539,7 +9376,7 @@
   function syncRoomMenuHandleDot() {
     const handle = document.getElementById(ID.roomMenuHandle);
     if (!handle) return;
-    const original = findChatRoomSettingsButton();
+    const original = DOM.chatRoomSettingsButton();
     const hasDot = !!original?.querySelector('.bg-icon_brand, [class*="bg-icon_brand"]');
     handle.dataset.hasDot = hasDot ? '1' : '0';
   }
@@ -4574,7 +9411,7 @@
     if (cls.includes('transition-opacity')) score += 2;
 
     if (el.querySelector('button .line-clamp-1, button span[class*="line-clamp-1"]')) score += 3;
-    if (findChatRoomSettingsButton() && el.contains(findChatRoomSettingsButton())) score += 5;
+    if (DOM.chatRoomSettingsButton() && el.contains(DOM.chatRoomSettingsButton())) score += 5;
     if (el.querySelector('img[src*="model-icon"], img[alt*="챗"]')) score += 3;
     if (txt.includes('프로챗') || txt.includes('하이퍼챗') || txt.includes('슈퍼챗') || txt.includes('파워챗')) score += 3;
     if (txt.includes('Chasm Tools')) score += 1;
@@ -4605,14 +9442,45 @@
     return cachedRoomTopBar;
   }
 
+  function findRoomStatBar() {
+    const topBar = findRoomTopBar();
+    const group = topBar?.parentElement;
+    if (!group) {
+      cachedRoomStatBar = null;
+      return null;
+    }
+
+    if (cachedRoomStatBar?.isConnected && cachedRoomStatBar.parentElement === group) {
+      cachedRoomStatBar.dataset.crackUiRoomStatBar = '1';
+      cachedRoomStatBar.dataset.crackUiStatBar = '1';
+      return cachedRoomStatBar;
+    }
+
+    cachedRoomStatBar = null;
+
+    for (const child of group.children) {
+      if (!(child instanceof HTMLElement) || child === topBar) continue;
+      const cls = String(child.className || '');
+      if (!cls.includes('transition-transform') || !cls.includes('mt-12')) continue;
+      if (!child.querySelector('[aria-roledescription="carousel"]')) continue;
+
+      child.dataset.crackUiRoomStatBar = '1';
+      child.dataset.crackUiStatBar = '1';
+      cachedRoomStatBar = child;
+      return child;
+    }
+
+    return null;
+  }
+
   function releaseRoomTopBarHidden() {
-    const bar = cachedRoomTopBar?.isConnected ? cachedRoomTopBar : findRoomTopBar();
+    const bar = cachedRoomTopBar?.isConnected ? cachedRoomTopBar : DOM.roomTopBar();
     if (bar) delete bar.dataset.crackUiRoomTopBarHidden;
     document.documentElement.classList.remove(CLS.roomTopBarHidden);
   }
 
   function setRoomTopBarHidden(hidden) {
-    const bar = findRoomTopBar();
+    const bar = DOM.roomTopBar();
     if (!bar) {
       releaseRoomTopBarHidden();
       return;
@@ -4635,7 +9503,10 @@
     const editable = el.closest?.('textarea, input, [contenteditable="true"], [role="textbox"]');
     if (!editable) return false;
     if (editable.closest?.('[data-crack-ui-room-panel="1"], [data-crack-ui-chat-list-panel="1"], [data-crack-ui-room-top-bar="1"]')) return false;
-    return true;
+    if (isDirectChatComposerEditable(editable)) return true;
+
+    const composer = DOM.composerEditable();
+    return editable === composer || !!composer?.contains?.(editable) || !!editable.contains?.(composer);
   }
 
   function noteRoomTopBarInputInteraction(target) {
@@ -4655,7 +9526,7 @@
   }
 
   function syncRoomTopBarVisibility() {
-    const panel = findRoomPanel();
+    const panel = DOM.roomPanel();
     if (roomMenuHandle && crackUiIsChatRoute() && panel && isRoomPanelOpen(panel)) {
       setRoomTopBarHidden(false);
     }
@@ -4716,7 +9587,7 @@
     return cachedRoomPanel;
   }
 
-  function isRoomPanelOpen(panel = findRoomPanel()) {
+  function isRoomPanelOpen(panel = DOM.roomPanel()) {
     const r = crackUiEdgeRect(panel);
     if (!r) return false;
 
@@ -4774,26 +9645,150 @@
     return cachedRoomPanelToggle;
   }
 
+  function getRoomPanelToggleForActivation() {
+    if (isTouchLikeDevice()) return DOM.chatRoomSettingsButton() || DOM.roomToggle();
+    return DOM.roomToggle() || DOM.chatRoomSettingsButton();
+  }
+
+  function getRoomPanelToggleOpenState(toggle) {
+    if (!toggle) return null;
+    const expanded = toggle.getAttribute?.('aria-expanded');
+    if (expanded === 'true') return true;
+    if (expanded === 'false') return false;
+    const state = String(toggle.dataset?.state || '').toLowerCase();
+    if (state === 'open') return true;
+    if (state === 'closed') return false;
+    return null;
+  }
+
+  function clearRoomPanelToggleVerification({ invalidate = false } = {}) {
+    if (invalidate) roomPanelToggleRequestSeq += 1;
+    if (roomPanelToggleVerifyTimer) {
+      clearTimeout(roomPanelToggleVerifyTimer);
+      roomPanelToggleVerifyTimer = null;
+    }
+    if (roomPanelToggleFinalVerifyTimer) {
+      clearTimeout(roomPanelToggleFinalVerifyTimer);
+      roomPanelToggleFinalVerifyTimer = null;
+    }
+  }
+
   function clickRoomPanelToggle(want, reason = '') {
-    const panel = findRoomPanel();
+    clearRoomPanelToggleVerification({ invalidate: true });
+    const requestSeq = roomPanelToggleRequestSeq;
+    const panel = DOM.roomPanel();
     const open = panel ? isRoomPanelOpen(panel) : false;
-    if (open === want) return true;
+    if (open === want) {
+      lastRoomPanelToggleAttempt = {
+        requestSeq,
+        want,
+        reason,
+        skipped: 'already-matched',
+        touchLike: isTouchLikeDevice(),
+        at: Date.now(),
+      };
+      return true;
+    }
 
     const now = Date.now();
-    if (now - lastRoomPanelClickAt < 180) return false;
+    if (now - lastRoomPanelClickAt < 180) {
+      lastRoomPanelToggleAttempt = {
+        requestSeq,
+        want,
+        reason,
+        skipped: 'throttled',
+        touchLike: isTouchLikeDevice(),
+        at: now,
+      };
+      return false;
+    }
     lastRoomPanelClickAt = now;
 
-    const toggle = findRoomPanelToggle();
-    if (!toggle) return false;
+    const toggle = getRoomPanelToggleForActivation();
+    if (!toggle) {
+      lastRoomPanelToggleAttempt = {
+        requestSeq,
+        want,
+        reason,
+        error: 'toggle-not-found',
+        touchLike: isTouchLikeDevice(),
+        at: now,
+      };
+      return false;
+    }
 
     if (want) setRoomTopBarHidden(false);
 
     try {
-      const clicked = dispatchSyntheticClick(toggle);
-      if (!clicked && typeof toggle.click === 'function') toggle.click();
+      const method = dispatchRoomPanelToggleActivation(toggle, reason || 'room-panel-toggle');
+      lastRoomPanelToggleAttempt = {
+        requestSeq,
+        want,
+        reason,
+        method: method || 'failed',
+        toggle: getElementDebugInfo(toggle),
+        touchLike: isTouchLikeDevice(),
+        openBefore: open,
+        at: now,
+      };
+
+      if (!method && !isTouchLikeDevice() && typeof toggle.click === 'function') {
+        toggle.click();
+        lastRoomPanelToggleAttempt.method = 'native-click-fallback';
+      }
+
+      if (isTouchLikeDevice()) {
+        roomPanelToggleVerifyTimer = setTimeout(() => {
+          roomPanelToggleVerifyTimer = null;
+          if (requestSeq !== roomPanelToggleRequestSeq) return;
+
+          const afterPanel = DOM.roomPanel();
+          const openAfter = afterPanel ? isRoomPanelOpen(afterPanel) : false;
+          const toggleOpenAfter = getRoomPanelToggleOpenState(toggle);
+          if (lastRoomPanelToggleAttempt?.requestSeq === requestSeq) {
+            lastRoomPanelToggleAttempt.openAfter = openAfter;
+            lastRoomPanelToggleAttempt.toggleOpenAfter = toggleOpenAfter;
+          }
+
+          // During the slide animation the panel geometry can lag behind the
+          // button state. Never send a second toggle from geometry alone.
+          const explicitFailure = toggleOpenAfter !== null && toggleOpenAfter !== want;
+          if (openAfter !== want && (!method || explicitFailure)) {
+            cachedRoomPanelToggle = null;
+            cachedRoomMenuButton = null;
+            const fallbackToggle = getRoomPanelToggleForActivation();
+            const fallbackMethod = dispatchTouchLikeActivation(fallbackToggle, `${reason || 'room-panel-toggle'}:fallback`);
+            if (lastRoomPanelToggleAttempt?.requestSeq === requestSeq) {
+              lastRoomPanelToggleAttempt.fallbackMethod = fallbackMethod || 'failed';
+              lastRoomPanelToggleAttempt.fallbackToggle = getElementDebugInfo(fallbackToggle);
+            }
+
+            roomPanelToggleFinalVerifyTimer = setTimeout(() => {
+              roomPanelToggleFinalVerifyTimer = null;
+              if (requestSeq !== roomPanelToggleRequestSeq) return;
+
+              const finalPanel = DOM.roomPanel();
+              const finalOpen = finalPanel ? isRoomPanelOpen(finalPanel) : false;
+              if (lastRoomPanelToggleAttempt?.requestSeq === requestSeq) {
+                lastRoomPanelToggleAttempt.finalOpen = finalOpen;
+              }
+              if (!want) setTimeout(() => pulseRoomTopBarHidden(), 120);
+            }, 180);
+          }
+        }, 220);
+      }
+
       if (!want) setTimeout(() => pulseRoomTopBarHidden(), 180);
-      return true;
-    } catch {
+      return !!method || !isTouchLikeDevice();
+    } catch (error) {
+      lastRoomPanelToggleAttempt = {
+        requestSeq,
+        want,
+        reason,
+        error: String(error?.message || error || 'unknown'),
+        touchLike: isTouchLikeDevice(),
+        at: Date.now(),
+      };
       return false;
     }
   }
@@ -4813,7 +9808,7 @@
 
       if (isTouchLikeDevice() && Date.now() - lastRoomMenuNativeButtonClickAt < 760) return;
 
-      const panel = findRoomPanel();
+      const panel = DOM.roomPanel();
       const zone = document.getElementById(ID.roomMenuZone);
       const hovered = panel?.matches?.(':hover') || zone?.matches?.(':hover');
       if (hovered && !isTouchLikeDevice()) return;
@@ -4843,12 +9838,12 @@
     }, { passive: true });
   }
 
-  function openChatRoomSettingsMenu() {
+  function openChatRoomSettingsMenu(reason = 'handle') {
     roomMenuReveal = true;
     updateRoomMenuRevealClass();
     setRoomTopBarHidden(false);
     clearRoomPanelCloseTimer();
-    return clickRoomPanelToggle(true, 'handle');
+    return clickRoomPanelToggle(true, reason);
   }
 
   function bindRoomMenuHandle(handle) {
@@ -4867,8 +9862,8 @@
       openChatRoomSettingsMenu();
     };
 
-    handle.addEventListener('pointerdown', openFromHandle, { passive: false });
-    handle.addEventListener('touchstart', openFromHandle, { passive: false });
+    // A tap still produces click, while a vertical drag/scroll does not.
+    // Opening on pointerdown made scrolling from the edge open the menu accidentally.
     handle.addEventListener('click', openFromHandle, { passive: false });
   }
 
@@ -4878,6 +9873,7 @@
     if (!roomMenuHandle || !crackUiIsChatRoute()) {
       roomMenuReveal = false;
       clearRoomPanelCloseTimer();
+      clearRoomPanelToggleVerification({ invalidate: true });
       updateRoomMenuRevealClass();
       zone?.remove();
       setRoomTopBarHidden(false);
@@ -4885,6 +9881,7 @@
       cachedRoomPanel = null;
       cachedRoomPanelToggle = null;
       cachedRoomTopBar = null;
+      cachedRoomStatBar = null;
       return;
     }
 
@@ -4897,7 +9894,7 @@
         updateRoomMenuRevealClass();
         clearRoomPanelCloseTimer();
         clickRoomPanelToggle(true, 'edge-enter');
-        setTimeout(() => { const panel = findRoomPanel(); if (panel) bindRoomPanelHover(panel); }, 80);
+        setTimeout(() => { const panel = DOM.roomPanel(); if (panel) bindRoomPanelHover(panel); }, 80);
       }, { passive: true });
       zone.addEventListener('mouseleave', () => {
         if (isTouchLikeDevice()) return;
@@ -4906,32 +9903,41 @@
       document.body.appendChild(zone);
     }
 
-    let handle = document.getElementById(ID.roomMenuHandle);
-    if (!handle) {
-      handle = document.createElement('div');
-      handle.id = ID.roomMenuHandle;
-      handle.setAttribute('role', 'button');
-      handle.setAttribute('aria-label', '채팅방 설정 열기');
-      handle.title = '채팅방 설정 열기';
-      zone.appendChild(handle);
-    } else if (handle.parentElement !== zone) {
-      zone.appendChild(handle);
-    }
-    bindRoomMenuHandle(handle);
-    syncRoomMenuHandleDot();
+    const handleEnabled = !isTouchLikeDevice() || menuAssistModeHasHandle(roomMenuAssistMode);
+    zone.dataset.crackUiHandleEnabled = handleEnabled ? '1' : '0';
 
-    const panel = findRoomPanel();
+    let handle = document.getElementById(ID.roomMenuHandle);
+    if (handleEnabled) {
+      if (!handle) {
+        handle = document.createElement('div');
+        handle.id = ID.roomMenuHandle;
+        handle.setAttribute('role', 'button');
+        handle.setAttribute('aria-label', '채팅방 설정 열기');
+        handle.title = '채팅방 설정 열기';
+        zone.appendChild(handle);
+      } else if (handle.parentElement !== zone) {
+        zone.appendChild(handle);
+      }
+      bindRoomMenuHandle(handle);
+      syncRoomMenuHandleDot();
+    } else {
+      handle?.remove();
+    }
+
+    const panel = DOM.roomPanel();
     if (panel) {
       panel.setAttribute('data-crack-ui-room-panel', '1');
       bindRoomPanelHover(panel);
     }
 
-    findRoomTopBar();
+    DOM.roomTopBar();
+    findRoomStatBar();
     syncRoomTopBarVisibility();
 
     if (lastRoomPanelBootCloseHref !== location.href) {
       lastRoomPanelBootCloseHref = location.href;
       setTimeout(() => {
+        if (isTouchLikeDevice() && Date.now() - lastRoomMenuNativeButtonClickAt < 1000) return;
         if (roomMenuHandle && !document.getElementById(ID.roomMenuZone)?.matches(':hover')) {
           clickRoomPanelToggle(false, 'boot');
           setTimeout(() => pulseRoomTopBarHidden(), 220);
@@ -4972,6 +9978,7 @@
   }
 
   function findChatListPanel() {
+    if (!isDesktopChatListAutoHideViewport()) return null;
     if (cachedChatListPanel?.isConnected && crackUiIsChatListPanel(cachedChatListPanel)) return cachedChatListPanel;
     if (!crackUiIsChatListAutoHideRoute()) return null;
 
@@ -4987,7 +9994,7 @@
       }
     }
 
-    cachedChatListPanel = bestScore >= 10 ? best : null;
+    cachedChatListPanel = bestScore >= 12 ? best : null;
     return cachedChatListPanel;
   }
 
@@ -4995,81 +10002,138 @@
     return scoreChatListPanel(el) >= 10;
   }
 
+  // =====================================================
+  // Feature: chat list auto hide
+  // =====================================================
+
   function scoreChatListPanel(el) {
     if (!el || el.tagName !== 'DIV') return -1;
+    if (!isDesktopChatListAutoHideViewport() && !isTabletLikeViewport()) return -1;
+    if (el.closest(`#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.chatListZone}`)) return -1;
+    if (el.getAttribute('role') === 'dialog' || el.closest('[data-radix-popper-content-wrapper]')) return -1;
+
     const r = crackUiEdgeRect(el);
     if (!r) return -1;
-
     if (r.height < 280) return -1;
-    if (r.width < 210 || r.width > 292) return -1;
     if (r.top < -16 || r.top > 112) return -1;
-    if (r.left > 48 || r.right < -8 || r.left < -340) return -1;
-    if (el.closest(`#${ID.panel}, #${ID.bottomModelPopup}`)) return -1;
 
-    const txt = crackUiEdgeText(el).slice(0, 500);
+    const txt = crackUiEdgeText(el).slice(0, 700);
     const cls = String(el.className || '');
-    const cs = getComputedStyle(el);
+    const hasVirtuoso = !!el.querySelector('[data-testid="virtuoso-scroller"], [data-virtuoso-scroller="true"]');
+    const hasTabs = !!el.querySelector('button[role="tab"], [role="tablist"]');
+    const hasEpisodeTabs = txt.includes('에피소드') && txt.includes('파티챗');
+    const hasStorageList = txt.includes('보관함') && /\d+개/.test(txt);
+    const hasWidthShellClass = cls.includes('transition-[width]') || cls.includes('bg-surface_tertiary') || cls.includes('md:block') || cls.includes('w-[260px]');
+    const forcedPanel = el.dataset.crackUiChatListPanel === '1';
+    const strongMarker = forcedPanel || hasWidthShellClass || hasVirtuoso || (hasTabs && hasEpisodeTabs) || (hasStorageList && hasEpisodeTabs);
+
+    if (!strongMarker && (r.width < 210 || r.width > 292)) return -1;
+    if (strongMarker && (r.width < 0 || r.width > 292)) return -1;
+
+    const nearLeftEdge = r.left <= 80 && r.left >= -340;
+    const collapsedAtLeftEdge = strongMarker && r.width <= 80 && r.left <= 32 && r.right <= 112 && r.right >= -16;
+    if (!nearLeftEdge && !collapsedAtLeftEdge) return -1;
 
     let score = 0;
     if (txt.includes('보관함')) score += 4;
-    if (txt.includes('채팅 목록')) score += 5;
     if (txt.includes('파티챗')) score += 4;
     if (txt.includes('에피소드')) score += 3;
-    if (el.querySelector('[data-testid="virtuoso-scroller"]')) score += 4;
-    if (el.querySelector('a[href*="/stories/"][href*="/episodes/"]')) score += 4;
-    if (el.querySelector('button[role="tab"]')) score += 2;
-    if (cls.includes('border-r') || cls.includes('pl-2') || cls.includes('w-[260px]') || cls.includes('w-[240px]')) score += 2;
-    if (cs.transform && cs.transform !== 'none') score += 2;
-    if (findChatListToggle(el)) score += 4;
+    if (hasVirtuoso) score += 8;
+    if (hasTabs) score += 3;
+    if (hasEpisodeTabs) score += 4;
+    if (hasStorageList) score += 4;
+    if (hasWidthShellClass) score += 10;
+    if (forcedPanel) score += 12;
+    if (strongMarker && r.width <= 80) score += 6;
 
     return score;
   }
 
-  function findChatListToggle(panel = findChatListPanel()) {
-    if (cachedChatListToggle?.isConnected && panel?.contains(cachedChatListToggle)) return cachedChatListToggle;
-    if (!panel) return null;
+  function scoreDesktopChatListToggle(button) {
+    if (!button || (!isDesktopChatListAutoHideViewport() && !isTabletLikeViewport())) return -1;
+    if (button.id === ID.chatListHandle || button.id === ID.gearDesktop || button.id === ID.gearMobile || button.id === ID.bottomModelButton) return -1;
+    if (button.closest?.(`#${ID.panel}, #${ID.roomMenuZone}, #${ID.bottomModelPopup}, [data-testid="virtuoso-scroller"]`)) return -1;
 
-    const buttons = [...panel.querySelectorAll('button')];
+    const r = crackUiEdgeRect(button);
+    if (!r) return -1;
+    if (r.width < 12 || r.width > 58 || r.height < 12 || r.height > 58) return -1;
+
+    const hasCrackToggleIcon = !!button.querySelector('#toggle_bar, #toggle_open_arrow, #toggle_close_arrow');
+    if (!hasCrackToggleIcon) return -1;
+
+    const ariaLabel = String(button.getAttribute('aria-label') || '');
+    const txt = crackUiEdgeText(button);
+    if (/보관함|만들기|전체보기|메뉴|에피소드|파티챗/.test(`${ariaLabel} ${txt}`)) return -1;
+
+    const cls = `${String(button.className || '')} ${String(button.parentElement?.className || '')}`;
+    let score = 18;
+    if (cls.includes('md:flex')) score += 5;
+    if (cls.includes('absolute')) score += 4;
+    if (cls.includes('transition-[left]')) score += 6;
+    if (cls.includes('z-docked')) score += 3;
+    if (r.left >= -16 && r.left <= 300) score += 6;
+    if (r.top > 44 && r.top < window.innerHeight - 32) score += 2;
+    return score;
+  }
+
+  function findChatListToggle() {
+    if (!isDesktopChatListAutoHideViewport()) return null;
+    if (cachedChatListToggle?.isConnected && scoreDesktopChatListToggle(cachedChatListToggle) >= 24) return cachedChatListToggle;
+
     let best = null;
     let bestScore = -1;
-
-    for (const btn of buttons) {
-      if (btn.id === ID.chatListHandle) continue;
-      if (btn.closest('[data-testid="virtuoso-scroller"]')) continue;
-      const r = crackUiEdgeRect(btn);
-      if (!r) continue;
-      if (r.width < 12 || r.width > 50 || r.height < 12 || r.height > 50) continue;
-
-      const hasCrackToggleIcon = !!btn.querySelector('#toggle_bar, #toggle_open_arrow, #toggle_close_arrow');
-      if (!hasCrackToggleIcon && (r.left < -20 || r.left > 310)) continue;
-      if (hasCrackToggleIcon && (r.left < -48 || r.left > 310)) continue;
-
-      const cs = getComputedStyle(btn);
-      const txt = crackUiEdgeText(btn);
-      let score = 0;
-      if (hasCrackToggleIcon) score += 10;
-      if (String(btn.className || '').includes('css-vcb9x0')) score += 4;
-      if (cs.position === 'absolute') score += 5;
-      if (!txt) score += 2;
-      if (String(btn.className || '').includes('inline-flex')) score += 2;
-      if (String(btn.className || '').includes('justify-center')) score += 1;
-      if (r.top > 48 && r.top < window.innerHeight - 40) score += 2;
-      if (r.left <= 280) score += 3;
-      if (btn.querySelector('svg')) score += 2;
-
+    for (const btn of document.querySelectorAll('button')) {
+      const score = scoreDesktopChatListToggle(btn);
       if (score > bestScore) {
         best = btn;
         bestScore = score;
       }
     }
 
-    cachedChatListToggle = bestScore >= 6 ? best : null;
+    cachedChatListToggle = bestScore >= 24 ? best : null;
+    return cachedChatListToggle;
+  }
+
+  function findTabletChatListPanel() {
+    if (!isTabletLikeViewport()) return null;
+    if (cachedChatListPanel?.isConnected && crackUiIsChatListPanel(cachedChatListPanel)) return cachedChatListPanel;
+    if (!crackUiIsChatListAutoHideRoute()) return null;
+
+    let best = null;
+    let bestScore = -1;
+    for (const el of document.querySelectorAll('main div, #__next div, body div')) {
+      const score = scoreChatListPanel(el);
+      if (score > bestScore) {
+        best = el;
+        bestScore = score;
+      }
+    }
+
+    cachedChatListPanel = bestScore >= 12 ? best : null;
+    return cachedChatListPanel;
+  }
+
+  function findTabletChatListToggle() {
+    if (!isTabletLikeViewport()) return null;
+    if (cachedChatListToggle?.isConnected && scoreDesktopChatListToggle(cachedChatListToggle) >= 24) return cachedChatListToggle;
+
+    let best = null;
+    let bestScore = -1;
+    for (const button of document.querySelectorAll('button')) {
+      const score = scoreDesktopChatListToggle(button);
+      if (score > bestScore) {
+        best = button;
+        bestScore = score;
+      }
+    }
+
+    cachedChatListToggle = bestScore >= 24 ? best : null;
     return cachedChatListToggle;
   }
 
   function scoreMobileChatListToggle(button) {
-    if (!button || button.id === ID.chatListHandle) return -1;
-    if (button.id === ID.gearDesktop || button.id === ID.gearMobile || button.id === ID.bottomModelButton) return -1;
+    if (!button || !isPhoneLikeViewport()) return -1;
+    if (button.id === ID.chatListHandle || button.id === ID.gearDesktop || button.id === ID.gearMobile || button.id === ID.bottomModelButton) return -1;
     if (button.closest?.(`#${ID.panel}, #${ID.chatListZone}, #${ID.roomMenuZone}, #${ID.bottomModelPopup}`)) return -1;
 
     const r = crackUiEdgeRect(button);
@@ -5079,8 +10143,8 @@
     const svg = button.querySelector('svg');
     if (!svg) return -1;
 
-    const text = crackUiEdgeText(button);
     const classes = `${String(button.className || '')} ${String(button.parentElement?.className || '')}`;
+    const text = crackUiEdgeText(button);
     const pathText = [...button.querySelectorAll('path')]
       .map((path) => String(path.getAttribute('d') || ''))
       .join(' ')
@@ -5090,21 +10154,17 @@
     if (classes.includes('md:hidden')) score += 9;
     if (classes.includes('size-10')) score += 4;
     if (classes.includes('inline-flex')) score += 2;
-    if (classes.includes('justify-center')) score += 1;
-    if (button.getAttribute('type') === 'button') score += 1;
-    if (svg.getAttribute('viewBox') === '0 0 24 24') score += 2;
     if (!text) score += 1;
     if (r.left <= 92 && r.top <= 92) score += 7;
     if (r.left <= 140) score += 2;
-    if (pathText.includes('M21 6.4H3V4.8h18') || pathText.includes('M21 6.4') && pathText.includes('M3 19.4h18')) score += 14;
+    if (pathText.includes('M21 6.4H3V4.8h18') || (pathText.includes('M21 6.4') && pathText.includes('M3 19.4h18'))) score += 14;
 
     return score;
   }
 
   function findMobileChatListToggle() {
-    if (cachedMobileChatListToggle?.isConnected && scoreMobileChatListToggle(cachedMobileChatListToggle) >= 12) {
-      return cachedMobileChatListToggle;
-    }
+    if (!isPhoneLikeViewport()) return null;
+    if (cachedMobileChatListToggle?.isConnected && scoreMobileChatListToggle(cachedMobileChatListToggle) >= 12) return cachedMobileChatListToggle;
 
     let best = null;
     let bestScore = -1;
@@ -5120,62 +10180,595 @@
     return cachedMobileChatListToggle;
   }
 
-  function isChatListOpen(panel = findChatListPanel()) {
-    const r = crackUiEdgeRect(panel);
-    if (!r) return false;
-    return r.left > -70 && r.right > 170;
+  function isFullscreenButtonRoute() {
+    const path = String(window.location.pathname || '');
+    return path.includes('/stories/') && path.includes('/episodes/') ||
+      path.includes('/characters/') && path.includes('/chats/');
   }
 
-  function clickChatListToggle(want, reason = '') {
-    const panel = findChatListPanel();
-    const open = panel ? isChatListOpen(panel) : false;
-    if (open === want) return true;
+  function getFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
 
-    const now = Date.now();
-    if (now - lastChatListClickAt < 180) return false;
-    lastChatListClickAt = now;
+  function findFullscreenToolbar() {
+    const originalToolbar = document.querySelector('.flex.items-center.space-x-2');
+    if (originalToolbar) return originalToolbar;
 
-    const toggle = findChatListToggle(panel) || findMobileChatListToggle();
-    if (!toggle) return false;
+    const externalAnchors = ['cap-toolbar-btn', 'txt-palette-toolbar-btn', 'hlp-toolbar-btn'];
+    for (const id of externalAnchors) {
+      const anchor = document.getElementById(id);
+      if (anchor?.parentElement) return anchor.parentElement;
+    }
 
-    if (dispatchSyntheticClick(toggle)) return true;
+    const recommendButton = [...document.querySelectorAll('button')].find((button) =>
+      String(button.textContent || '').includes('추천답변')
+    );
+    if (recommendButton) {
+      return recommendButton.closest('.flex.items-center.space-x-2') || recommendButton.parentElement;
+    }
+
+    return null;
+  }
+
+  function getFullscreenButtonIcon(active) {
+    const stateMark = active
+      ? '<path d="m8.4 12.4 3.6 3.6 3.6-3.6" stroke-width="1.85" />'
+      : '<path d="m8.4 15.6 3.6-3.6 3.6 3.6" stroke-width="1.85" />';
+
+    return `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3.25" y="3.5" width="17.5" height="17" rx="2.25" stroke-width="1.15" />
+        <path d="M3.25 8.25h17.5" stroke-width="1.15" />
+        ${stateMark}
+      </svg>
+    `;
+  }
+
+  function updateFullscreenButtonUi() {
+    const button = document.getElementById(ID.fullscreenButton);
+    if (!button) return;
+
+    const active = !!getFullscreenElement();
+    const nextState = active ? '1' : '0';
+    const label = active ? '전체화면 종료' : '전체화면 시작';
+    const span = button.querySelector('span');
+    const stateChanged = button.dataset.active !== nextState;
+
+    // Replacing innerHTML creates a childList mutation. Doing that on every init
+    // feeds the global observer and can keep scheduleInit running indefinitely.
+    if (span && (stateChanged || !span.firstElementChild)) {
+      span.innerHTML = getFullscreenButtonIcon(active);
+    }
+    if (stateChanged) button.dataset.active = nextState;
+    if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
+    if (button.getAttribute('title') !== label) button.setAttribute('title', label);
+  }
+
+  async function toggleFullscreen() {
+    try {
+      const active = getFullscreenElement();
+      if (active) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen;
+        if (typeof exit !== 'function') throw new Error('이 브라우저는 전체화면 종료를 지원하지 않습니다.');
+        await exit.call(document);
+      } else {
+        const root = document.documentElement;
+        const request = root.requestFullscreen || root.webkitRequestFullscreen || root.webkitRequestFullScreen;
+        if (typeof request !== 'function') throw new Error('이 브라우저는 페이지 전체화면을 지원하지 않습니다.');
+
+        if (request === root.requestFullscreen) {
+          await request.call(root, { navigationUI: 'hide' });
+        } else {
+          await request.call(root);
+        }
+      }
+    } catch (error) {
+      reportCrackUiError('fullscreen-toggle', error);
+    } finally {
+      updateFullscreenButtonUi();
+    }
+  }
+
+  function removeFullscreenButton() {
+    document.getElementById(ID.fullscreenButton)?.remove();
+  }
+
+  function ensureFullscreenButton() {
+    if (isIosDevice() || !fullscreenButtonEnabled || !isFullscreenButtonRoute()) {
+      removeFullscreenButton();
+      return;
+    }
+
+    const existingButton = document.getElementById(ID.fullscreenButton);
+    if (existingButton?.isConnected) {
+      updateFullscreenButtonUi();
+      return;
+    }
+
+    const container = findFullscreenToolbar();
+    if (!container) return;
+
+    let button = existingButton;
+    if (!button) {
+      button = document.createElement('button');
+      button.id = ID.fullscreenButton;
+      button.type = 'button';
+      button.className = 'relative inline-flex items-center gap-1 rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7 justify-center ml-1';
+      button.innerHTML = `<span aria-hidden="true">${getFullscreenButtonIcon(false)}</span>`;
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleFullscreen();
+      });
+    }
+
+    if (button.parentElement !== container) {
+      const externalButtons = ['cap-toolbar-btn', 'txt-palette-toolbar-btn', 'hlp-toolbar-btn']
+        .map((id) => document.getElementById(id))
+        .filter((element) => element?.parentElement === container);
+      const recommendButton = [...container.querySelectorAll('button')]
+        .find((element) => element !== button && String(element.textContent || '').includes('추천답변')) || null;
+
+      if (externalButtons.length) {
+        const lastExternalButton = externalButtons
+          .sort((a, b) => [...container.children].indexOf(a) - [...container.children].indexOf(b))
+          .at(-1);
+        lastExternalButton.after(button);
+      } else if (recommendButton) {
+        container.insertBefore(button, recommendButton);
+      } else {
+        container.appendChild(button);
+      }
+    }
+
+    updateFullscreenButtonUi();
+  }
+
+  // =====================================================
+  // DOM: locator facade / debug snapshot / cache reset
+  // =====================================================
+
+  const DOM = {
+    header: () => findHeader(),
+    statBars: () => {
+      const bars = [...document.querySelectorAll('[data-crack-ui-stat-bar="1"]')];
+      const roomStatBar = findRoomStatBar();
+      if (roomStatBar && !bars.includes(roomStatBar)) bars.push(roomStatBar);
+      return bars;
+    },
+    modelButton: () => findOriginalModelButton(),
+    modelMenu: () => getOfficialModelMenu(),
+    sendButton: () => findBottomSendButton(),
+    composerEditable: () => findChatComposerEditable(),
+    chatRoomSettingsButton: () => findChatRoomSettingsButton(),
+    roomTopBar: () => findRoomTopBar(),
+    roomPanel: () => findRoomPanel(),
+    roomToggle: () => findRoomPanelToggle(),
+    chatListPanel: () => findChatListPanel(),
+    chatListToggle: (panel) => findChatListToggle(panel),
+    mobileChatListToggle: () => findMobileChatListToggle(),
+    mobileChatListPopover: () => getMobileChatListPopover(),
+    situationImageButtons: () => findSituationImageButtons(),
+    messageGroups: () => findMessageGroups(),
+    novelAssistantMessages: () => findNovelAssistantMessageGroups(),
+    loreEntryButton: () => findLoreEntryButton(),
+    loreRoomTopBar: () => findLoreRoomTopBar(),
+    fullscreenToolbar: () => findFullscreenToolbar(),
+    fullscreenButton: () => document.getElementById(ID.fullscreenButton),
+  };
+
+  const DOM_LOCATORS = {
+    header: DOM.header,
+    statBars: DOM.statBars,
+    originalModelButton: DOM.modelButton,
+    officialModelMenu: DOM.modelMenu,
+    bottomSendButton: DOM.sendButton,
+    chatComposerEditable: DOM.composerEditable,
+    chatRoomSettingsButton: DOM.chatRoomSettingsButton,
+    roomTopBar: DOM.roomTopBar,
+    roomPanel: DOM.roomPanel,
+    roomPanelToggle: DOM.roomToggle,
+    chatListPanel: DOM.chatListPanel,
+    chatListToggle: DOM.chatListToggle,
+    mobileChatListToggle: DOM.mobileChatListToggle,
+    mobileChatListPopover: DOM.mobileChatListPopover,
+    situationImageButtons: DOM.situationImageButtons,
+    messageGroups: DOM.messageGroups,
+    novelAssistantMessages: DOM.novelAssistantMessages,
+    loreEntryButton: DOM.loreEntryButton,
+    loreRoomTopBar: DOM.loreRoomTopBar,
+    fullscreenToolbar: DOM.fullscreenToolbar,
+    fullscreenButton: DOM.fullscreenButton,
+  };
+
+  function getDomLocatorDebugSnapshot() {
+    const snapshot = {};
+
+    for (const [name, locate] of Object.entries(DOM_LOCATORS)) {
+      try {
+        const result = locate();
+        if (Array.isArray(result)) {
+          snapshot[name] = {
+            found: result.length > 0,
+            count: result.length,
+            first: getElementDebugInfo(result[0]),
+          };
+        } else {
+          snapshot[name] = {
+            found: !!result,
+            element: getElementDebugInfo(result),
+          };
+        }
+      } catch (error) {
+        snapshot[name] = {
+          found: false,
+          error: String(error?.message || error),
+        };
+      }
+    }
+
+    return snapshot;
+  }
+
+  function resetDomLocatorCache() {
+    cachedHeader = null;
+    cachedBottomSendButton = null;
+    cachedComposerEditable = null;
+    cachedOriginalModelButton = null;
+    cachedRoomMenuButton = null;
+    cachedChatListPanel = null;
+    cachedChatListToggle = null;
+    cachedMobileChatListToggle = null;
+    cachedRoomPanel = null;
+    cachedRoomPanelToggle = null;
+    cachedRoomTopBar = null;
+    cachedRoomStatBar = null;
+  }
+
+  function isCrackUiWidthControlledChatListPanel(panel) {
+    if (!panel || !isDesktopChatListAutoHideViewport()) return false;
+    if (panel.getAttribute('role') === 'dialog' || panel.closest('[data-radix-popper-content-wrapper]')) return false;
+    const cls = String(panel.className || '');
+    return (
+      panel.dataset.crackUiChatListPanel === '1' ||
+      cls.includes('transition-[width]') ||
+      cls.includes('bg-surface_tertiary') ||
+      cls.includes('w-[260px]')
+    ) && !!panel.querySelector?.('[data-testid="virtuoso-scroller"], [role="tablist"]');
+  }
+
+  function setChatListPanelForcedOpen(panel, want) {
+    if (!isDesktopChatListAutoHideViewport() || !panel) return false;
+    if (panel.getAttribute('role') === 'dialog' || panel.closest('[data-radix-popper-content-wrapper]')) return false;
+
+    panel.dataset.crackUiChatListPanel = '1';
+    panel.dataset.crackUiChatListForced = want ? 'open' : 'closed';
+    const width = want ? '260px' : '0px';
 
     try {
-      toggle.click();
+      panel.style.setProperty('width', width, 'important');
+      panel.style.setProperty('min-width', width, 'important');
+      panel.style.setProperty('max-width', width, 'important');
+      panel.style.setProperty('flex-basis', width, 'important');
+      panel.style.setProperty('overflow', 'hidden', 'important');
+      panel.style.setProperty('pointer-events', want ? 'auto' : 'none', 'important');
+      if (!want) panel.style.setProperty('border-right-width', '0px', 'important');
+      else panel.style.removeProperty('border-right-width');
+    } catch {
+    }
+
+    return true;
+  }
+
+  function releaseChatListPanelForcedOpen(panel = cachedChatListPanel) {
+    if (!panel) return false;
+    try {
+      delete panel.dataset.crackUiChatListForced;
+      panel.style.removeProperty('width');
+      panel.style.removeProperty('min-width');
+      panel.style.removeProperty('max-width');
+      panel.style.removeProperty('flex-basis');
+      panel.style.removeProperty('overflow');
+      panel.style.removeProperty('pointer-events');
+      panel.style.removeProperty('border-right-width');
+    } catch {
+    }
+    return true;
+  }
+
+
+
+  function getMobileChatListPopover() {
+    if (!isPhoneLikeViewport()) return null;
+
+    const candidates = document.querySelectorAll('[data-radix-popper-content-wrapper] [role="dialog"], [role="dialog"][data-state], [data-side][data-state]');
+    for (const panel of candidates) {
+      if (!(panel instanceof HTMLElement)) continue;
+      const dataState = String(panel.getAttribute('data-state') || '');
+      const cls = String(panel.className || '');
+      const txt = crackUiEdgeText(panel).slice(0, 500);
+      const hasList = !!panel.querySelector?.('[data-testid="virtuoso-scroller"], [data-virtuoso-scroller="true"], [role="tablist"]');
+      const looksLikeMobileChatList =
+        panel.getAttribute('role') === 'dialog' &&
+        dataState === 'open' &&
+        (cls.includes('md:hidden') || !!panel.closest('[data-radix-popper-content-wrapper]')) &&
+        hasList &&
+        txt.includes('에피소드') &&
+        (txt.includes('보관함') || txt.includes('파티챗'));
+      if (looksLikeMobileChatList) return panel;
+    }
+
+    return null;
+  }
+
+  function forceMobileChatListPopoverLayout() {
+    // Phone chat list is native Crack UI. Do not touch width, overflow, pointer-events, or auto-close.
+    // Only compensate the header-sized bottom gap caused by hidden global header + native 100dvh - 56px height.
+    if (!isPhoneLikeViewport() || !autoHideHeader) {
+      document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+      return false;
+    }
+
+    const panel = DOM.mobileChatListPopover();
+    if (!panel) {
+      document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+      return false;
+    }
+
+    try {
+      const top = Math.max(0, Math.round(panel.getBoundingClientRect().top || 0));
+      const viewportHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+      const targetHeight = viewportHeight ? Math.max(320, viewportHeight - top) : 0;
+
+      if (targetHeight) {
+        panel.style.setProperty('height', `${targetHeight}px`, 'important');
+        panel.style.setProperty('max-height', `${targetHeight}px`, 'important');
+      } else {
+        panel.style.setProperty('height', '100dvh', 'important');
+        panel.style.setProperty('max-height', '100dvh', 'important');
+      }
+
+      mobileChatListCleanupPending = true;
+      document.documentElement.classList.add(CLS.chatListMobileHeaderGapCompensated);
       return true;
     } catch {
       return false;
     }
   }
 
-  function clearChatListCloseTimer() {
-    if (chatListCloseTimer) {
-      clearTimeout(chatListCloseTimer);
-      chatListCloseTimer = null;
+  function scheduleMobileChatListPopoverLayoutSettle() {
+    // Keep phone popover native; only settle the height compensation right after the proxy click.
+    if (!isPhoneLikeViewport()) return;
+    for (const delay of [0, 16, 48, 120, 260, 520]) {
+      setTimeout(() => {
+        markMobileChatListOpenState();
+        forceMobileChatListPopoverLayout();
+      }, delay);
     }
   }
 
-  function scheduleChatListClose(delay = 150) {
+
+  function markMobileChatListOpenState() {
+    const root = document.documentElement;
+
+    // The proxy feature is the only reason to inspect the native mobile list dialog.
+    // When it is off, clear our state without repeatedly scanning every open dialog.
+    if (!chatListAutoHide || !isPhoneLikeViewport()) {
+      root.classList.remove(CLS.chatListMobilePopoverOpen);
+      root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+      return false;
+    }
+
+    const open = !!DOM.mobileChatListPopover();
+    root.classList.toggle(CLS.chatListMobilePopoverOpen, open);
+    if (open) mobileChatListCleanupPending = true;
+    else root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+    return open;
+  }
+
+  function releaseMobileChatListPopoverForcedStyles() {
+    const root = document.documentElement;
+    const hasManagedState =
+      root.classList.contains(CLS.chatListMobilePopoverOpen) ||
+      root.classList.contains(CLS.chatListMobileHeaderGapCompensated);
+
+    // Run once at boot for legacy cleanup, and again only after this feature has
+    // actually managed a mobile popover. Avoid a full dialog/text scan every init.
+    if (!mobileChatListCleanupPending && !hasManagedState) return false;
+
+    const mobilePopover = DOM.mobileChatListPopover();
+    root.classList.toggle(CLS.chatListMobilePopoverOpen, !!mobilePopover);
+    if (!mobilePopover) root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+    // Cleanup stale markers/styles from 2.0.20~2.0.24 without changing native Crack popover layout.
+    for (const panel of document.querySelectorAll('[data-crack-ui-mobile-chat-list-popover="1"], [data-crack-ui-chat-list-panel="1"][role="dialog"]')) {
+      if (!(panel instanceof HTMLElement)) continue;
+      try {
+        delete panel.dataset.crackUiMobileChatListPopover;
+        delete panel.dataset.crackUiChatListPanel;
+        delete panel.dataset.crackUiChatListForced;
+        panel.style.removeProperty('width');
+        panel.style.removeProperty('min-width');
+        panel.style.removeProperty('max-width');
+        panel.style.removeProperty('flex-basis');
+        panel.style.removeProperty('overflow');
+        panel.style.removeProperty('pointer-events');
+        panel.style.removeProperty('height');
+        panel.style.removeProperty('min-height');
+        panel.style.removeProperty('max-height');
+        panel.style.removeProperty('touch-action');
+      } catch {
+      }
+    }
+
+    mobileChatListCleanupPending = false;
+    return true;
+  }
+
+  function isChatListOpen(panel = DOM.chatListPanel()) {
+    if (!isDesktopChatListAutoHideViewport()) return false;
+    const r = crackUiEdgeRect(panel);
+    if (!r) return false;
+    if (isCrackUiWidthControlledChatListPanel(panel)) return r.width > 80;
+    return r.left > -70 && r.right > 170;
+  }
+
+  function isTabletChatListOpen(panel = findTabletChatListPanel()) {
+    if (!isTabletLikeViewport() || !panel) return false;
+    const rect = crackUiEdgeRect(panel);
+    if (!rect) return false;
+    return rect.width > 80 && rect.left > -70 && rect.right > 170;
+  }
+
+  function setTabletChatListOpen(wantOpen, reason = 'tablet') {
+    if (!isTabletLikeViewport() || !chatListAutoHide) return false;
+
+    const panel = findTabletChatListPanel();
+    const currentlyOpen = panel ? isTabletChatListOpen(panel) : false;
+    if (currentlyOpen === wantOpen) return true;
+
+    const now = Date.now();
+    if (now - lastChatListClickAt < 240) return false;
+
+    resetDomLocatorCache();
+    const toggle = findTabletChatListToggle();
+    if (!toggle) return false;
+
+    lastChatListClickAt = now;
+
+    try {
+      toggle.click();
+      return true;
+    } catch (error) {
+      try {
+        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        return true;
+      } catch (fallbackError) {
+        reportCrackUiError(`tablet-chat-list-${reason}`, fallbackError || error);
+        return false;
+      }
+    }
+  }
+
+  function clickTabletChatListNativeButton(reason = 'swipe') {
+    return setTabletChatListOpen(true, reason);
+  }
+
+  function isTabletChatListOutsideCloseSafeTarget(target, panel, toggle) {
+    if (!(target instanceof Element)) return true;
+    if (panel?.contains(target)) return true;
+    if (toggle?.contains(target)) return true;
+
+    return !!target.closest?.(`
+      #${ID.panel},
+      #${ID.gearDesktop},
+      #${ID.gearMobile},
+      #${ID.bottomModelPopup},
+      #${ID.roomMenuZone},
+      #${ID.roomMenuHandle},
+      [data-crack-ui-menu-mode-popover],
+      [data-radix-popper-content-wrapper],
+      [role="dialog"]
+    `);
+  }
+
+  function closeTabletChatListFromOutsideClick(target) {
+    if (
+      !chatListAutoHide ||
+      !isTabletLikeViewport() ||
+      getChatListAutoHideMode() !== 'tablet-swipe'
+    ) {
+      return false;
+    }
+
+    const panel = findTabletChatListPanel();
+    if (!panel || !isTabletChatListOpen(panel)) return false;
+
+    const toggle = findTabletChatListToggle();
+    if (isTabletChatListOutsideCloseSafeTarget(target, panel, toggle)) return false;
+
+    return setTabletChatListOpen(false, 'outside-click');
+  }
+
+  function clickMobileChatListNativeButton(reason = 'handle') {
+    if (isTabletLikeViewport()) return clickTabletChatListNativeButton(reason);
+    if (!isPhoneLikeViewport()) return false;
+
+    const now = Date.now();
+    if (now - lastChatListClickAt < 240) return false;
+    lastChatListClickAt = now;
+
+    releaseMobileChatListPopoverForcedStyles();
+    resetDomLocatorCache();
+    const toggle = DOM.mobileChatListToggle();
+    if (!toggle) return false;
+
+    try {
+      toggle.click();
+    } catch {
+      try {
+        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      } catch {
+        return false;
+      }
+    }
+
+    scheduleMobileChatListPopoverLayoutSettle();
+    return true;
+  }
+
+  function clickChatListToggle(want) {
+    if (!isDesktopChatListAutoHideViewport()) return false;
+    const panel = DOM.chatListPanel();
+    const open = panel ? isChatListOpen(panel) : false;
+    if (open === want) return true;
+
+    const now = Date.now();
+    if (now - lastChatListClickAt < 220) return false;
+    lastChatListClickAt = now;
+
+    const toggle = DOM.chatListToggle(panel);
+    if (toggle) {
+      releaseChatListPanelForcedOpen(panel);
+      try {
+        toggle.click();
+        return true;
+      } catch {
+        try {
+          toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          return true;
+        } catch {
+        }
+      }
+    }
+
+    if (panel && isCrackUiWidthControlledChatListPanel(panel)) return setChatListPanelForcedOpen(panel, want);
+    return false;
+  }
+
+  function clearChatListCloseTimer() {
+    if (!chatListCloseTimer) return;
+    clearTimeout(chatListCloseTimer);
+    chatListCloseTimer = null;
+  }
+
+  function scheduleChatListClose(delay = 180) {
+    if (!isDesktopChatListAutoHideViewport()) return;
     clearChatListCloseTimer();
     chatListCloseTimer = setTimeout(() => {
       chatListCloseTimer = null;
-      if (!chatListAutoHide) return;
-      const panel = findChatListPanel();
+      if (!chatListAutoHide || !isDesktopChatListAutoHideViewport()) return;
+      const panel = DOM.chatListPanel();
       const zone = document.getElementById(ID.chatListZone);
       const hovered = panel?.matches?.(':hover') || zone?.matches?.(':hover');
-      if (hovered && !isTouchLikeDevice()) return;
+      if (hovered) return;
       clickChatListToggle(false, 'auto-close');
     }, delay);
   }
 
   function openChatListFromHandle() {
-    clearChatListCloseTimer();
-    const opened = clickChatListToggle(true, 'handle');
-    setTimeout(() => {
-      const panel = findChatListPanel();
-      if (panel) bindChatListPanelHover(panel);
-    }, 80);
-    return opened;
+    if (isPhoneLikeViewport()) return clickMobileChatListNativeButton('phone-handle');
+    if (isDesktopChatListAutoHideViewport()) return clickChatListToggle(true, 'desktop-handle');
+    return false;
   }
 
   function bindChatListHandle(handle) {
@@ -5188,7 +10781,7 @@
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
 
       const now = Date.now();
-      if (now - lastChatListHandleOpenAt < 650) return;
+      if (now - lastChatListHandleOpenAt < 360) return;
       lastChatListHandleOpenAt = now;
 
       openChatListFromHandle();
@@ -5200,82 +10793,143 @@
   }
 
   function bindChatListPanelHover(panel) {
-    if (!panel || panel.dataset.crackUiChatListHoverBound === '1') return;
-    panel.dataset.crackUiChatListHoverBound = '1';
-    panel.addEventListener('mouseenter', () => {
-      if (!chatListAutoHide || isTouchLikeDevice()) return;
-      clearChatListCloseTimer();
-    }, { passive: true });
-    panel.addEventListener('mouseleave', () => {
-      if (!chatListAutoHide || isTouchLikeDevice()) return;
-      scheduleChatListClose(150);
-    }, { passive: true });
+    if (!panel || !isDesktopChatListAutoHideViewport() || panel.dataset.crackUiHoverBound === '1') return;
+    panel.dataset.crackUiHoverBound = '1';
+    panel.addEventListener('mouseenter', () => clearChatListCloseTimer(), { passive: true });
+    panel.addEventListener('mouseleave', () => scheduleChatListClose(180), { passive: true });
   }
 
   function ensureChatListAutoHide() {
     let zone = document.getElementById(ID.chatListZone);
+    const mode = getChatListAutoHideMode();
+    const supported = mode === 'desktop' || mode === 'phone' || mode === 'tablet-swipe';
 
-    if (!chatListAutoHide) {
+    updateChatListAutoHideUi();
+
+    if (!supported) {
       clearChatListCloseTimer();
+      releaseMobileChatListPopoverForcedStyles();
+      releaseChatListPanelForcedOpen(cachedChatListPanel?.isConnected ? cachedChatListPanel : null);
       zone?.remove();
       cachedChatListPanel = null;
       cachedChatListToggle = null;
       cachedMobileChatListToggle = null;
+      document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
+      return;
+    }
+
+    if (mode === 'tablet-swipe') {
+      clearChatListCloseTimer();
+      releaseMobileChatListPopoverForcedStyles();
+      releaseChatListPanelForcedOpen(cachedChatListPanel?.isConnected ? cachedChatListPanel : null);
+      zone?.remove();
+      document.getElementById(ID.chatListHandle)?.remove();
       return;
     }
 
     if (!zone) {
       zone = document.createElement('div');
       zone.id = ID.chatListZone;
-      zone.title = '채팅 목록 열기';
-      zone.addEventListener('mouseenter', () => {
-        if (isTouchLikeDevice()) return;
-        clearChatListCloseTimer();
-        clickChatListToggle(true, 'edge-enter');
-        setTimeout(() => { const panel = findChatListPanel(); if (panel) bindChatListPanelHover(panel); }, 80);
-      }, { passive: true });
-      zone.addEventListener('mouseleave', () => {
-        if (isTouchLikeDevice()) return;
-        scheduleChatListClose(150);
-      }, { passive: true });
+      zone.title = mode === 'phone' ? '채팅 목록 열기' : '채팅 목록 자동 열기';
       document.body.appendChild(zone);
     }
 
-    let handle = document.getElementById(ID.chatListHandle);
-    if (!handle) {
-      handle = document.createElement('div');
-      handle.id = ID.chatListHandle;
-      handle.setAttribute('role', 'button');
-      handle.setAttribute('aria-label', '채팅 목록 열기');
-      handle.title = '채팅 목록 열기';
-      zone.appendChild(handle);
-    } else if (handle.parentElement !== zone) {
-      zone.appendChild(handle);
-    }
-    bindChatListHandle(handle);
+    if (mode === 'phone') {
+      zone.onmouseenter = null;
+      zone.onmouseleave = null;
+      const handleEnabled = menuAssistModeHasHandle(chatListAssistMode);
+      zone.dataset.crackUiHandleEnabled = handleEnabled ? '1' : '0';
 
-    const panel = findChatListPanel();
+      let handle = document.getElementById(ID.chatListHandle);
+      if (handleEnabled) {
+        if (!handle) {
+          handle = document.createElement('div');
+          handle.id = ID.chatListHandle;
+          handle.setAttribute('role', 'button');
+          handle.setAttribute('aria-label', '채팅 목록 열기');
+          handle.title = '채팅 목록 열기';
+          zone.appendChild(handle);
+        } else if (handle.parentElement !== zone) {
+          zone.appendChild(handle);
+        }
+        bindChatListHandle(handle);
+      } else {
+        handle?.remove();
+      }
+
+      releaseChatListPanelForcedOpen(cachedChatListPanel?.isConnected ? cachedChatListPanel : null);
+      cachedChatListPanel = null;
+      cachedChatListToggle = null;
+      markMobileChatListOpenState();
+      forceMobileChatListPopoverLayout();
+      return;
+    }
+
+    // Desktop only: proximity hover opens, mouse leave closes. No phone/tablet behavior here.
+    document.getElementById(ID.chatListHandle)?.remove();
+    releaseMobileChatListPopoverForcedStyles();
+
+    if (zone.dataset.crackUiDesktopBound !== '1') {
+      zone.dataset.crackUiDesktopBound = '1';
+      zone.addEventListener('mouseenter', () => {
+        if (!isDesktopChatListAutoHideViewport()) return;
+        clearChatListCloseTimer();
+        clickChatListToggle(true, 'edge-enter');
+        setTimeout(() => { const panel = DOM.chatListPanel(); if (panel) bindChatListPanelHover(panel); }, 80);
+      }, { passive: true });
+      zone.addEventListener('mouseleave', () => {
+        if (!isDesktopChatListAutoHideViewport()) return;
+        scheduleChatListClose(180);
+      }, { passive: true });
+    }
+
+    const panel = DOM.chatListPanel();
     if (panel) {
       panel.setAttribute('data-crack-ui-chat-list-panel', '1');
       bindChatListPanelHover(panel);
+      if (isCrackUiWidthControlledChatListPanel(panel) && !DOM.chatListToggle(panel)) {
+        const zoneHovered = zone.matches(':hover');
+        if (!zoneHovered && !panel.matches(':hover')) setChatListPanelForcedOpen(panel, false);
+      }
     }
 
     if (lastChatListBootCloseHref !== location.href) {
       lastChatListBootCloseHref = location.href;
       setTimeout(() => {
-        if (chatListAutoHide && !document.getElementById(ID.chatListZone)?.matches(':hover')) {
+        if (chatListAutoHide && getChatListAutoHideMode() === 'desktop' && !document.getElementById(ID.chatListZone)?.matches(':hover')) {
           clickChatListToggle(false, 'boot-delay-2000');
         }
       }, 2000);
     }
   }
 
+  // =====================================================
+  // Boot: global events / init / observer
+  // =====================================================
+
   function bindGlobal() {
     if (document.documentElement.dataset.crackUiGlobalBound === '1') return;
     document.documentElement.dataset.crackUiGlobalBound = '1';
-    document.addEventListener('pointerdown', (e) => noteRoomTopBarInputInteraction(e.target), true);
+    bindMenuSwipeGesture();
+    document.addEventListener('pointerdown', (e) => {
+      if (roomMenuHandle && isTouchLikeDevice()) {
+        const roomButton = e.target.closest?.('button, [role="button"]');
+        if (isChatRoomSettingsButton(roomButton)) {
+          lastRoomMenuNativeButtonClickAt = Date.now();
+          clearRoomPanelCloseTimer();
+          clearRoomPanelToggleVerification({ invalidate: true });
+        }
+      }
+      noteRoomTopBarInputInteraction(e.target);
+    }, true);
+    document.addEventListener('pointerdown', guardEmptyComposerSendEvent, true);
+    document.addEventListener('mousedown', guardEmptyComposerSendEvent, true);
     document.addEventListener('focusin', (e) => noteRoomTopBarInputInteraction(e.target), true);
     document.addEventListener('click', (e) => {
+      guardEmptyComposerSendEvent(e);
+      if (e.defaultPrevented) return;
+      noteNovelModelGenerationTriggerFromClick(e.target);
+
       const modelPopup = document.getElementById(ID.bottomModelPopup);
       const modelButton = e.target.closest?.(`#${ID.bottomModelButton}`);
 
@@ -5296,30 +10950,43 @@
           updateRoomMenuRevealClass();
           setRoomTopBarHidden(false);
           setTimeout(() => {
-            const panel = findRoomPanel();
+            const panel = DOM.roomPanel();
             if (panel) bindRoomPanelHover(panel);
           }, 120);
         } else {
-          const roomPanel = findRoomPanel();
+          const roomPanel = DOM.roomPanel();
           const safeRoomPanel = e.target.closest?.(`#${ID.roomMenuZone}, #${ID.roomMenuHandle}`) || roomPanel?.contains(e.target);
           if (!safeRoomPanel) scheduleRoomPanelClose(160);
         }
       }
 
-      if (chatListAutoHide && isTouchLikeDevice()) {
-        const chatListPanel = findChatListPanel();
-        const safeChatList = e.target.closest?.(`#${ID.chatListZone}, #${ID.chatListHandle}`) || chatListPanel?.contains(e.target);
-        if (!safeChatList) scheduleChatListClose(120);
+      if (chatListAutoHide) {
+        markMobileChatListOpenState();
+
+        if (isTabletLikeViewport()) {
+          closeTabletChatListFromOutsideClick(e.target);
+        } else if (isDesktopChatListAutoHideViewport()) {
+          const chatListPanel = DOM.chatListPanel();
+          const safeChatList = e.target.closest?.(`#${ID.chatListZone}`) || chatListPanel?.contains(e.target);
+          if (!safeChatList) scheduleChatListClose(120);
+        }
       }
 
       if (!panelOpen) return;
 
       const panel = document.getElementById(ID.panel);
       const gear = e.target.closest(`#${ID.gearDesktop}, #${ID.gearMobile}`);
+      const menuModePopover = e.target.closest?.('[data-crack-ui-menu-mode-popover]');
 
-      if (panel && !panel.contains(e.target) && !gear) {
+      if (panel && !panel.contains(e.target) && !gear && !menuModePopover) {
         closePanel();
       }
+    }, true);
+    document.addEventListener('input', (e) => {
+      if (isChatComposerTarget(e.target)) scheduleEmptySendGuardUiUpdate();
+    }, true);
+    document.addEventListener('keyup', (e) => {
+      if (isChatComposerTarget(e.target)) scheduleEmptySendGuardUiUpdate();
     }, true);
     document.addEventListener('touchstart', (e) => {
       if (!isTouchLikeDevice()) return;
@@ -5349,36 +11016,170 @@
 
       scheduleMobileHide(250);
     }, { passive: true });
+    // Capture the composer Enter before Crack/ProseMirror handles it.
+    // A global Enter with no focused composer is still allowed to focus the chat input;
+    // only the next Enter from the focused, empty composer is blocked.
     document.addEventListener('keydown', (e) => {
+      guardEmptyComposerEnterEvent(e);
+      if (!e.defaultPrevented) noteNovelModelGenerationTriggerFromEnter(e);
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented) return;
+
       if (e.key === 'Escape') {
         closeBottomModelPopup({ closeOriginal: false });
         closePanel();
       }
     });
+    document.addEventListener('fullscreenchange', updateFullscreenButtonUi);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenButtonUi);
     window.addEventListener('resize', () => {
       updateDeviceViewportClasses();
       applyChatWidth();
       updateChatWidthUi();
+      scheduleMenuSwipeZonePosition();
 
       if (isBottomModelPopupOpen()) {
         positionBottomModelPopup(document.getElementById(ID.bottomModelButton));
       }
 
-      if (!panelOpen) return;
-      const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
-      positionPanel(anchor);
     });
 
-    window.visualViewport?.addEventListener?.('resize', updateDeviceViewportClasses, { passive: true });
-    window.addEventListener('pointerup', stopChatWidthDrag);
-    window.addEventListener('pointercancel', stopChatWidthDrag);
-    window.addEventListener('mouseup', stopChatWidthDrag);
-    window.addEventListener('touchend', stopChatWidthDrag, { passive: true });
-    window.addEventListener('touchcancel', stopChatWidthDrag, { passive: true });
+    window.visualViewport?.addEventListener?.('resize', () => {
+      updateDeviceViewportClasses();
+      scheduleMenuSwipeZonePosition();
+    }, { passive: true });
+    window.addEventListener('pointerup', stopPanelRangeDrag);
+    window.addEventListener('pointercancel', stopPanelRangeDrag);
+    window.addEventListener('mouseup', stopPanelRangeDrag);
+    window.addEventListener('touchend', stopPanelRangeDrag, { passive: true });
+    window.addEventListener('touchcancel', stopPanelRangeDrag, { passive: true });
     window.addEventListener('pagehide', () => {
       flushImageSizeSave();
       flushChatWidthSave();
+      flushNovelModelCatalogSave();
+      if (novelModelIndicator) saveNovelModelMessageCache();
     });
+  }
+
+  function reportCrackUiError(source, error) {
+    lastCrackUiError = {
+      source,
+      message: String(error?.message || error),
+      stack: String(error?.stack || ''),
+      time: new Date().toISOString(),
+      url: window.location.href,
+    };
+
+    try {
+      console.error(`[Crack UI Plus] ${source} failed`, error);
+    } catch {
+    }
+  }
+
+  function getCrackUiDebugSnapshot() {
+    return {
+      version: CRACK_UI_VERSION,
+      url: window.location.href,
+      route: window.location.pathname,
+      viewport: {
+        width: Math.round(getCrackUiViewportWidth()),
+        innerWidth: Math.round(window.innerWidth || 0),
+        phone: isPhoneLikeViewport(),
+        tablet: isTabletLikeViewport(),
+        touchLike: isTouchLikeDevice(),
+      },
+      state: {
+        autoHideHeader,
+        imageSize,
+        lineBreakOptimize,
+        pauseAnimatedThumbs,
+        hideStatBar,
+        hideSituationImage,
+        novelModelIndicator,
+        novelModelIndicatorCacheCount: Object.keys(novelModelMessageCache).length,
+        novelModelIndicatorCatalogCount: novelModelCatalogById.size,
+        novelModelIndicatorRetiredCatalogCount: [...novelModelCatalogById.values()].filter((entry) => entry.retired).length,
+        novelModelIndicatorRenderedCount: document.querySelectorAll('.crack-ui-novel-model-indicator').length,
+        novelModelIndicatorScanScheduled: !!novelModelIndicatorScanTimer || !!novelModelIndicatorScanRaf,
+        novelModelIndicatorTemporaryObserver: !!pendingNovelModelObserver,
+        novelModelIndicatorNetworkCaptureInstalled: novelModelNetworkCaptureInstalled,
+        novelModelIndicatorNetworkCandidateCount: novelModelNetworkCandidates.size,
+        novelModelIndicatorNetworkMessageCount: novelModelNetworkMessages.size,
+        novelModelIndicatorFingerprintCount: novelModelFingerprintIndex.size,
+        novelModelIndicatorNetworkMessageRevision: novelModelNetworkMessageRevision,
+        novelModelIndicatorStaticScanCount: novelModelStaticScanCount,
+        novelModelIndicatorNetworkPayloadCount: novelModelNetworkPayloadCount,
+        novelModelIndicatorNetworkLastUrl: novelModelNetworkLastUrl,
+        novelModelIndicatorNetworkLastMatchCount: novelModelNetworkLastMatchCount,
+        novelModelIndicatorManualCount: Object.keys(novelModelManualMap).length,
+        novelModelIndicatorUnresolvedRenderedCount: document.querySelectorAll('.crack-ui-novel-model-indicator[data-crack-ui-novel-model-unresolved="1"]').length,
+        novelModelIndicatorPending: pendingNovelModelCapture ? {
+          roomKey: pendingNovelModelCapture.roomKey,
+          reason: pendingNovelModelCapture.reason,
+          targetMessageGroupId: pendingNovelModelCapture.targetMessageGroupId,
+          modelName: pendingNovelModelCapture.modelInfo?.name || '',
+          ageMs: Date.now() - pendingNovelModelCapture.createdAt,
+        } : null,
+        situationImageMarkScheduled: !!situationImageMarkTimer || !!situationImageMarkRaf,
+        chatWidthPercent,
+        themeMode,
+        episodeUiMode,
+        bottomModelPicker,
+        visibleChatModels: getVisibleChatModelNames(),
+        hiddenOfficialChatModels: getHiddenChatModelNames(),
+        modelRegistryCount: lastOfficialModelRegistryCount,
+        modelRegistryAdded: [...lastOfficialModelRegistryAdded],
+        modelRegistryRemoved: [...lastOfficialModelRegistryRemoved],
+        officialModelMenuHiddenCount: lastOfficialModelVisibilityHiddenCount,
+        bottomModelPlacement: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement || 'none',
+        bottomModelCooperativeGroup: document.getElementById(ID.bottomModelButton)?.dataset?.crackUiPlacement === 'cooperative-group',
+        loreEntryButtonPlacement: getLoreEntryButtonPlacementState(),
+        emptySendGuard,
+        roomMenuHandle,
+        roomMenuAssistMode,
+        chatListAutoHide,
+        chatListAssistMode,
+        menuSwipeLeftEnabled: isLeftMenuSwipeEnabled(),
+        menuSwipeRightEnabled: isRightMenuSwipeEnabled(),
+        menuSwipeZone: !!document.getElementById(ID.menuSwipeZone),
+        fullscreenButtonEnabled,
+        fullscreenActive: !!getFullscreenElement(),
+        chatListAutoHideMode: getChatListAutoHideMode(),
+        chatListAutoHideActive: chatListAutoHide && isChatListAutoHideSupportedViewport(),
+        chatListAutoHidePhone: chatListAutoHide && isPhoneLikeViewport(),
+        chatListAutoHideTabletSwipe: chatListAutoHide && isTabletLikeViewport(),
+        chatListMobileProxyOnly: chatListAutoHide && isPhoneLikeViewport(),
+        chatListTabletProxyOnly: chatListAutoHide && isTabletLikeViewport(),
+        chatListMobilePopoverOpen: !!DOM.mobileChatListPopover(),
+        chatListMobileHeaderGapCompensation: document.documentElement.classList.contains(CLS.chatListMobileHeaderGapCompensated),
+        panelOpen,
+        mobileReveal,
+        roomMenuReveal,
+        roomPanelToggleAttempt: lastRoomPanelToggleAttempt,
+      },
+      locators: getDomLocatorDebugSnapshot(),
+      lastError: lastCrackUiError,
+    };
+  }
+
+  function installCrackUiDebugApi() {
+    const api = {
+      version: CRACK_UI_VERSION,
+      debug: getCrackUiDebugSnapshot,
+      locators: DOM_LOCATORS,
+      resetCache() {
+        resetDomLocatorCache();
+        scheduleInit();
+        return true;
+      },
+    };
+
+    try {
+      exposeCrackUiPublicApi(api);
+    } catch {
+    }
   }
 
   function shouldEnforceThemeMode() {
@@ -5408,7 +11209,12 @@
 
   function runInit() {
     lastInitRun = performance.now();
-    init();
+
+    try {
+      init();
+    } catch (error) {
+      reportCrackUiError('init', error);
+    }
   }
 
   function scheduleInit() {
@@ -5428,11 +11234,111 @@
     }, delay);
   }
 
+  // === Lore(에리로어) 진입 버튼 위치 보호 ===
+  // UI+가 글로벌 헤더를 접으면 로어가 자리를 못 찾고 버튼을 하단 입력창에 붙이는 문제 방지.
+  // 로어 버튼의 원래 집은 헤더 한 칸 아래 '채팅방 상단바'(모델명·방설정 버튼 줄)다.
+  // 외부 확프 호환용 보정도 DOM facade / locator에 등록해서 debug로 위치를 확인할 수 있게 둔다.
+  function findLoreEntryButton() {
+    return document.getElementById('lore-inj-entry-button');
+  }
+
+  function findLoreRoomTopBar() {
+    let seed = document.querySelector('svg path[d^="M11 11h2v2h-2"]')?.closest('button') || null;
+
+    if (!seed) {
+      for (const img of document.querySelectorAll('img[src*="model-icon"]')) {
+        if (img.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}`)) continue;
+        seed = img.closest('button');
+        if (seed) break;
+      }
+    }
+    if (!seed) return null;
+
+    let node = seed.parentElement;
+    for (let i = 0; node && i < 6; i += 1) {
+      const cls = String(node.className || '');
+      if (
+        cls.includes('h-12') &&
+        cls.includes('justify-between') &&
+        (cls.includes('bg-bg_screen') || cls.includes('border-b'))
+      ) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function getLoreStableSiblingState(loreButton) {
+    if (!loreButton?.parentElement) return 'found-unplaced';
+
+    const siblings = [...loreButton.parentElement.children];
+    const next = loreButton.nextElementSibling;
+    const afterNext = next?.nextElementSibling || null;
+    const settingsButton = siblings.find((el) => el.id === 'crack-pure-settings-btn') || null;
+
+    if (
+      next?.id === 'crack-pure-settings-btn' &&
+      afterNext?.getAttribute?.('aria-haspopup') === 'menu'
+    ) {
+      return 'before-ai-settings';
+    }
+
+    if (
+      !settingsButton &&
+      next?.getAttribute?.('aria-haspopup') === 'menu'
+    ) {
+      return 'before-model';
+    }
+
+    return loreButton.dataset.crackUiLorePlaced || 'found-unplaced';
+  }
+
+  function getLoreEntryButtonPlacementState() {
+    const loreButton = DOM.loreEntryButton?.() || null;
+    if (!loreButton) return 'none';
+    return getLoreStableSiblingState(loreButton);
+  }
+
+  function ensureLoreEntryButtonInRoomTopBar() {
+    const loreButton = DOM.loreEntryButton();
+    if (!loreButton) return;
+
+    // 외부 확프(문장 다듬기)는 #crack-pure-settings-btn을 모델 버튼 바로 앞에 고정한다.
+    // Lore를 모델 버튼 바로 앞에 고정하면 두 확프가 서로 insertBefore를 반복하므로,
+    // AI 설정 버튼이 있으면 Lore는 그 왼쪽으로 양보한다: [Lore][AI 설정][모델].
+    const currentState = getLoreStableSiblingState(loreButton);
+    if (currentState === 'before-ai-settings' || currentState === 'before-model') return;
+
+    const topBar = DOM.loreRoomTopBar();
+    if (!topBar) return;
+
+    // 모델 표시 버튼(프로챗 2.5 …)을 찾아 그 주변의 안정 슬롯을 고른다.
+    const modelButton =
+      topBar.querySelector('button[aria-haspopup="menu"]') ||
+      topBar.querySelector('img[src*="model-icon"]')?.closest('button');
+
+    if (!modelButton?.parentElement) return;
+
+    const siblingSettingsButton = [...modelButton.parentElement.children]
+      .find((el) => el.id === 'crack-pure-settings-btn') || null;
+    const topBarSettingsButton = topBar.querySelector('#crack-pure-settings-btn');
+    const settingsButton =
+      siblingSettingsButton ||
+      (topBarSettingsButton?.parentElement === modelButton.parentElement ? topBarSettingsButton : null);
+    const anchor = settingsButton || modelButton;
+
+    if (anchor.previousElementSibling !== loreButton) {
+      anchor.parentElement.insertBefore(loreButton, anchor);
+    }
+
+    loreButton.dataset.crackUiLorePlaced = settingsButton ? 'before-ai-settings' : 'before-model';
+  }
+
   function init() {
     cleanupOldStuffOnce();
     ensureRevealZone();
     ensurePanel();
-    markStatBars();
     if (!pendingThemeApplied) {
       pendingThemeApplied = true;
       syncThemeStateFromOriginalSettings();
@@ -5441,19 +11347,23 @@
     updateThemeUi();
     bindGlobal();
 
-    const header = findHeader();
+    const header = DOM.header();
     if (header) {
       bindHeaderHover(header);
       ensureGearButtons(header);
     }
+    ensureLoreEntryButtonInRoomTopBar();
+    ensureFullscreenButton();
 
+    bindOfficialModelRegistryScan();
+    syncChatModelRegistryFromOfficialMenu();
     ensureBottomModelPicker();
+    syncOfficialModelVisibility();
+    ensureNovelModelIndicator();
     ensureRoomMenuHandle();
     ensureChatListAutoHide();
 
     applyImageSize();
-    applyThemeModeHint();
-    applyChatWidth();
     applyState();
     scheduleAnimatedThumbState();
   }
@@ -5487,6 +11397,20 @@
         return;
       }
 
+      const composer = cachedComposerEditable?.isConnected ? cachedComposerEditable : null;
+      const onlyComposerChildChanges =
+        !!composer &&
+        mutations.length > 0 &&
+        mutations.every((mutation) =>
+          mutation.type === 'childList' &&
+          (mutation.target === composer || composer.contains(mutation.target))
+        );
+
+      if (onlyComposerChildChanges) {
+        if (emptySendGuard) scheduleEmptySendGuardUiUpdate();
+        return;
+      }
+
       scheduleInit();
     });
     mo.observe(document.body, {
@@ -5497,7 +11421,10 @@
     });
   }
 
+  if (novelModelIndicator) installNovelModelNetworkCapture();
+
   ready(() => {
+    installCrackUiDebugApi();
     runInit();
     observeThemeDomGuard();
     observe();
