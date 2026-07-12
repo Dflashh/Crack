@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.9
+// @version      2.4.10
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.9';
+  const CRACK_UI_VERSION = '2.4.10';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2311,7 +2311,7 @@
       #${ID.panelBackdrop} {
         position: fixed;
         inset: 0;
-        z-index: calc(var(--crack-ui-z-panel) - 1);
+        z-index: calc(var(--crack-ui-z-panel) - 10);
         display: none;
         pointer-events: none;
         background: rgba(0, 0, 0, .16);
@@ -2772,12 +2772,22 @@
           left: 6px;
           right: 6px;
           bottom: max(100px, env(safe-area-inset-bottom));
+          z-index: var(--crack-ui-z-panel);
           width: auto;
           height: auto;
           max-width: none;
           max-height: none;
-          transform: none;
+          transform: translateZ(0);
+          isolation: isolate;
           padding: 7px;
+          background: rgba(28, 28, 30, .94);
+          backdrop-filter: none;
+          -webkit-backdrop-filter: none;
+        }
+
+        body[data-theme="light"] #${ID.panel},
+        html[data-theme="light"] #${ID.panel} {
+          background: rgba(255, 255, 255, .94);
         }
 
         #${ID.panel} > .crack-ui-panel-head {
