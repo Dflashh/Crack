@@ -2,7 +2,7 @@
 
 > 버그는 해당 확프 게시글 or 본인이 버그 픽스 후 **꼭 뤼튼 여성향 갤러리에 올려주셈**
 ***
-## Crack UI Plus <v2.1.1> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js)
+## Crack UI Plus <v2.5.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js)
 <a href="https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/CrackUI.md"><img src="https://img.shields.io/badge/🔧-PATCH_NOTES-e9a01e?style=for-the-badge" alt="패치노트" /></a> <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUIdown.user.js"><img src="https://img.shields.io/badge/🔻-구버전_v1.2.9-blue?style=for-the-badge" alt="다운그레이드" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=229006"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 
 **기능**
@@ -12,14 +12,14 @@
 
 > **[ 채팅 ]**
 > 
-> 채팅 폭 조절 (PC/태블릿 전용) | 이미지 사이즈 조절 | 입력창 모델 변경 | 스토리 자동 재생 끄기 | 채팅방 설정 자동 숨김 | 스탯창 숨김 | 줄바꿈 최적화 | 상황 이미지 끄기
+> 채팅 폭 조절 (PC/태블릿 전용) | 이미지 사이즈 조절 | 입력창 모델 변경 | 스토리 자동 재생 끄기 | 채팅방 설정 자동 숨김 | 스탯창 숨김 | 줄바꿈 최적화 | 상황 이미지 끄기 | 소설형에서 모델 확인
 
 > **[ 화면 ]**
 > 
 > 상단바 자동 숨김 | 채팅 목록 자동 숨김 | 썸네일 움짤 정지
 
 **추가 예정**
-> 소설형에서 모델 확인 | 폰트 설정 | 폰트 크기 조절 | 기타 등
+> 폰트 설정 | 폰트 크기 조절 | 기타 등
 ***
 ## Crack Shortcut Customizer <v1.0.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Shortcut.user.js)
 크랙 채팅방에서 사용 가능한 단축키를 유저마음대로 커스텀
