@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.1
+// @version      2.4.2
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.1';
+  const CRACK_UI_VERSION = '2.4.2';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2026,6 +2026,14 @@
       }
 
       html:not(.${CLS.phoneViewport}):not(.${CLS.tabletViewport}) .crack-ui-menu-mode-button {
+        display: none !important;
+      }
+
+      html.${CLS.tabletViewport} [data-crack-ui-menu-assist-row="chat-list"] {
+        grid-template-columns: minmax(0, 1fr) 35px !important;
+      }
+
+      html.${CLS.tabletViewport} #${ID.chatListModeButton} {
         display: none !important;
       }
 
@@ -4698,7 +4706,11 @@
 
   function openMenuAssistModePopover(target, button) {
     try {
-      if (!button || (!isPhoneLikeViewport() && !isTabletLikeViewport())) {
+      if (
+        !button ||
+        (!isPhoneLikeViewport() && !isTabletLikeViewport()) ||
+        (target === 'chat-list' && isTabletLikeViewport())
+      ) {
         closeMenuAssistModePanels();
         return;
       }
@@ -8382,7 +8394,7 @@
     }
   }
 
-
+  
 function markMobileChatListOpenState() {
     if (!isPhoneLikeViewport()) {
       document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
@@ -8740,8 +8752,9 @@ function markMobileChatListOpenState() {
 
       const panel = document.getElementById(ID.panel);
       const gear = e.target.closest(`#${ID.gearDesktop}, #${ID.gearMobile}`);
+      const menuModePopover = e.target.closest?.('[data-crack-ui-menu-mode-popover]');
 
-      if (panel && !panel.contains(e.target) && !gear) {
+      if (panel && !panel.contains(e.target) && !gear && !menuModePopover) {
         closePanel();
       }
     }, true);
