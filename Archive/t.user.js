@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.4
+// @version      2.4.5
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.4';
+  const CRACK_UI_VERSION = '2.4.5';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2471,24 +2471,24 @@
       /* While any panel range slider is being adjusted, leave only that control visible.
          Removing the panel/backdrop surface lets the chat remain visible as a live preview. */
       html.${CLS.rangePreview} #${ID.panelBackdrop} {
-        background: transparent;
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
       }
 
       #${ID.panel}[data-crack-ui-range-preview="1"] {
-        background: transparent;
-        border-color: transparent;
-        box-shadow: none;
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
       }
 
       #${ID.panel}[data-crack-ui-range-preview="1"] > .crack-ui-panel-head,
       #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-theme-strip,
       #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-nav {
-        opacity: 0;
-        pointer-events: none;
+        opacity: 0 !important;
+        pointer-events: none !important;
       }
 
       #${ID.panel}[data-crack-ui-range-preview="1"] > .crack-ui-panel-shell,
@@ -2497,25 +2497,25 @@
       #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-body,
       #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section,
       #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section-body {
-        background: transparent;
-        border-color: transparent;
-        box-shadow: none;
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
       }
 
       #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section-body > :not([data-crack-ui-range-preview-active="1"]) {
-        opacity: 0;
-        pointer-events: none;
+        opacity: 0 !important;
+        pointer-events: none !important;
       }
 
       #${ID.panel}[data-crack-ui-range-preview="1"] [data-crack-ui-range-preview-active="1"] {
-        opacity: 1;
-        visibility: visible;
-        pointer-events: auto;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
       }
 
       @media (prefers-reduced-motion: reduce) {
         #${ID.panel}[data-crack-ui-range-preview="1"] * {
-          transition: none;
+          transition: none !important;
         }
       }
 
