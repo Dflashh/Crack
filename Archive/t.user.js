@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.11
+// @version      2.4.12
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.11';
+  const CRACK_UI_VERSION = '2.4.12';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2779,10 +2779,13 @@
         }
 
         #${ID.panel} {
-          top: max(100px, env(safe-area-inset-top));
+          /* Scale the vertical breathing room down on short phone viewports.
+             Tall phones keep the requested 100px gap; compact iPhones use about
+             64-100px depending on the currently visible dynamic viewport. */
+          top: max(clamp(64px, 11dvh, 100px), env(safe-area-inset-top));
           left: 6px;
           right: 6px;
-          bottom: max(100px, env(safe-area-inset-bottom));
+          bottom: max(clamp(64px, 11dvh, 100px), env(safe-area-inset-bottom));
           z-index: 1;
           width: auto;
           height: auto;
