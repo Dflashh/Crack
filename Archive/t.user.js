@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.3.5
+// @version      2.4.0
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.3.5';
+  const CRACK_UI_VERSION = '2.4.0';
 
   function getCrackUiPublicWindow() {
     try {
@@ -77,9 +77,14 @@
     roomMenuZone: 'crack-ui-room-menu-zone',
     roomMenuHandle: 'crack-ui-room-menu-handle',
     toggleRoomMenuHandle: 'crack-ui-toggle-room-menu-handle',
+    roomMenuModeButton: 'crack-ui-room-menu-mode-button',
+    roomMenuModePanel: 'crack-ui-room-menu-mode-panel',
     chatListZone: 'crack-ui-chat-list-zone',
     chatListHandle: 'crack-ui-chat-list-handle',
     toggleChatListAutoHide: 'crack-ui-toggle-chat-list-auto-hide',
+    chatListModeButton: 'crack-ui-chat-list-mode-button',
+    chatListModePanel: 'crack-ui-chat-list-mode-panel',
+    menuSwipeZone: 'crack-ui-menu-swipe-zone',
     toggleFullscreenButton: 'crack-ui-toggle-fullscreen-button',
     fullscreenButton: 'fullscreen-toolbar-btn',
   };
@@ -107,7 +112,9 @@
     bottomModelRegistry: 'crack_ui_bottom_model_registry_v1',
     bottomModelVisibleModelsOpen: 'crack_ui_bottom_model_visible_models_open',
     roomMenuHandle: 'crack_ui_room_menu_handle',
+    roomMenuAssistMode: 'crack_ui_room_menu_assist_mode',
     chatListAutoHide: 'crack_ui_chat_list_auto_hide',
+    chatListAssistMode: 'crack_ui_chat_list_assist_mode',
     fullscreenButton: 'crack_ui_fullscreen_button',
   };
 
@@ -142,6 +149,37 @@
     novel: '소설형 UI',
     chat: '채팅형 UI',
   };
+
+  const MENU_ASSIST_MODE_LABEL = Object.freeze({
+    handle: '핸들',
+    swipe: '슬라이더',
+    both: '둘 다',
+  });
+
+  const MENU_SWIPE = Object.freeze({
+    minDx: 48,
+    maxDy: 40,
+    ratio: 2,
+    maxMs: 600,
+    cooldownMs: 600,
+    topOffset: 36,
+    feedbackMs: 200,
+  });
+
+  function normalizeMenuAssistMode(value) {
+    const mode = String(value || '').toLowerCase();
+    return Object.prototype.hasOwnProperty.call(MENU_ASSIST_MODE_LABEL, mode) ? mode : 'handle';
+  }
+
+  function menuAssistModeHasHandle(mode) {
+    const normalized = normalizeMenuAssistMode(mode);
+    return normalized === 'handle' || normalized === 'both';
+  }
+
+  function menuAssistModeHasSwipe(mode) {
+    const normalized = normalizeMenuAssistMode(mode);
+    return normalized === 'swipe' || normalized === 'both';
+  }
 
   const CRACK_API = {
     episodeUiSetting: 'https://crack-api.wrtn.ai/crack-api/profiles/ui-setting',
@@ -332,7 +370,9 @@
   let emptySendGuard = loadEmptySendGuard();
   let hideSituationImage = loadHideSituationImage();
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
+  let roomMenuAssistMode = normalizeMenuAssistMode(readStorage(LS.roomMenuAssistMode, 'handle'));
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
+  let chatListAssistMode = normalizeMenuAssistMode(readStorage(LS.chatListAssistMode, 'handle'));
   let fullscreenButtonEnabled = !isIosDevice() && readStorage(LS.fullscreenButton) === '1';
 
   if (isIosDevice()) {
@@ -358,6 +398,8 @@
   let roomMenuForceRevealTimer = null;
   let lastRoomMenuHandleOpenAt = 0;
   let lastRoomMenuNativeButtonClickAt = 0;
+  let lastMenuSwipeAt = 0;
+  let menuSwipePositionRaf = 0;
   let chatListCloseTimer = null;
   let lastChatListClickAt = 0;
   let lastChatListHandleOpenAt = 0;
@@ -1805,6 +1847,238 @@
           0 0 1px rgba(0, 0, 0, .12) !important;
       }
 
+      .crack-ui-menu-assist-row {
+        grid-template-columns: minmax(0, 1fr) 66px 35px;
+        column-gap: 8px;
+        cursor: default;
+      }
+
+      .crack-ui-menu-toggle-wrap {
+        display: block;
+        justify-self: end;
+        cursor: pointer;
+      }
+
+      .crack-ui-menu-mode-button {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 66px;
+        height: 28px;
+        box-sizing: border-box;
+        padding: 0 7px;
+        border: 1px solid rgba(255, 255, 255, .10);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, .055);
+        color: rgba(255, 255, 255, .76);
+        font-family: inherit;
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        transform: none !important;
+      }
+
+      .crack-ui-menu-mode-button:hover,
+      .crack-ui-menu-mode-button[aria-expanded="true"] {
+        background: rgba(255, 255, 255, .09);
+        border-color: rgba(255, 255, 255, .16);
+        color: rgba(255, 255, 255, .94);
+      }
+
+      .crack-ui-menu-mode-popover {
+        position: fixed !important;
+        z-index: 2147483646 !important;
+        display: block !important;
+        width: 180px !important;
+        box-sizing: border-box !important;
+        padding: 6px !important;
+        border: 1px solid rgba(255, 255, 255, .12) !important;
+        border-radius: 16px !important;
+        background: rgba(32, 32, 35, .97) !important;
+        color: rgba(255, 255, 255, .94) !important;
+        box-shadow:
+          0 16px 42px rgba(0, 0, 0, .34),
+          inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+        backdrop-filter: blur(20px) saturate(1.16) !important;
+        -webkit-backdrop-filter: blur(20px) saturate(1.16) !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        transform: translateY(0) scale(1) !important;
+        transform-origin: top right;
+        animation: crackUiMenuModePopoverIn 130ms ease-out;
+      }
+
+      @keyframes crackUiMenuModePopoverIn {
+        from {
+          opacity: 0;
+          transform: translateY(-7px) scale(.985);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .crack-ui-menu-mode-choice {
+        appearance: none;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 20px;
+        align-items: center;
+        width: 100%;
+        min-height: 40px;
+        box-sizing: border-box;
+        padding: 0 10px 0 12px;
+        border: 0;
+        border-radius: 11px;
+        background: transparent;
+        color: rgba(255, 255, 255, .82);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 760;
+        line-height: 1.2;
+        text-align: left;
+        cursor: pointer;
+        transform: none !important;
+      }
+
+      .crack-ui-menu-mode-choice:hover,
+      .crack-ui-menu-mode-choice:active {
+        background: rgba(255, 255, 255, .075);
+        color: rgba(255, 255, 255, .98);
+      }
+
+      .crack-ui-menu-mode-choice::after {
+        content: "";
+        justify-self: end;
+        width: 7px;
+        height: 12px;
+        box-sizing: border-box;
+        border-right: 2px solid transparent;
+        border-bottom: 2px solid transparent;
+        transform: rotate(45deg) translateY(-1px);
+      }
+
+      .crack-ui-menu-mode-choice[data-selected="1"] {
+        color: #ff5b49;
+        background: rgba(254, 69, 50, .10);
+      }
+
+      .crack-ui-menu-mode-choice[data-selected="1"]::after {
+        border-right-color: currentColor;
+        border-bottom-color: currentColor;
+      }
+
+      .crack-ui-row[data-disabled="1"] .crack-ui-menu-mode-button {
+        opacity: .62;
+        pointer-events: none;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button,
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button {
+        border-color: rgba(17, 24, 39, .09);
+        background: rgba(15, 23, 42, .045);
+        color: rgba(17, 24, 39, .66);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button:hover,
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button:hover,
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button[aria-expanded="true"],
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button[aria-expanded="true"] {
+        background: rgba(15, 23, 42, .08);
+        color: rgba(17, 24, 39, .92);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-popover,
+      html[data-theme="light"] .crack-ui-menu-mode-popover {
+        border-color: rgba(17, 24, 39, .10) !important;
+        background: rgba(250, 250, 252, .97) !important;
+        color: rgba(17, 24, 39, .94) !important;
+        box-shadow:
+          0 16px 42px rgba(15, 23, 42, .18),
+          inset 0 1px 0 rgba(255, 255, 255, .86) !important;
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice,
+      html[data-theme="light"] .crack-ui-menu-mode-choice {
+        color: rgba(17, 24, 39, .80);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice:hover,
+      html[data-theme="light"] .crack-ui-menu-mode-choice:hover,
+      body[data-theme="light"] .crack-ui-menu-mode-choice:active,
+      html[data-theme="light"] .crack-ui-menu-mode-choice:active {
+        background: rgba(15, 23, 42, .06);
+        color: rgba(17, 24, 39, .96);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"],
+      html[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"] {
+        background: rgba(254, 69, 50, .10);
+        color: #e43e2d;
+      }
+
+      @media (min-width: 768px) {
+        .crack-ui-menu-assist-row {
+          grid-template-columns: minmax(0, 1fr) 35px !important;
+        }
+
+        .crack-ui-menu-mode-button {
+          display: none !important;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .crack-ui-menu-mode-popover {
+          animation: none !important;
+        }
+      }
+
+      #${ID.menuSwipeZone} {
+        position: fixed !important;
+        left: max(24px, env(safe-area-inset-left)) !important;
+        right: max(24px, env(safe-area-inset-right)) !important;
+        top: auto !important;
+        bottom: calc(98px + env(safe-area-inset-bottom)) !important;
+        height: 48px !important;
+        z-index: calc(var(--crack-ui-z-header) + 5) !important;
+        display: block !important;
+        pointer-events: none !important;
+        background: transparent !important;
+        border: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        opacity: 1 !important;
+        touch-action: pan-y !important;
+        -webkit-tap-highlight-color: transparent !important;
+        user-select: none !important;
+      }
+
+      #${ID.menuSwipeZone}::after {
+        content: "";
+        position: absolute;
+        inset: 7px 18px;
+        border-radius: 999px;
+        background: rgba(165, 165, 175, .16);
+        opacity: 0;
+        transform: scaleX(.96);
+        transition: opacity 180ms ease, transform 180ms ease;
+        pointer-events: none;
+      }
+
+      #${ID.menuSwipeZone}[data-feedback="1"]::after {
+        opacity: 1;
+        transform: scaleX(1);
+      }
+
+      html[data-theme="light"] #${ID.menuSwipeZone}::after,
+      body[data-theme="light"] #${ID.menuSwipeZone}::after {
+        background: rgba(120, 120, 128, .13);
+      }
+
       .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-webkit-slider-runnable-track {
         background: rgba(120, 120, 128, .24) !important;
       }
@@ -2104,6 +2378,15 @@
           width: 26px;
         }
 
+        html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone}[data-crack-ui-handle-enabled="0"] {
+          width: 0 !important;
+          pointer-events: none !important;
+        }
+
+        html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone}[data-crack-ui-handle-enabled="0"] #${ID.chatListHandle} {
+          display: none !important;
+        }
+
         html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListHandle} {
           display: block !important;
           position: fixed;
@@ -2140,6 +2423,15 @@
           height: auto;
           transform: none;
           pointer-events: auto !important;
+        }
+
+        html.${CLS.roomMenuEnabled} #${ID.roomMenuZone}[data-crack-ui-handle-enabled="0"] {
+          width: 0 !important;
+          pointer-events: none !important;
+        }
+
+        html.${CLS.roomMenuEnabled} #${ID.roomMenuZone}[data-crack-ui-handle-enabled="0"] #${ID.roomMenuHandle} {
+          display: none !important;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle} {
@@ -3733,6 +4025,12 @@
       input.title = supported ? '' : 'PC/모바일 전용';
     }
 
+    const modeButton = document.getElementById(ID.chatListModeButton);
+    if (modeButton) {
+      modeButton.disabled = !supported;
+      modeButton.title = supported ? '모바일 동작 방식 선택' : 'PC/모바일 전용';
+    }
+
     const label = row?.querySelector('.crack-ui-row-name');
     if (label) {
       label.textContent = tabletBlocked ? '채팅 목록 자동 숨김 (PC/모바일 전용)' : '채팅 목록 자동 숨김';
@@ -3921,7 +4219,7 @@
       }
       cluster.remove();
     });
-    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}`)
+    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}`)
       .forEach((el) => el.remove());
     document.documentElement.classList.remove(
       'crack-wrtn-ui-autohide',
@@ -4299,6 +4597,202 @@
     return input;
   }
 
+  function getMenuAssistModePopoverId(target) {
+    return target === 'room' ? ID.roomMenuModePanel : ID.chatListModePanel;
+  }
+
+  function closeMenuAssistModePanels(panel = document.getElementById(ID.panel)) {
+    document.querySelectorAll('[data-crack-ui-menu-mode-popover]').forEach((popover) => {
+      popover.remove();
+    });
+
+    panel?.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
+      button.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function syncMenuAssistModeUi(panel = document.getElementById(ID.panel)) {
+    if (!panel) return;
+
+    const values = {
+      room: roomMenuAssistMode,
+      'chat-list': chatListAssistMode,
+    };
+
+    Object.entries(values).forEach(([target, mode]) => {
+      const normalized = normalizeMenuAssistMode(mode);
+      const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
+      if (button) button.textContent = MENU_ASSIST_MODE_LABEL[normalized];
+
+      document.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
+        const selected = choice.dataset.crackUiMenuModeChoice === normalized;
+        choice.dataset.selected = selected ? '1' : '0';
+        choice.setAttribute('aria-checked', selected ? 'true' : 'false');
+      });
+    });
+  }
+
+  function positionMenuAssistModePopover(button, popover) {
+    if (!button || !popover) return;
+
+    const rect = button.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportLeft = Number(viewport?.offsetLeft || 0);
+    const viewportTop = Number(viewport?.offsetTop || 0);
+    const viewportWidth = Math.max(1, Number(viewport?.width || window.innerWidth || 1));
+    const viewportHeight = Math.max(1, Number(viewport?.height || window.innerHeight || 1));
+    const width = Math.min(180, viewportWidth - 20);
+
+    popover.style.setProperty('width', `${width}px`, 'important');
+
+    const measuredHeight = popover.getBoundingClientRect().height;
+    const popoverHeight = measuredHeight > 20 ? measuredHeight : 132;
+    const viewportRight = viewportLeft + viewportWidth;
+    const viewportBottom = viewportTop + viewportHeight;
+
+    const left = Math.max(
+      viewportLeft + 10,
+      Math.min(viewportRight - width - 10, viewportLeft + rect.right - width)
+    );
+
+    let top = viewportTop + rect.bottom + 8;
+
+    if (top + popoverHeight > viewportBottom - 10) {
+      top = Math.max(viewportTop + 10, viewportTop + rect.top - popoverHeight - 8);
+      popover.style.transformOrigin = 'bottom right';
+    } else {
+      popover.style.transformOrigin = 'top right';
+    }
+
+    popover.style.setProperty('left', `${Math.round(left)}px`, 'important');
+    popover.style.setProperty('top', `${Math.round(top)}px`, 'important');
+  }
+
+  function setMenuAssistMode(target, value) {
+    const mode = normalizeMenuAssistMode(value);
+
+    if (target === 'room') {
+      roomMenuAssistMode = mode;
+      writeStorage(LS.roomMenuAssistMode, mode);
+      ensureRoomMenuHandle();
+    } else if (target === 'chat-list') {
+      chatListAssistMode = mode;
+      writeStorage(LS.chatListAssistMode, mode);
+      ensureChatListAutoHide();
+    } else {
+      return;
+    }
+
+    closeMenuAssistModePanels();
+    syncMenuAssistModeUi();
+    ensureMenuSwipeZone();
+    applyState();
+  }
+
+  function openMenuAssistModePopover(target, button) {
+    try {
+      if (!button || !isPhoneLikeViewport()) {
+        closeMenuAssistModePanels();
+        return;
+      }
+
+      const selector = `[data-crack-ui-menu-mode-popover="${target}"]`;
+      const wasOpen = !!document.querySelector(selector);
+      closeMenuAssistModePanels();
+      if (wasOpen) return;
+
+      const popover = document.createElement('div');
+      popover.id = getMenuAssistModePopoverId(target);
+      popover.className = 'crack-ui-menu-mode-popover';
+      popover.dataset.crackUiMenuModePopover = target;
+      popover.setAttribute('role', 'menu');
+      popover.setAttribute('aria-label', '메뉴 열기 방식 선택');
+
+      const choices = [
+        ['handle', '핸들'],
+        ['swipe', '슬라이더'],
+        ['both', '핸들 + 슬라이더'],
+      ];
+
+      for (const [value, label] of choices) {
+        const choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'crack-ui-menu-mode-choice';
+        choice.dataset.crackUiMenuModeTarget = target;
+        choice.dataset.crackUiMenuModeChoice = value;
+        choice.setAttribute('role', 'menuitemradio');
+        choice.textContent = label;
+        popover.appendChild(choice);
+      }
+
+      popover.addEventListener('click', (event) => {
+        const choice = event.target.closest?.('[data-crack-ui-menu-mode-choice]');
+        if (!choice || !popover.contains(choice)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        setMenuAssistMode(
+          choice.dataset.crackUiMenuModeTarget,
+          choice.dataset.crackUiMenuModeChoice
+        );
+      });
+
+      document.body.appendChild(popover);
+      button.setAttribute('aria-expanded', 'true');
+      syncMenuAssistModeUi();
+      positionMenuAssistModePopover(button, popover);
+    } catch (error) {
+      reportCrackUiError('menu-mode-popover', error);
+      closeMenuAssistModePanels();
+    }
+  }
+
+  function bindMenuAssistModeControls(panel) {
+    if (!panel || panel.dataset.crackUiMenuModeBound === '1') return;
+    panel.dataset.crackUiMenuModeBound = '1';
+
+    panel.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
+      if (button.dataset.crackUiMenuModeButtonBound === '1') return;
+      button.dataset.crackUiMenuModeButtonBound = '1';
+
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const target = button.dataset.crackUiMenuModeToggle || '';
+        openMenuAssistModePopover(target, button);
+      });
+    });
+
+    const root = document.documentElement;
+    if (root.dataset.crackUiMenuModePopoverBound !== '1') {
+      root.dataset.crackUiMenuModePopoverBound = '1';
+
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('[data-crack-ui-menu-mode-popover]')) return;
+        if (target.closest('[data-crack-ui-menu-mode-toggle]')) return;
+        closeMenuAssistModePanels();
+      });
+
+      document.addEventListener('scroll', () => {
+        closeMenuAssistModePanels();
+      }, true);
+
+      window.addEventListener('resize', () => {
+        closeMenuAssistModePanels();
+      }, { passive: true });
+
+      window.visualViewport?.addEventListener?.('resize', () => {
+        closeMenuAssistModePanels();
+      }, { passive: true });
+    }
+
+    syncMenuAssistModeUi(panel);
+  }
+
   function bindRangeInput(panel, id, onInput, onCommit = null) {
     const input = panel.querySelector(`#${id}`);
     if (!input) return null;
@@ -4538,16 +5032,21 @@
               </span>
             </label>
 
-            <label class="crack-ui-row crack-ui-chat-layout-half">
+            <div class="crack-ui-row crack-ui-menu-assist-row crack-ui-chat-layout-half" data-crack-ui-menu-assist-row="room">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅방 설정 자동 숨김</span>
               </span>
 
-              <span>
+              <button id="${ID.roomMenuModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="room" aria-haspopup="menu" aria-expanded="false">
+                ${MENU_ASSIST_MODE_LABEL[roomMenuAssistMode]}
+              </button>
+
+              <label class="crack-ui-menu-toggle-wrap">
                 <input id="${ID.toggleRoomMenuHandle}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
-              </span>
-            </label>
+              </label>
+
+            </div>
 
             <label class="crack-ui-row crack-ui-chat-layout-half">
               <span class="crack-ui-row-text">
@@ -4615,16 +5114,21 @@
               </span>
             </label>
 
-            <label class="crack-ui-row" data-crack-ui-chat-list-auto-hide-row data-disabled="${isChatListAutoHideSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatListAutoHideSupportedViewport() ? 'false' : 'true'}">
+            <div class="crack-ui-row crack-ui-menu-assist-row" data-crack-ui-chat-list-auto-hide-row data-crack-ui-menu-assist-row="chat-list" data-disabled="${isChatListAutoHideSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatListAutoHideSupportedViewport() ? 'false' : 'true'}">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅 목록 자동 숨김</span>
               </span>
 
-              <span>
+              <button id="${ID.chatListModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="chat-list" aria-haspopup="menu" aria-expanded="false">
+                ${MENU_ASSIST_MODE_LABEL[chatListAssistMode]}
+              </button>
+
+              <label class="crack-ui-menu-toggle-wrap">
                 <input id="${ID.toggleChatListAutoHide}" class="crack-ui-toggle" type="checkbox">
                 <span class="crack-ui-switch" aria-hidden="true"></span>
-              </span>
-            </label>
+              </label>
+
+            </div>
 
             <label class="crack-ui-row">
               <span class="crack-ui-row-text">
@@ -4655,6 +5159,7 @@
     bindPanelSections(panel);
     bindPanelThemeStripScroll(panel);
     bindChoiceButtons(panel);
+    bindMenuAssistModeControls(panel);
     syncPanelSections();
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
@@ -4711,6 +5216,7 @@
       roomMenuHandle = checked;
       writeStorage(LS.roomMenuHandle, roomMenuHandle ? '1' : '0');
       ensureRoomMenuHandle();
+      ensureMenuSwipeZone();
       applyState();
     });
     bindCheckbox(panel, ID.toggleFullscreenButton, fullscreenButtonEnabled, (checked, input) => {
@@ -4739,6 +5245,7 @@
       chatListAutoHide = checked;
       writeStorage(LS.chatListAutoHide, chatListAutoHide ? '1' : '0');
       ensureChatListAutoHide();
+      ensureMenuSwipeZone();
       applyState();
       if (checked && isDesktopChatListAutoHideViewport()) scheduleChatListClose(450);
     });
@@ -4792,6 +5299,8 @@
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
     syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
+    closeMenuAssistModePanels(panel);
+    syncMenuAssistModeUi(panel);
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
 
@@ -4813,6 +5322,7 @@
 
     panelOpen = false;
     panel.dataset.open = '0';
+    closeMenuAssistModePanels(panel);
     stopPanelRangeDrag();
     isChatWidthDragging = false;
     document.documentElement.classList.remove(CLS.widthDragging);
@@ -4873,6 +5383,8 @@
     document.documentElement.classList.toggle(CLS.chatListEnabled, chatListAutoHide && isChatListAutoHideSupportedViewport());
     markMobileChatListOpenState();
     updateChatListAutoHideUi();
+    syncMenuAssistModeUi();
+    ensureMenuSwipeZone();
     updateRoomMenuRevealClass();
     applyEmptySendGuardState();
     applyThemeModeHint();
@@ -4880,6 +5392,223 @@
     updateReveal();
   }
 
+
+
+  function isMobileMenuSwipeViewport() {
+    return isPhoneLikeViewport() && isTouchLikeDevice();
+  }
+
+  function isLeftMenuSwipeEnabled() {
+    return chatListAutoHide &&
+      menuAssistModeHasSwipe(chatListAssistMode) &&
+      isMobileMenuSwipeViewport() &&
+      crackUiIsChatRoute();
+  }
+
+  function isRightMenuSwipeEnabled() {
+    return roomMenuHandle &&
+      menuAssistModeHasSwipe(roomMenuAssistMode) &&
+      isMobileMenuSwipeViewport() &&
+      crackUiIsChatRoute();
+  }
+
+  function isMenuSwipeZoneActive() {
+    return !panelOpen && (isLeftMenuSwipeEnabled() || isRightMenuSwipeEnabled());
+  }
+
+  function findMenuSwipeComposerShell(editable = DOM.composerEditable()) {
+    if (!editable) return null;
+    return editable.closest?.('form') ||
+      editable.closest?.('div.flex.flex-col.rounded-lg.border, div.rounded-lg.border.bg-background, div[class*="rounded"][class*="border"]') ||
+      editable.parentElement;
+  }
+
+  function positionMenuSwipeZone() {
+    const zone = document.getElementById(ID.menuSwipeZone);
+    if (!zone || !isMenuSwipeZoneActive()) return;
+
+    const shell = findMenuSwipeComposerShell();
+    let top = NaN;
+
+    try {
+      const rect = shell?.getBoundingClientRect?.();
+      if (rect && rect.width > 40 && rect.height > 20 && rect.top > 0) {
+        top = Math.max(54, Math.round(rect.top - MENU_SWIPE.topOffset));
+      }
+    } catch (error) {
+      reportCrackUiError('menu-swipe-position', error);
+    }
+
+    if (Number.isFinite(top)) {
+      zone.style.setProperty('top', `${top}px`, 'important');
+      zone.style.setProperty('bottom', 'auto', 'important');
+    } else {
+      zone.style.removeProperty('top');
+      zone.style.setProperty('bottom', 'calc(98px + env(safe-area-inset-bottom))', 'important');
+    }
+  }
+
+  function scheduleMenuSwipeZonePosition() {
+    if (menuSwipePositionRaf) return;
+    menuSwipePositionRaf = requestAnimationFrame(() => {
+      menuSwipePositionRaf = 0;
+      positionMenuSwipeZone();
+    });
+  }
+
+  function flashMenuSwipeZone() {
+    const zone = document.getElementById(ID.menuSwipeZone);
+    if (!zone) return;
+    zone.dataset.feedback = '1';
+    setTimeout(() => {
+      if (zone.isConnected) zone.dataset.feedback = '0';
+    }, MENU_SWIPE.feedbackMs);
+  }
+
+  function pointInMenuSwipeZone(event) {
+    if (!isMenuSwipeZoneActive()) return false;
+    const zone = document.getElementById(ID.menuSwipeZone);
+    if (!zone) return false;
+
+    let rect = null;
+    try {
+      rect = zone.getBoundingClientRect();
+    } catch (error) {
+      reportCrackUiError('menu-swipe-hit-test', error);
+      return false;
+    }
+
+    if (!rect || rect.width < 20 || rect.height < 12) return false;
+    const x = Number(event?.clientX);
+    const y = Number(event?.clientY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function menuSwipeEventTargetBlocked(target) {
+    if (!(target instanceof Element)) return false;
+    return !!target.closest?.(
+      `#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.chatListZone}, input, textarea, select, [contenteditable="true"]`
+    );
+  }
+
+  function bindMenuSwipeGesture() {
+    const root = document.documentElement;
+    if (root.dataset.crackUiMenuSwipeBound === '1') return;
+    root.dataset.crackUiMenuSwipeBound = '1';
+
+    let tracking = null;
+    let suppressClickUntil = 0;
+    let suppressClickX = 0;
+    let suppressClickY = 0;
+
+    const cancel = () => {
+      tracking = null;
+    };
+
+    document.addEventListener('click', (event) => {
+      if (Date.now() > suppressClickUntil) return;
+      const x = Number(event.clientX || 0);
+      const y = Number(event.clientY || 0);
+      if (Math.abs(x - suppressClickX) > 18 || Math.abs(y - suppressClickY) > 18) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    }, true);
+
+    document.addEventListener('pointerdown', (event) => {
+      if (!isMenuSwipeZoneActive()) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (event.isPrimary === false) return;
+      if (tracking) {
+        cancel();
+        return;
+      }
+
+      scheduleMenuSwipeZonePosition();
+      if (!pointInMenuSwipeZone(event)) return;
+      if (menuSwipeEventTargetBlocked(event.target)) return;
+
+      tracking = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        at: Date.now(),
+      };
+    }, { capture: true, passive: true });
+
+    document.addEventListener('pointercancel', (event) => {
+      if (!tracking || event.pointerId !== tracking.id) return;
+      cancel();
+    }, { capture: true, passive: true });
+
+    document.addEventListener('pointerup', (event) => {
+      if (!tracking || event.pointerId !== tracking.id) return;
+      const data = tracking;
+      cancel();
+
+      if (!isMenuSwipeZoneActive()) return;
+
+      const dx = Number(event.clientX) - data.x;
+      const dy = Number(event.clientY) - data.y;
+      const ax = Math.abs(dx);
+      const ay = Math.abs(dy);
+      const elapsed = Date.now() - data.at;
+
+      if (
+        elapsed > MENU_SWIPE.maxMs ||
+        ax < MENU_SWIPE.minDx ||
+        ay > MENU_SWIPE.maxDy ||
+        ax <= ay * MENU_SWIPE.ratio ||
+        Date.now() - lastMenuSwipeAt < MENU_SWIPE.cooldownMs
+      ) {
+        return;
+      }
+
+      let handled = false;
+
+      if (dx > 0 && isLeftMenuSwipeEnabled()) {
+        if (!DOM.mobileChatListPopover()) {
+          handled = clickMobileChatListNativeButton('swipe');
+        }
+      } else if (dx < 0 && isRightMenuSwipeEnabled()) {
+        const panel = DOM.roomPanel();
+        if (!panel || !isRoomPanelOpen(panel)) {
+          roomMenuReveal = true;
+          updateRoomMenuRevealClass();
+          setRoomTopBarHidden(false);
+          handled = clickRoomPanelToggle(true, 'swipe');
+        }
+      }
+
+      if (!handled) return;
+
+      lastMenuSwipeAt = Date.now();
+      suppressClickUntil = Date.now() + 450;
+      suppressClickX = Number(event.clientX || 0);
+      suppressClickY = Number(event.clientY || 0);
+      event.preventDefault();
+      flashMenuSwipeZone();
+    }, { capture: true, passive: false });
+  }
+
+  function ensureMenuSwipeZone() {
+    let zone = document.getElementById(ID.menuSwipeZone);
+
+    if (!isMenuSwipeZoneActive()) {
+      zone?.remove();
+      return;
+    }
+
+    if (!zone) {
+      zone = document.createElement('div');
+      zone.id = ID.menuSwipeZone;
+      zone.setAttribute('aria-hidden', 'true');
+      document.body?.appendChild(zone);
+    }
+
+    positionMenuSwipeZone();
+  }
 
   // =====================================================
   // Feature: situation image button hide
@@ -6957,12 +7686,12 @@
     }, { passive: true });
   }
 
-  function openChatRoomSettingsMenu() {
+  function openChatRoomSettingsMenu(reason = 'handle') {
     roomMenuReveal = true;
     updateRoomMenuRevealClass();
     setRoomTopBarHidden(false);
     clearRoomPanelCloseTimer();
-    return clickRoomPanelToggle(true, 'handle');
+    return clickRoomPanelToggle(true, reason);
   }
 
   function bindRoomMenuHandle(handle) {
@@ -7021,19 +7750,26 @@
       document.body.appendChild(zone);
     }
 
+    const handleEnabled = !isTouchLikeDevice() || menuAssistModeHasHandle(roomMenuAssistMode);
+    zone.dataset.crackUiHandleEnabled = handleEnabled ? '1' : '0';
+
     let handle = document.getElementById(ID.roomMenuHandle);
-    if (!handle) {
-      handle = document.createElement('div');
-      handle.id = ID.roomMenuHandle;
-      handle.setAttribute('role', 'button');
-      handle.setAttribute('aria-label', '채팅방 설정 열기');
-      handle.title = '채팅방 설정 열기';
-      zone.appendChild(handle);
-    } else if (handle.parentElement !== zone) {
-      zone.appendChild(handle);
+    if (handleEnabled) {
+      if (!handle) {
+        handle = document.createElement('div');
+        handle.id = ID.roomMenuHandle;
+        handle.setAttribute('role', 'button');
+        handle.setAttribute('aria-label', '채팅방 설정 열기');
+        handle.title = '채팅방 설정 열기';
+        zone.appendChild(handle);
+      } else if (handle.parentElement !== zone) {
+        zone.appendChild(handle);
+      }
+      bindRoomMenuHandle(handle);
+      syncRoomMenuHandleDot();
+    } else {
+      handle?.remove();
     }
-    bindRoomMenuHandle(handle);
-    syncRoomMenuHandleDot();
 
     const panel = DOM.roomPanel();
     if (panel) {
@@ -7789,18 +8525,26 @@ function markMobileChatListOpenState() {
     if (mode === 'phone') {
       zone.onmouseenter = null;
       zone.onmouseleave = null;
+      const handleEnabled = menuAssistModeHasHandle(chatListAssistMode);
+      zone.dataset.crackUiHandleEnabled = handleEnabled ? '1' : '0';
+
       let handle = document.getElementById(ID.chatListHandle);
-      if (!handle) {
-        handle = document.createElement('div');
-        handle.id = ID.chatListHandle;
-        handle.setAttribute('role', 'button');
-        handle.setAttribute('aria-label', '채팅 목록 열기');
-        handle.title = '채팅 목록 열기';
-        zone.appendChild(handle);
-      } else if (handle.parentElement !== zone) {
-        zone.appendChild(handle);
+      if (handleEnabled) {
+        if (!handle) {
+          handle = document.createElement('div');
+          handle.id = ID.chatListHandle;
+          handle.setAttribute('role', 'button');
+          handle.setAttribute('aria-label', '채팅 목록 열기');
+          handle.title = '채팅 목록 열기';
+          zone.appendChild(handle);
+        } else if (handle.parentElement !== zone) {
+          zone.appendChild(handle);
+        }
+        bindChatListHandle(handle);
+      } else {
+        handle?.remove();
       }
-      bindChatListHandle(handle);
+
       releaseChatListPanelForcedOpen(cachedChatListPanel?.isConnected ? cachedChatListPanel : null);
       cachedChatListPanel = null;
       cachedChatListToggle = null;
@@ -7854,6 +8598,7 @@ function markMobileChatListOpenState() {
   function bindGlobal() {
     if (document.documentElement.dataset.crackUiGlobalBound === '1') return;
     document.documentElement.dataset.crackUiGlobalBound = '1';
+    bindMenuSwipeGesture();
     document.addEventListener('pointerdown', (e) => noteRoomTopBarInputInteraction(e.target), true);
     document.addEventListener('pointerdown', guardEmptyComposerSendEvent, true);
     document.addEventListener('mousedown', guardEmptyComposerSendEvent, true);
@@ -7965,6 +8710,7 @@ function markMobileChatListOpenState() {
       updateDeviceViewportClasses();
       applyChatWidth();
       updateChatWidthUi();
+      scheduleMenuSwipeZonePosition();
 
       if (isBottomModelPopupOpen()) {
         positionBottomModelPopup(document.getElementById(ID.bottomModelButton));
@@ -7975,7 +8721,10 @@ function markMobileChatListOpenState() {
       positionPanel(anchor);
     });
 
-    window.visualViewport?.addEventListener?.('resize', updateDeviceViewportClasses, { passive: true });
+    window.visualViewport?.addEventListener?.('resize', () => {
+      updateDeviceViewportClasses();
+      scheduleMenuSwipeZonePosition();
+    }, { passive: true });
     window.addEventListener('pointerup', stopPanelRangeDrag);
     window.addEventListener('pointercancel', stopPanelRangeDrag);
     window.addEventListener('mouseup', stopPanelRangeDrag);
@@ -8037,7 +8786,12 @@ function markMobileChatListOpenState() {
         loreEntryButtonPlacement: getLoreEntryButtonPlacementState(),
         emptySendGuard,
         roomMenuHandle,
+        roomMenuAssistMode,
         chatListAutoHide,
+        chatListAssistMode,
+        menuSwipeLeftEnabled: isLeftMenuSwipeEnabled(),
+        menuSwipeRightEnabled: isRightMenuSwipeEnabled(),
+        menuSwipeZone: !!document.getElementById(ID.menuSwipeZone),
         fullscreenButtonEnabled,
         fullscreenActive: !!getFullscreenElement(),
         chatListAutoHideMode: getChatListAutoHideMode(),
@@ -8254,6 +9008,7 @@ function markMobileChatListOpenState() {
     syncOfficialModelVisibility();
     ensureRoomMenuHandle();
     ensureChatListAutoHide();
+    ensureMenuSwipeZone();
 
     applyImageSize();
     applyState();
