@@ -160,7 +160,6 @@
     maxMs: 600,
     cooldownMs: 600,
     topOffset: 36,
-    feedbackMs: 200,
   });
 
   let cachedAndroidFirefoxBrowser = null;
@@ -1911,28 +1910,6 @@
         user-select: none !important;
       }
 
-      #${ID.menuSwipeZone}::after {
-        content: "";
-        position: absolute;
-        inset: 7px 18px;
-        border-radius: 999px;
-        background: rgba(165, 165, 175, .16);
-        opacity: 0;
-        transform: scaleX(.96);
-        transition: opacity 180ms ease, transform 180ms ease;
-        pointer-events: none;
-      }
-
-      #${ID.menuSwipeZone}[data-feedback="1"]::after {
-        opacity: 1;
-        transform: scaleX(1);
-      }
-
-      html[data-theme="light"] #${ID.menuSwipeZone}::after,
-      body[data-theme="light"] #${ID.menuSwipeZone}::after {
-        background: rgba(120, 120, 128, .13);
-      }
-
       .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-webkit-slider-runnable-track {
         background: rgba(120, 120, 128, .24) !important;
       }
@@ -2511,17 +2488,6 @@
         opacity: 1 !important;
         visibility: visible !important;
         pointer-events: auto !important;
-      }
-
-      /* Keep the live control usable without leaving a blurred card silhouette. */
-      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-range-row[data-crack-ui-range-preview-active="1"] {
-        background: transparent !important;
-        border-color: transparent !important;
-        box-shadow: none !important;
-        filter: none !important;
-        backdrop-filter: none !important;
-        -webkit-backdrop-filter: none !important;
-        transition: none !important;
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -5275,15 +5241,6 @@
     });
   }
 
-  function flashMenuSwipeZone() {
-    const zone = document.getElementById(ID.menuSwipeZone);
-    if (!zone) return;
-    zone.dataset.feedback = '1';
-    setTimeout(() => {
-      if (zone.isConnected) zone.dataset.feedback = '0';
-    }, MENU_SWIPE.feedbackMs);
-  }
-
   function pointInMenuSwipeZone(event) {
     if (!isMenuSwipeZoneActive()) return false;
     const zone = document.getElementById(ID.menuSwipeZone);
@@ -5407,7 +5364,6 @@
       suppressClickX = Number(event.clientX || 0);
       suppressClickY = Number(event.clientY || 0);
       event.preventDefault();
-      flashMenuSwipeZone();
     }, { capture: true, passive: false });
   }
 
