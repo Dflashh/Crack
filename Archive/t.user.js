@@ -130,6 +130,7 @@
     roomTopBarHidden: 'crack-ui-room-top-bar-hidden',
     phoneViewport: 'crack-ui-phone-viewport',
     tabletViewport: 'crack-ui-tablet-viewport',
+    androidFirefox: 'crack-ui-android-firefox',
   };
 
   const THEME_MODE_LABEL = {
@@ -2236,6 +2237,12 @@
         background: rgba(15, 23, 42, .10) !important;
       }
 
+      html.${CLS.androidFirefox} #${ID.panelBackdrop} {
+        background: rgba(0, 0, 0, .08) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
       /* =====================================================
          Settings workspace v4 — layout only.
          Header auto-hide/reveal behavior is intentionally untouched.
@@ -2764,6 +2771,11 @@
     return window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)').matches;
   }
 
+  function isAndroidFirefoxBrowser() {
+    const ua = String(navigator.userAgent || '');
+    return /Android/i.test(ua) && /Firefox\//i.test(ua);
+  }
+
   function getCrackUiViewportWidth() {
     const values = [
       window.innerWidth,
@@ -2790,6 +2802,7 @@
   function updateDeviceViewportClasses() {
     document.documentElement.classList.toggle(CLS.phoneViewport, isPhoneLikeViewport());
     document.documentElement.classList.toggle(CLS.tabletViewport, isTabletLikeViewport());
+    document.documentElement.classList.toggle(CLS.androidFirefox, isAndroidFirefoxBrowser());
   }
 
   updateDeviceViewportClasses();
@@ -7564,7 +7577,7 @@
     }
   }
 
-
+  
 function markMobileChatListOpenState() {
     if (!isPhoneLikeViewport()) {
       document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
