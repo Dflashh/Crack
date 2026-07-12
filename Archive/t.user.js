@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.0
+// @version      2.4.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.0';
+  const CRACK_UI_VERSION = '2.4.1';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2021,14 +2021,12 @@
         color: #e43e2d;
       }
 
-      @media (min-width: 768px) {
-        .crack-ui-menu-assist-row {
-          grid-template-columns: minmax(0, 1fr) 35px !important;
-        }
+      html:not(.${CLS.phoneViewport}):not(.${CLS.tabletViewport}) .crack-ui-menu-assist-row {
+        grid-template-columns: minmax(0, 1fr) 35px !important;
+      }
 
-        .crack-ui-menu-mode-button {
-          display: none !important;
-        }
+      html:not(.${CLS.phoneViewport}):not(.${CLS.tabletViewport}) .crack-ui-menu-mode-button {
+        display: none !important;
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -3120,14 +3118,15 @@
   function getChatListAutoHideMode() {
     if (!chatListAutoHide) return 'off';
     if (isPhoneLikeViewport()) return 'phone';
-    if (isTabletLikeViewport()) return 'tablet-blocked';
+    if (isTabletLikeViewport()) return 'tablet-swipe';
     if (isDesktopChatListAutoHideViewport()) return 'desktop';
     return 'unsupported';
   }
 
   function isChatListAutoHideSupportedViewport() {
-    const mode = getChatListAutoHideMode();
-    return mode === 'desktop' || mode === 'phone';
+    return isPhoneLikeViewport() ||
+      isTabletLikeViewport() ||
+      isDesktopChatListAutoHideViewport();
   }
 
   function getResolvedThemeMode(mode = themeMode) {
@@ -4012,8 +4011,8 @@
   function updateChatListAutoHideUi() {
     const input = document.getElementById(ID.toggleChatListAutoHide);
     const row = input?.closest('[data-crack-ui-chat-list-auto-hide-row]');
-    const tabletBlocked = isTabletLikeViewport();
-    const supported = isPhoneLikeViewport() || isDesktopChatListAutoHideViewport();
+    const tablet = isTabletLikeViewport();
+    const supported = isChatListAutoHideSupportedViewport();
 
     if (row) {
       row.dataset.disabled = supported ? '0' : '1';
@@ -4022,18 +4021,22 @@
 
     if (input) {
       input.disabled = !supported;
-      input.title = supported ? '' : 'PC/모바일 전용';
+      input.title = supported
+        ? (tablet ? '태블릿 채팅 목록 슬라이더 켜기/끄기' : '')
+        : 'PC/모바일 전용';
     }
 
     const modeButton = document.getElementById(ID.chatListModeButton);
     if (modeButton) {
       modeButton.disabled = !supported;
-      modeButton.title = supported ? '모바일 동작 방식 선택' : 'PC/모바일 전용';
+      modeButton.title = supported
+        ? (tablet ? '태블릿에서는 슬라이더 전용' : '모바일 동작 방식 선택')
+        : 'PC/모바일 전용';
     }
 
     const label = row?.querySelector('.crack-ui-row-name');
     if (label) {
-      label.textContent = tabletBlocked ? '채팅 목록 자동 숨김 (PC/모바일 전용)' : '채팅 목록 자동 숨김';
+      label.textContent = tablet ? '채팅 목록 슬라이더' : '채팅 목록 자동 숨김';
     }
   }
 
@@ -4620,7 +4623,9 @@
     };
 
     Object.entries(values).forEach(([target, mode]) => {
-      const normalized = normalizeMenuAssistMode(mode);
+      const normalized = target === 'chat-list' && isTabletLikeViewport()
+        ? 'swipe'
+        : normalizeMenuAssistMode(mode);
       const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
       if (button) button.textContent = MENU_ASSIST_MODE_LABEL[normalized];
 
@@ -4669,7 +4674,9 @@
   }
 
   function setMenuAssistMode(target, value) {
-    const mode = normalizeMenuAssistMode(value);
+    const mode = target === 'chat-list' && isTabletLikeViewport()
+      ? 'swipe'
+      : normalizeMenuAssistMode(value);
 
     if (target === 'room') {
       roomMenuAssistMode = mode;
@@ -4691,7 +4698,7 @@
 
   function openMenuAssistModePopover(target, button) {
     try {
-      if (!button || !isPhoneLikeViewport()) {
+      if (!button || (!isPhoneLikeViewport() && !isTabletLikeViewport())) {
         closeMenuAssistModePanels();
         return;
       }
@@ -4708,11 +4715,13 @@
       popover.setAttribute('role', 'menu');
       popover.setAttribute('aria-label', '메뉴 열기 방식 선택');
 
-      const choices = [
-        ['handle', '핸들'],
-        ['swipe', '슬라이더'],
-        ['both', '핸들 + 슬라이더'],
-      ];
+      const choices = target === 'chat-list' && isTabletLikeViewport()
+        ? [['swipe', '슬라이더']]
+        : [
+            ['handle', '핸들'],
+            ['swipe', '슬라이더'],
+            ['both', '핸들 + 슬라이더'],
+          ];
 
       for (const [value, label] of choices) {
         const choice = document.createElement('button');
@@ -5232,21 +5241,19 @@
       writeStorage(LS.fullscreenButton, fullscreenButtonEnabled ? '1' : '0');
       ensureFullscreenButton();
     });
-    bindCheckbox(panel, ID.toggleChatListAutoHide, chatListAutoHide, (checked, input) => {
-      if (isTabletLikeViewport()) {
-        chatListAutoHide = false;
-        writeStorage(LS.chatListAutoHide, '0');
-        if (input) input.checked = false;
-        updateChatListAutoHideUi();
-        ensureChatListAutoHide();
-        applyState();
-        return;
+    bindCheckbox(panel, ID.toggleChatListAutoHide, chatListAutoHide, (checked) => {
+      if (checked && isTabletLikeViewport()) {
+        chatListAssistMode = 'swipe';
+        writeStorage(LS.chatListAssistMode, chatListAssistMode);
       }
+
       chatListAutoHide = checked;
       writeStorage(LS.chatListAutoHide, chatListAutoHide ? '1' : '0');
       ensureChatListAutoHide();
       ensureMenuSwipeZone();
+      syncMenuAssistModeUi(panel);
       applyState();
+
       if (checked && isDesktopChatListAutoHideViewport()) scheduleChatListClose(450);
     });
     bindRangeInput(panel, ID.imageSlider, setImageSize, flushImageSizeSave);
@@ -5395,12 +5402,13 @@
 
 
   function isMobileMenuSwipeViewport() {
-    return isPhoneLikeViewport() && isTouchLikeDevice();
+    return (isPhoneLikeViewport() || isTabletLikeViewport()) && isTouchLikeDevice();
   }
 
   function isLeftMenuSwipeEnabled() {
+    const swipeModeEnabled = isTabletLikeViewport() || menuAssistModeHasSwipe(chatListAssistMode);
     return chatListAutoHide &&
-      menuAssistModeHasSwipe(chatListAssistMode) &&
+      swipeModeEnabled &&
       isMobileMenuSwipeViewport() &&
       crackUiIsChatRoute();
   }
@@ -7854,7 +7862,7 @@
 
   function scoreChatListPanel(el) {
     if (!el || el.tagName !== 'DIV') return -1;
-    if (!isDesktopChatListAutoHideViewport()) return -1;
+    if (!isDesktopChatListAutoHideViewport() && !isTabletLikeViewport()) return -1;
     if (el.closest(`#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.chatListZone}`)) return -1;
     if (el.getAttribute('role') === 'dialog' || el.closest('[data-radix-popper-content-wrapper]')) return -1;
 
@@ -7896,7 +7904,7 @@
   }
 
   function scoreDesktopChatListToggle(button) {
-    if (!button || !isDesktopChatListAutoHideViewport()) return -1;
+    if (!button || (!isDesktopChatListAutoHideViewport() && !isTabletLikeViewport())) return -1;
     if (button.id === ID.chatListHandle || button.id === ID.gearDesktop || button.id === ID.gearMobile || button.id === ID.bottomModelButton) return -1;
     if (button.closest?.(`#${ID.panel}, #${ID.roomMenuZone}, #${ID.bottomModelPopup}, [data-testid="virtuoso-scroller"]`)) return -1;
 
@@ -7932,6 +7940,43 @@
       const score = scoreDesktopChatListToggle(btn);
       if (score > bestScore) {
         best = btn;
+        bestScore = score;
+      }
+    }
+
+    cachedChatListToggle = bestScore >= 24 ? best : null;
+    return cachedChatListToggle;
+  }
+
+  function findTabletChatListPanel() {
+    if (!isTabletLikeViewport()) return null;
+    if (cachedChatListPanel?.isConnected && crackUiIsChatListPanel(cachedChatListPanel)) return cachedChatListPanel;
+    if (!crackUiIsChatListAutoHideRoute()) return null;
+
+    let best = null;
+    let bestScore = -1;
+    for (const el of document.querySelectorAll('main div, #__next div, body div')) {
+      const score = scoreChatListPanel(el);
+      if (score > bestScore) {
+        best = el;
+        bestScore = score;
+      }
+    }
+
+    cachedChatListPanel = bestScore >= 12 ? best : null;
+    return cachedChatListPanel;
+  }
+
+  function findTabletChatListToggle() {
+    if (!isTabletLikeViewport()) return null;
+    if (cachedChatListToggle?.isConnected && scoreDesktopChatListToggle(cachedChatListToggle) >= 24) return cachedChatListToggle;
+
+    let best = null;
+    let bestScore = -1;
+    for (const button of document.querySelectorAll('button')) {
+      const score = scoreDesktopChatListToggle(button);
+      if (score > bestScore) {
+        best = button;
         bestScore = score;
       }
     }
@@ -8337,7 +8382,7 @@
     }
   }
 
-  
+
 function markMobileChatListOpenState() {
     if (!isPhoneLikeViewport()) {
       document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
@@ -8388,8 +8433,44 @@ function markMobileChatListOpenState() {
     return r.left > -70 && r.right > 170;
   }
 
+  function isTabletChatListOpen(panel = findTabletChatListPanel()) {
+    if (!isTabletLikeViewport() || !panel) return false;
+    const rect = crackUiEdgeRect(panel);
+    if (!rect) return false;
+    return rect.width > 80 && rect.left > -70 && rect.right > 170;
+  }
+
+  function clickTabletChatListNativeButton(reason = 'swipe') {
+    if (!isTabletLikeViewport()) return false;
+
+    const panel = findTabletChatListPanel();
+    if (panel && isTabletChatListOpen(panel)) return true;
+
+    const now = Date.now();
+    if (now - lastChatListClickAt < 240) return false;
+    lastChatListClickAt = now;
+
+    resetDomLocatorCache();
+    const toggle = findTabletChatListToggle();
+    if (!toggle) return false;
+
+    try {
+      toggle.click();
+      return true;
+    } catch {
+      try {
+        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   function clickMobileChatListNativeButton(reason = 'handle') {
+    if (isTabletLikeViewport()) return clickTabletChatListNativeButton(reason);
     if (!isPhoneLikeViewport()) return false;
+
     const now = Date.now();
     if (now - lastChatListClickAt < 240) return false;
     lastChatListClickAt = now;
@@ -8499,7 +8580,7 @@ function markMobileChatListOpenState() {
   function ensureChatListAutoHide() {
     let zone = document.getElementById(ID.chatListZone);
     const mode = getChatListAutoHideMode();
-    const supported = mode === 'desktop' || mode === 'phone';
+    const supported = mode === 'desktop' || mode === 'phone' || mode === 'tablet-swipe';
 
     updateChatListAutoHideUi();
 
@@ -8512,6 +8593,15 @@ function markMobileChatListOpenState() {
       cachedChatListToggle = null;
       cachedMobileChatListToggle = null;
       document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
+      return;
+    }
+
+    if (mode === 'tablet-swipe') {
+      clearChatListCloseTimer();
+      releaseMobileChatListPopoverForcedStyles();
+      releaseChatListPanelForcedOpen(cachedChatListPanel?.isConnected ? cachedChatListPanel : null);
+      zone?.remove();
+      document.getElementById(ID.chatListHandle)?.remove();
       return;
     }
 
@@ -8797,8 +8887,9 @@ function markMobileChatListOpenState() {
         chatListAutoHideMode: getChatListAutoHideMode(),
         chatListAutoHideActive: chatListAutoHide && isChatListAutoHideSupportedViewport(),
         chatListAutoHidePhone: chatListAutoHide && isPhoneLikeViewport(),
-        chatListAutoHideTabletBlocked: chatListAutoHide && isTabletLikeViewport(),
+        chatListAutoHideTabletSwipe: chatListAutoHide && isTabletLikeViewport(),
         chatListMobileProxyOnly: chatListAutoHide && isPhoneLikeViewport(),
+        chatListTabletProxyOnly: chatListAutoHide && isTabletLikeViewport(),
         chatListMobilePopoverOpen: !!DOM.mobileChatListPopover(),
         chatListMobileHeaderGapCompensation: document.documentElement.classList.contains(CLS.chatListMobileHeaderGapCompensated),
         panelOpen,
