@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.5
+// @version      2.4.6
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.5';
+  const CRACK_UI_VERSION = '2.4.6';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2511,6 +2511,17 @@
         opacity: 1 !important;
         visibility: visible !important;
         pointer-events: auto !important;
+      }
+
+      /* Keep the live control usable without leaving a blurred card silhouette. */
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-range-row[data-crack-ui-range-preview-active="1"] {
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        transition: none !important;
       }
 
       @media (prefers-reduced-motion: reduce) {
