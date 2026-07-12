@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.2
+// @version      2.4.3
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.2';
+  const CRACK_UI_VERSION = '2.4.3';
 
   function getCrackUiPublicWindow() {
     try {
@@ -8452,31 +8452,74 @@ function markMobileChatListOpenState() {
     return rect.width > 80 && rect.left > -70 && rect.right > 170;
   }
 
-  function clickTabletChatListNativeButton(reason = 'swipe') {
-    if (!isTabletLikeViewport()) return false;
+  function setTabletChatListOpen(wantOpen, reason = 'tablet') {
+    if (!isTabletLikeViewport() || !chatListAutoHide) return false;
 
     const panel = findTabletChatListPanel();
-    if (panel && isTabletChatListOpen(panel)) return true;
+    const currentlyOpen = panel ? isTabletChatListOpen(panel) : false;
+    if (currentlyOpen === wantOpen) return true;
 
     const now = Date.now();
     if (now - lastChatListClickAt < 240) return false;
-    lastChatListClickAt = now;
 
     resetDomLocatorCache();
     const toggle = findTabletChatListToggle();
     if (!toggle) return false;
 
+    lastChatListClickAt = now;
+
     try {
       toggle.click();
       return true;
-    } catch {
+    } catch (error) {
       try {
         toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         return true;
-      } catch {
+      } catch (fallbackError) {
+        reportCrackUiError(`tablet-chat-list-${reason}`, fallbackError || error);
         return false;
       }
     }
+  }
+
+  function clickTabletChatListNativeButton(reason = 'swipe') {
+    return setTabletChatListOpen(true, reason);
+  }
+
+  function isTabletChatListOutsideCloseSafeTarget(target, panel, toggle) {
+    if (!(target instanceof Element)) return true;
+    if (panel?.contains(target)) return true;
+    if (toggle?.contains(target)) return true;
+
+    return !!target.closest?.(`
+      #${ID.panel},
+      #${ID.gearDesktop},
+      #${ID.gearMobile},
+      #${ID.bottomModelPopup},
+      #${ID.roomMenuZone},
+      #${ID.roomMenuHandle},
+      [data-crack-ui-menu-mode-popover],
+      [data-radix-popper-content-wrapper],
+      [role="dialog"]
+    `);
+  }
+
+  function closeTabletChatListFromOutsideClick(target) {
+    if (
+      !chatListAutoHide ||
+      !isTabletLikeViewport() ||
+      getChatListAutoHideMode() !== 'tablet-swipe'
+    ) {
+      return false;
+    }
+
+    const panel = findTabletChatListPanel();
+    if (!panel || !isTabletChatListOpen(panel)) return false;
+
+    const toggle = findTabletChatListToggle();
+    if (isTabletChatListOutsideCloseSafeTarget(target, panel, toggle)) return false;
+
+    return setTabletChatListOpen(false, 'outside-click');
   }
 
   function clickMobileChatListNativeButton(reason = 'handle') {
@@ -8741,7 +8784,10 @@ function markMobileChatListOpenState() {
 
       if (chatListAutoHide) {
         markMobileChatListOpenState();
-        if (isDesktopChatListAutoHideViewport()) {
+
+        if (isTabletLikeViewport()) {
+          closeTabletChatListFromOutsideClick(e.target);
+        } else if (isDesktopChatListAutoHideViewport()) {
           const chatListPanel = DOM.chatListPanel();
           const safeChatList = e.target.closest?.(`#${ID.chatListZone}`) || chatListPanel?.contains(e.target);
           if (!safeChatList) scheduleChatListClose(120);
