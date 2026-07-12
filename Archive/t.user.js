@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.14
+// @version      2.5.2
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.14';
+  const CRACK_UI_VERSION = '2.5.2';
 
   function getCrackUiPublicWindow() {
     try {
@@ -64,6 +64,7 @@
     toggleBottomModelPicker: 'crack-ui-toggle-bottom-model-picker',
     toggleEmptySendGuard: 'crack-ui-toggle-empty-send-guard',
     toggleHideSituationImage: 'crack-ui-toggle-hide-situation-image',
+    toggleNovelModelIndicator: 'crack-ui-toggle-novel-model-indicator',
     imageSlider: 'crack-ui-image-size-slider',
     imageValue: 'crack-ui-image-size-value',
     chatWidthSlider: 'crack-ui-chat-width-slider',
@@ -104,8 +105,12 @@
     bottomModelPicker: 'crack_ui_bottom_model_picker',
     emptySendGuard: 'crack_ui_empty_send_guard',
     hideSituationImage: 'crack_ui_hide_situation_image',
+    novelModelIndicator: 'crack_ui_novel_model_indicator',
+    novelModelMessageCache: 'crack_ui_novel_model_message_cache_v1',
+    novelModelManualMap: 'crack_ui_novel_model_manual_map_v1',
+    novelModelCatalog: 'crack_ui_novel_model_catalog_v1',
     bottomModelVisibleModels: 'crack_ui_bottom_model_visible_models',
-    bottomModelRegistry: 'crack_ui_bottom_model_registry_v1',
+    bottomModelRegistry: 'crack_ui_bottom_model_registry_v2',
     bottomModelVisibleModelsOpen: 'crack_ui_bottom_model_visible_models_open',
     roomMenuHandle: 'crack_ui_room_menu_handle',
     roomMenuAssistMode: 'crack_ui_room_menu_assist_mode',
@@ -333,6 +338,12 @@
     return raw === '1';
   }
 
+  function loadNovelModelIndicator() {
+    const raw = readStorage(LS.novelModelIndicator);
+    if (raw == null) return false;
+    return raw === '1';
+  }
+
   function loadChatWidthPercent() {
     const raw = readStorage(LS.chatWidthPercent);
     if (raw != null) return clampChatWidthPercent(raw);
@@ -363,6 +374,7 @@
   let bottomModelPicker = loadBottomModelPicker();
   let emptySendGuard = loadEmptySendGuard();
   let hideSituationImage = loadHideSituationImage();
+  let novelModelIndicator = loadNovelModelIndicator();
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
   let roomMenuAssistMode = normalizeMenuAssistMode(readStorage(LS.roomMenuAssistMode, 'handle'));
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
@@ -432,6 +444,24 @@
   let lastRoomPanelClickAt = 0;
   let lastRoomPanelToggleAttempt = null;
   let lastRoomPanelBootCloseHref = '';
+  let novelModelIndicatorScanTimer = null;
+  let novelModelIndicatorScanRaf = 0;
+  let novelModelIndicatorLastScanAt = 0;
+  let novelModelIndicatorCleanupPending = true;
+  let pendingNovelModelCapture = null;
+  let pendingNovelModelObserver = null;
+  let pendingNovelModelExpiryTimer = null;
+  let novelModelNetworkCaptureInstalled = false;
+  let novelModelNetworkPayloadCount = 0;
+  let novelModelNetworkLastUrl = '';
+  let novelModelNetworkLastMatchCount = 0;
+  let novelModelNetworkMessageRevision = 0;
+  let novelModelStaticScanRoomKey = '';
+  let novelModelStaticScanCount = 0;
+  const novelModelNetworkCandidates = new Map();
+  const novelModelNetworkMessages = new Map();
+  const novelModelFingerprintIndex = new Map();
+  const novelModelNetworkInfoByName = new Map();
   let lastCrackUiError = null;
 
   if (autoHideHeader) {
@@ -1293,6 +1323,183 @@
           0 0 1px rgba(0, 0, 0, .20);
       }
 
+
+      .crack-ui-novel-model-indicator {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        flex: 0 0 20px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 6px !important;
+        background: transparent !important;
+        color: var(--text_secondary, #9ca3af) !important;
+        overflow: hidden !important;
+        vertical-align: middle !important;
+        font-family: inherit !important;
+        font-size: 13px !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+        cursor: pointer !important;
+        -webkit-tap-highlight-color: transparent !important;
+      }
+
+      .crack-ui-novel-model-indicator:hover {
+        opacity: .78 !important;
+      }
+
+      .crack-ui-novel-model-indicator:focus-visible {
+        outline: 2px solid var(--focus, rgba(254, 69, 50, .72)) !important;
+        outline-offset: 2px !important;
+      }
+
+      .crack-ui-novel-model-indicator > img {
+        display: block !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        object-fit: cover !important;
+        border-radius: 6px !important;
+        pointer-events: none !important;
+      }
+
+      .crack-ui-novel-model-menu-backdrop {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 2147483645 !important;
+        background: transparent !important;
+      }
+
+      .crack-ui-novel-model-menu {
+        position: fixed !important;
+        z-index: 2147483646 !important;
+        width: min(232px, calc(100vw - 16px)) !important;
+        max-height: min(420px, calc(100dvh - 16px)) !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain !important;
+        padding: 6px !important;
+        border: 1px solid rgba(255, 255, 255, .11) !important;
+        border-radius: 16px !important;
+        background-color: rgb(28, 28, 30) !important;
+        background-image: none !important;
+        color: rgba(255, 255, 255, .94) !important;
+        box-shadow:
+          0 18px 46px rgba(0, 0, 0, .30),
+          inset 0 1px 0 rgba(255, 255, 255, .07) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        isolation: isolate !important;
+        filter: none !important;
+        mix-blend-mode: normal !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        font-family: inherit !important;
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(255, 255, 255, .34) transparent !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] {
+        border-color: rgba(17, 24, 39, .10) !important;
+        background-color: rgb(255, 255, 255) !important;
+        color: rgba(17, 24, 39, .94) !important;
+        box-shadow:
+          0 18px 46px rgba(15, 23, 42, .16),
+          inset 0 1px 0 rgba(255, 255, 255, .92) !important;
+        scrollbar-color: rgba(75, 85, 99, .34) transparent !important;
+      }
+
+      .crack-ui-novel-model-menu::-webkit-scrollbar {
+        width: 8px !important;
+      }
+
+      .crack-ui-novel-model-menu::-webkit-scrollbar-track {
+        background: transparent !important;
+      }
+
+      .crack-ui-novel-model-menu::-webkit-scrollbar-thumb {
+        border: 2px solid transparent !important;
+        border-radius: 999px !important;
+        background: rgba(255, 255, 255, .30) !important;
+        background-clip: padding-box !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"]::-webkit-scrollbar-thumb {
+        background: rgba(75, 85, 99, .28) !important;
+        background-clip: padding-box !important;
+      }
+
+      .crack-ui-novel-model-menu-item,
+      .crack-ui-novel-model-menu-clear {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        width: 100% !important;
+        min-height: 36px !important;
+        padding: 8px 9px !important;
+        border: 1px solid transparent !important;
+        border-radius: 10px !important;
+        background: transparent !important;
+        color: inherit !important;
+        font-family: inherit !important;
+        font-size: 13px !important;
+        line-height: 1.2 !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        transform: none !important;
+      }
+
+      .crack-ui-novel-model-menu-item:hover,
+      .crack-ui-novel-model-menu-item:focus-visible,
+      .crack-ui-novel-model-menu-clear:hover,
+      .crack-ui-novel-model-menu-clear:focus-visible {
+        border-color: rgba(255, 255, 255, .08) !important;
+        background: rgba(255, 255, 255, .07) !important;
+        outline: none !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-item:hover,
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-item:focus-visible,
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-clear:hover,
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-clear:focus-visible {
+        border-color: rgba(17, 24, 39, .07) !important;
+        background: rgba(17, 24, 39, .055) !important;
+      }
+
+      .crack-ui-novel-model-menu-item > img {
+        width: 18px !important;
+        height: 18px !important;
+        flex: 0 0 18px !important;
+        object-fit: contain !important;
+        border-radius: 5px !important;
+      }
+
+      .crack-ui-novel-model-menu-label {
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+
+      .crack-ui-novel-model-menu-item[data-retired="1"] .crack-ui-novel-model-menu-label {
+        opacity: .76 !important;
+      }
+
+      .crack-ui-novel-model-menu-clear {
+        margin-top: 4px !important;
+        padding-top: 9px !important;
+        border-top-color: rgba(255, 255, 255, .10) !important;
+        border-radius: 8px !important;
+        color: rgba(255, 255, 255, .62) !important;
+      }
+
+      .crack-ui-novel-model-menu[data-crack-ui-theme="light"] .crack-ui-novel-model-menu-clear {
+        border-top-color: rgba(17, 24, 39, .10) !important;
+        color: rgba(75, 85, 99, .78) !important;
+      }
 
       #${ID.fullscreenButton} {
         display: inline-flex !important;
@@ -2694,6 +2901,14 @@
         gap: 10px;
       }
 
+      /* Keep the final three chat rows in a fixed, user-requested order on all layouts. */
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="1"] { order: 10; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="2"] { order: 11; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="3"] { order: 12; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="4"] { order: 13; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="5"] { order: 14; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="6"] { order: 15; }
+
       /* Chat page uses the wide workspace only on tablet/desktop.
          Phone layout intentionally remains the existing single column. */
       @media (min-width: 768px) {
@@ -3871,9 +4086,10 @@
   function updateImageSizeUi() {
     const slider = document.getElementById(ID.imageSlider);
     const value = document.getElementById(ID.imageValue);
+    const nextText = formatImageSizeDisplay(imageSize);
 
     if (slider) slider.value = String(imageSize);
-    if (value) value.textContent = formatImageSizeDisplay(imageSize);
+    if (value && value.textContent !== nextText) value.textContent = nextText;
   }
 
   function updateChatWidthUi() {
@@ -3893,9 +4109,8 @@
       slider.title = supported ? '' : 'PC/태블릿 전용';
     }
 
-    if (value) {
-      value.textContent = supported ? formatChatWidthDisplay(chatWidthPercent) : 'PC/태블릿 전용';
-    }
+    const nextText = supported ? formatChatWidthDisplay(chatWidthPercent) : 'PC/태블릿 전용';
+    if (value && value.textContent !== nextText) value.textContent = nextText;
   }
 
   function updateChatListAutoHideUi() {
@@ -3925,9 +4140,8 @@
     }
 
     const label = row?.querySelector('.crack-ui-row-name');
-    if (label) {
-      label.textContent = tablet ? '채팅 목록 슬라이더' : '채팅 목록 자동 숨김';
-    }
+    const nextLabel = tablet ? '채팅 목록 슬라이더' : '채팅 목록 자동 숨김';
+    if (label && label.textContent !== nextLabel) label.textContent = nextLabel;
   }
 
 
@@ -4112,7 +4326,7 @@
       }
       cluster.remove();
     });
-    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panelRoot}, #${ID.panelBackdrop}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}`)
+    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panelRoot}, #${ID.panelBackdrop}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}, .crack-ui-novel-model-indicator, .crack-ui-novel-model-menu, .crack-ui-novel-model-menu-backdrop`)
       .forEach((el) => el.remove());
     document.documentElement.classList.remove(
       'crack-wrtn-ui-autohide',
@@ -4517,7 +4731,8 @@
         ? 'swipe'
         : normalizeMenuAssistMode(mode);
       const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
-      if (button) button.textContent = MENU_ASSIST_MODE_LABEL[normalized];
+      const nextLabel = MENU_ASSIST_MODE_LABEL[normalized];
+      if (button && button.textContent !== nextLabel) button.textContent = nextLabel;
 
       const popover = document.querySelector(`[data-crack-ui-menu-mode-popover="${target}"]`);
       popover?.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
@@ -4908,33 +5123,7 @@
               </div>
             </div>
 
-            <label class="crack-ui-row crack-ui-empty-send-guard-row crack-ui-chat-layout-half">
-              <span class="crack-ui-row-text">
-                <span class="crack-ui-row-name">스토리 자동 재생 끄기</span>
-                <span class="crack-ui-row-desc">입력창이 비어 있으면 전송을 막음</span>
-              </span>
-
-              <span>
-                <input id="${ID.toggleEmptySendGuard}" class="crack-ui-toggle" type="checkbox">
-                <span class="crack-ui-switch" aria-hidden="true"></span>
-              </span>
-            </label>
-
-            <label class="crack-ui-row crack-ui-chat-layout-half">
-              <span class="crack-ui-row-text">
-                <span class="crack-ui-row-name">상황 이미지 끄기</span>
-                <span class="crack-ui-row-desc">
-                  세이프티 작품 전용
-                </span>
-              </span>
-
-              <span>
-                <input id="${ID.toggleHideSituationImage}" class="crack-ui-toggle" type="checkbox">
-                <span class="crack-ui-switch" aria-hidden="true"></span>
-              </span>
-            </label>
-
-            <div class="crack-ui-row crack-ui-menu-assist-row crack-ui-chat-layout-half" data-crack-ui-menu-assist-row="room">
+            <div class="crack-ui-row crack-ui-menu-assist-row crack-ui-chat-layout-half" data-crack-ui-menu-assist-row="room" data-crack-ui-chat-order="1">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅방 설정 자동 숨김</span>
               </span>
@@ -4950,7 +5139,7 @@
 
             </div>
 
-            <label class="crack-ui-row crack-ui-chat-layout-half">
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="2">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">스탯창 숨김</span>
               </span>
@@ -4961,7 +5150,44 @@
               </span>
             </label>
 
-            <label class="crack-ui-row crack-ui-chat-layout-full">
+            <label class="crack-ui-row crack-ui-empty-send-guard-row crack-ui-chat-layout-half" data-crack-ui-chat-order="3">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">스토리 자동 재생 끄기</span>
+                <span class="crack-ui-row-desc">입력창이 비어 있으면 전송을 막음</span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleEmptySendGuard}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="4">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">상황 이미지 끄기</span>
+                <span class="crack-ui-row-desc">
+                  세이프티 작품 전용
+                </span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleHideSituationImage}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="5">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">소설형 UI 모델 표기</span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleNovelModelIndicator}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="6">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">줄바꿈 최적화</span>
                 <span class="crack-ui-row-desc">
@@ -4974,6 +5200,8 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </span>
             </label>
+
+
 
 
           </div>
@@ -5097,6 +5325,18 @@
       applyEmptySendGuardState();
     });
 
+    bindCheckbox(panel, ID.toggleNovelModelIndicator, novelModelIndicator, (checked) => {
+      novelModelIndicator = checked;
+      writeStorage(LS.novelModelIndicator, novelModelIndicator ? '1' : '0');
+      if (novelModelIndicator) {
+        novelModelIndicatorCleanupPending = true;
+        installNovelModelNetworkCapture();
+        scheduleNovelModelIndicatorScan({ immediate: true });
+      } else {
+        disableNovelModelIndicatorUi();
+      }
+    });
+
     bindCheckbox(panel, ID.toggleHideSituationImage, hideSituationImage, (checked) => {
       hideSituationImage = checked;
       writeStorage(LS.hideSituationImage, hideSituationImage ? '1' : '0');
@@ -5162,6 +5402,7 @@
     syncCheckbox(ID.toggleBottomModelPicker, bottomModelPicker);
     syncCheckbox(ID.toggleEmptySendGuard, emptySendGuard);
     syncCheckbox(ID.toggleHideSituationImage, hideSituationImage);
+    syncCheckbox(ID.toggleNovelModelIndicator, novelModelIndicator);
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
     syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
@@ -5822,6 +6063,57 @@
   // Feature: bottom model picker
   // =====================================================
 
+  const NOVEL_MODEL_LEGACY_INFO = Object.freeze({
+    '슈퍼챗 1.5': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat1_5.webp',
+      retired: true,
+    },
+    '프로챗 2.0': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat2_0.webp',
+      retired: true,
+    },
+    '일반챗': {
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/normalchat.webp',
+      retired: true,
+    },
+  });
+
+  const DEFAULT_CHAT_MODEL_ID_NAME = Object.freeze({
+    '6a2bde2b2d1852a9f41bc3df': '페이블챗 1.0',
+    '6a4ddff0c7931348699337b4': '페이블챗 1.0',
+    '6a2bda2f992c05d50c2ba7d3': '하이퍼챗 2.0',
+    '6a2bdd4cce9304265a32c6b8': '하이퍼챗 2.0',
+    '69e0f46a9530f9bfbde683a9': '하이퍼챗 1.5',
+    '69485e1b9d2a7cdc6ebf95bf': '하이퍼챗 1.0',
+    '6a441a058aa1c16926050ab4': '슈퍼챗 3.0',
+    '6994ad1b2510c2af8007cca5': '슈퍼챗 2.5',
+    '69485e1b9d2a7cdc6ebf95c0': '슈퍼챗 2.0',
+    '69485e1b9d2a7cdc6ebf95c1': '슈퍼챗 1.5',
+    '699877c92d18b3f5dec84f49': '프로챗 2.5',
+    '69485e1b9d2a7cdc6ebf95c2': '프로챗 2.0',
+    '69485e1c9d2a7cdc6ebf95c3': '프로챗 1.0',
+    '69485e1c9d2a7cdc6ebf95c4': '파워챗',
+    '69485e1c9d2a7cdc6ebf95c5': '일반챗',
+  });
+
+  const DEFAULT_CRACKER_MODEL_NAME = Object.freeze({
+    fablechat_1_0: '페이블챗 1.0',
+    hyperchat_2_0: '하이퍼챗 2.0',
+    hyperchat_1_5: '하이퍼챗 1.5',
+    hyperchat: '하이퍼챗 1.0',
+    superchat_3_0: '슈퍼챗 3.0',
+    superchat_2_5: '슈퍼챗 2.5',
+    superchat_2_0: '슈퍼챗 2.0',
+    superchat_1_5: '슈퍼챗 1.5',
+    prochat_2_5: '프로챗 2.5',
+    prochat_2_0: '프로챗 2.0',
+    prochat_1_0: '프로챗 1.0',
+    powerchat: '파워챗',
+    normalchat: '일반챗',
+  });
+
+  let CHAT_MODEL_ID_NAME = { ...DEFAULT_CHAT_MODEL_ID_NAME };
+
   const DEFAULT_CHAT_MODEL_INFO = {
     '페이블챗 1.0': {
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/fablechat1_0.webp',
@@ -5854,6 +6146,21 @@
       image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/powerchat.webp',
     },
   };
+
+  // Crack 모델 목록 API가 제공하는 현재 선택 가능 모델 순서의 기본값.
+  // 실제 원본 모델 메뉴 또는 모델 목록 API가 잡히면 해당 순서로 즉시 갱신한다.
+  const DEFAULT_CHAT_MODEL_ORDER = Object.freeze([
+    '페이블챗 1.0',
+    '하이퍼챗 2.0',
+    '하이퍼챗 1.5',
+    '하이퍼챗 1.0',
+    '슈퍼챗 3.0',
+    '슈퍼챗 2.5',
+    '슈퍼챗 2.0',
+    '프로챗 2.5',
+    '프로챗 1.0',
+    '파워챗',
+  ]);
 
   function cloneDefaultChatModelInfo() {
     return Object.fromEntries(
@@ -5891,6 +6198,20 @@
     return map;
   }
 
+  let chatModelRegistryCleanupNeeded = false;
+
+  function isNovelOnlyRetiredModelRegistryEntry(name) {
+    const normalized = normalizeText(name);
+    if (!normalized) return false;
+
+    // 소설형 메시지 수동 선택 메뉴를 원본 모델 메뉴로 오인했던 구버전에서
+    // `표시할 모델` 저장소로 들어간 종료 모델/표시 문구를 제거한다.
+    if (/\s*·\s*서비스\s*종료\s*$/.test(normalized)) return true;
+    return Object.prototype.hasOwnProperty.call(NOVEL_MODEL_LEGACY_INFO, normalized);
+  }
+
+  let chatModelRegistryLoadedFromStorage = false;
+
   function loadChatModelRegistry() {
     const raw = readStorage(LS.bottomModelRegistry);
     if (!raw) return cloneDefaultChatModelInfo();
@@ -5904,17 +6225,30 @@
         const name = normalizeText(entry?.name);
         const image = String(entry?.image || '').trim();
         if (!name || !image.includes('model-icon')) continue;
+        if (isNovelOnlyRetiredModelRegistryEntry(name)) {
+          chatModelRegistryCleanupNeeded = true;
+          continue;
+        }
         if (!Object.prototype.hasOwnProperty.call(next, name)) next[name] = { image };
       }
 
-      return Object.keys(next).length ? next : cloneDefaultChatModelInfo();
+      if (Object.keys(next).length) {
+        chatModelRegistryLoadedFromStorage = true;
+        return next;
+      }
+      return cloneDefaultChatModelInfo();
     } catch {
       return cloneDefaultChatModelInfo();
     }
   }
 
   let CHAT_MODEL_INFO = loadChatModelRegistry();
-  let CHAT_MODEL_ORDER = Object.keys(CHAT_MODEL_INFO);
+  let CHAT_MODEL_ORDER = chatModelRegistryLoadedFromStorage
+    ? Object.keys(CHAT_MODEL_INFO)
+    : [
+      ...DEFAULT_CHAT_MODEL_ORDER.filter((name) => Object.prototype.hasOwnProperty.call(CHAT_MODEL_INFO, name)),
+      ...Object.keys(CHAT_MODEL_INFO).filter((name) => !DEFAULT_CHAT_MODEL_ORDER.includes(name)),
+    ];
   let CHAT_MODEL_ICON_MAP = buildChatModelIconMap(CHAT_MODEL_INFO);
 
   function saveChatModelRegistry() {
@@ -5926,6 +6260,8 @@
       }))
     );
   }
+
+  if (chatModelRegistryCleanupNeeded) saveChatModelRegistry();
 
   function escapeModelHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -5957,6 +6293,7 @@
   }
 
   let visibleChatModelNames = loadVisibleChatModelNames();
+  if (chatModelRegistryCleanupNeeded) saveVisibleChatModelNames();
 
   function loadVisibleModelListOpen() {
     return readStorage(LS.bottomModelVisibleModelsOpen) === '1';
@@ -6215,6 +6552,12 @@
     const popup = document.getElementById(ID.bottomModelPopup);
     return [...document.querySelectorAll('[role="menu"]')].find((menu) => {
       if (popup?.contains(menu) || menu.closest?.(`#${ID.panel}`)) return false;
+      if (
+        menu.classList?.contains('crack-ui-novel-model-menu') ||
+        menu.dataset?.crackUiMenuOwner === 'novel-model-indicator'
+      ) {
+        return false;
+      }
       const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
         .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
       return modelItems.length >= 2;
@@ -6223,6 +6566,12 @@
 
   function scanOfficialModelMenuEntries(menu = DOM.modelMenu()) {
     if (!menu) return [];
+    if (
+      menu.classList?.contains('crack-ui-novel-model-menu') ||
+      menu.dataset?.crackUiMenuOwner === 'novel-model-indicator'
+    ) {
+      return [];
+    }
 
     const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
       .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
@@ -6269,6 +6618,75 @@
     if (!nextVisible.length) nextVisible = [...nextOrder];
     visibleChatModelNames = nextVisible;
     saveVisibleChatModelNames();
+  }
+
+
+  function getActiveChatModelEntriesFromApiList(models) {
+    if (!Array.isArray(models)) return [];
+
+    const entries = [];
+    const seenNames = new Set();
+    let storyModelLikeCount = 0;
+
+    for (const item of models) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      if (item.serviceType && item.serviceType !== 'story') continue;
+
+      const image = normalizeNovelModelIconUrl(
+        item.assets?.icon?.default || item.icon?.default || item.modelIcon || item.iconUrl
+      );
+      const name = normalizeText(item.name || item.displayName || item.modelName);
+      const id = String(item._id || item.id || '').trim();
+      if (!name || !image || !/^[a-f0-9]{24}$/i.test(id)) continue;
+
+      storyModelLikeCount += 1;
+      if (item.deletedAt || item.isBlock === true || seenNames.has(name)) continue;
+      seenNames.add(name);
+      entries.push({ name, image });
+    }
+
+    // 메시지 배열을 모델 목록으로 오인하지 않고, 충분히 완성된 모델 목록 응답만 사용한다.
+    if (storyModelLikeCount < 4 || entries.length < 2) return [];
+    return entries;
+  }
+
+  function syncChatModelRegistryFromApiModelList(models) {
+    const entries = getActiveChatModelEntriesFromApiList(models);
+    if (!entries.length) return false;
+
+    const previousOrder = [...CHAT_MODEL_ORDER];
+    const previousInfo = CHAT_MODEL_INFO;
+    const previousNames = new Set(previousOrder);
+    const nextOrder = entries.map((entry) => entry.name);
+    const nextNames = new Set(nextOrder);
+    const nextInfo = Object.fromEntries(entries.map((entry) => [entry.name, { image: entry.image }]));
+    const signature = entries.map((entry) => `${entry.name}|${entry.image}`).join('\n');
+    const registryChanged =
+      previousOrder.length !== nextOrder.length ||
+      previousOrder.some((name, index) => name !== nextOrder[index]) ||
+      nextOrder.some((name) => String(previousInfo[name]?.image || '') !== String(nextInfo[name]?.image || ''));
+
+    lastOfficialModelRegistrySignature = signature;
+    lastOfficialModelRegistryAdded = nextOrder.filter((name) => !previousNames.has(name));
+    lastOfficialModelRegistryRemoved = previousOrder.filter((name) => !nextNames.has(name));
+    lastOfficialModelRegistryCount = nextOrder.length;
+    clearPendingOfficialModelRegistryRemoval();
+
+    if (!registryChanged) return false;
+
+    CHAT_MODEL_INFO = nextInfo;
+    CHAT_MODEL_ORDER = nextOrder;
+    CHAT_MODEL_ICON_MAP = buildChatModelIconMap(CHAT_MODEL_INFO);
+    saveChatModelRegistry();
+    syncVisibleChatModelsToRegistry(previousOrder, nextOrder);
+    refreshVisibleModelChoicesPanel();
+    syncOfficialModelVisibilityStyle(getHiddenChatModelNames());
+
+    if (isBottomModelPopupOpen()) {
+      renderBottomModelPopup(document.getElementById(ID.bottomModelButton), getStaticModelList());
+    }
+
+    return true;
   }
 
   function clearPendingOfficialModelRegistryRemoval() {
@@ -7057,6 +7475,1835 @@
     }
   }
 
+
+  // =====================================================
+  // Feature: novel UI model indicator
+  // =====================================================
+
+  const NOVEL_MODEL_CACHE_LIMIT = 1200;
+  const NOVEL_MODEL_SCAN_THROTTLE_MS = 700;
+  const NOVEL_MODEL_PENDING_MAX_AGE_MS = 120000;
+  const NOVEL_MODEL_NETWORK_CANDIDATE_LIMIT = 2000;
+  const NOVEL_MODEL_NETWORK_MESSAGE_LIMIT = 2000;
+  const NOVEL_MODEL_NETWORK_MAX_BODY_CHARS = 8000000;
+  const NOVEL_MODEL_AUTO_MATCH_MIN_SCORE = 250;
+  const NOVEL_MODEL_AUTO_MATCH_AMBIGUITY_RATIO = 1.2;
+
+  function isNovelModelIndicatorRoute() {
+    return /^\/stories\/[^/]+/.test(location.pathname);
+  }
+
+  function getNovelModelRoomKey() {
+    const path = String(location.pathname || '').replace(/\/+$/, '');
+    const episodeMatch = path.match(/^\/stories\/([^/]+)\/episodes\/([^/]+)/);
+    if (episodeMatch) return `stories:${episodeMatch[1]}:episodes:${episodeMatch[2]}`;
+
+    const storyMatch = path.match(/^\/stories\/([^/]+)/);
+    if (storyMatch) return `stories:${storyMatch[1]}`;
+
+    return path || 'unknown';
+  }
+
+
+  const NOVEL_MODEL_CATALOG_LIMIT = 160;
+  const NOVEL_MODEL_BUILTIN_CATALOG = Object.freeze([
+    {
+      id: '6a2bde2b2d1852a9f41bc3df',
+      name: '페이블챗 1.0',
+      crackerModel: 'fablechat_1_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/fablechat1_0.webp',
+      retired: true,
+      deletedAt: '2026-06-13T02:02:50.208Z',
+      replacementChatModelId: '6a2bdd4cce9304265a32c6b8',
+    },
+    {
+      id: '6a4ddff0c7931348699337b4',
+      name: '페이블챗 1.0',
+      crackerModel: 'fablechat_1_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/fablechat1_0.webp',
+      retired: false,
+    },
+    {
+      id: '6a2bda2f992c05d50c2ba7d3',
+      name: '하이퍼챗 2.0',
+      crackerModel: 'hyperchat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat2_0.webp',
+      retired: true,
+      deletedAt: '2026-06-12T10:06:59.107Z',
+      replacementChatModelId: '69e0f46a9530f9bfbde683a9',
+    },
+    {
+      id: '6a2bdd4cce9304265a32c6b8',
+      name: '하이퍼챗 2.0',
+      crackerModel: 'hyperchat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat2_0.webp',
+      retired: false,
+    },
+    {
+      id: '69e0f46a9530f9bfbde683a9',
+      name: '하이퍼챗 1.5',
+      crackerModel: 'hyperchat_1_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat1_5.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95bf',
+      name: '하이퍼챗 1.0',
+      crackerModel: 'hyperchat',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/hyperchat.webp',
+      retired: false,
+    },
+    {
+      id: '6a441a058aa1c16926050ab4',
+      name: '슈퍼챗 3.0',
+      crackerModel: 'superchat_3_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat3_0.webp',
+      retired: false,
+    },
+    {
+      id: '6994ad1b2510c2af8007cca5',
+      name: '슈퍼챗 2.5',
+      crackerModel: 'superchat_2_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat2_5.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95c0',
+      name: '슈퍼챗 2.0',
+      crackerModel: 'superchat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat2_0.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95c1',
+      name: '슈퍼챗 1.5',
+      crackerModel: 'superchat_1_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/superchat1_5.webp',
+      retired: true,
+      deletedAt: '2026-06-15T15:00:02.378Z',
+      replacementChatModelId: '6994ad1b2510c2af8007cca5',
+    },
+    {
+      id: '699877c92d18b3f5dec84f49',
+      name: '프로챗 2.5',
+      crackerModel: 'prochat_2_5',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat2_5.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1b9d2a7cdc6ebf95c2',
+      name: '프로챗 2.0',
+      crackerModel: 'prochat_2_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat2_0.webp',
+      retired: true,
+      deletedAt: '2026-03-25T15:00:06.145Z',
+      replacementChatModelId: '699877c92d18b3f5dec84f49',
+    },
+    {
+      id: '69485e1c9d2a7cdc6ebf95c3',
+      name: '프로챗 1.0',
+      crackerModel: 'prochat_1_0',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/prochat1_0.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1c9d2a7cdc6ebf95c4',
+      name: '파워챗',
+      crackerModel: 'powerchat',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/powerchat.webp',
+      retired: false,
+    },
+    {
+      id: '69485e1c9d2a7cdc6ebf95c5',
+      name: '일반챗',
+      crackerModel: 'normalchat',
+      image: 'https://cdn-image.wrtn.ai/crack/graphics/model-icon/normalchat.webp',
+      retired: true,
+      deletedAt: '2026-04-16T15:00:04.531Z',
+      replacementChatModelId: '69485e1c9d2a7cdc6ebf95c4',
+    },
+  ]);
+
+  const NOVEL_MODEL_BUILTIN_NAME_ORDER = Object.freeze(
+    [...new Set(NOVEL_MODEL_BUILTIN_CATALOG.map((entry) => entry.name))]
+  );
+  let novelModelCatalogNameOrder = [...NOVEL_MODEL_BUILTIN_NAME_ORDER];
+
+  function rememberNovelModelCatalogOrderFromList(models) {
+    if (!Array.isArray(models)) return false;
+
+    const orderedNames = [];
+    const seen = new Set();
+    for (const item of models) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      if (item.serviceType && item.serviceType !== 'story') continue;
+      const name = normalizeText(item.name || item.displayName || item.modelName);
+      const image = normalizeNovelModelIconUrl(
+        item.assets?.icon?.default || item.icon?.default || item.modelIcon || item.iconUrl
+      );
+      if (!name || !image || seen.has(name)) continue;
+      seen.add(name);
+      orderedNames.push(name);
+    }
+    if (orderedNames.length < 2) return false;
+
+    const next = [
+      ...orderedNames,
+      ...novelModelCatalogNameOrder.filter((name) => !seen.has(name)),
+    ];
+    const changed =
+      next.length !== novelModelCatalogNameOrder.length ||
+      next.some((name, index) => name !== novelModelCatalogNameOrder[index]);
+    if (changed) novelModelCatalogNameOrder = next;
+    return changed;
+  }
+
+  const novelModelCatalogById = new Map();
+  const novelModelCatalogByName = new Map();
+  const novelModelCatalogByCracker = new Map();
+  let novelModelCatalogSaveTimer = null;
+  let novelModelCatalogDirty = false;
+
+  function normalizeNovelModelCatalogEntry(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const id = String(entry.id || entry._id || '').trim();
+    const name = normalizeText(entry.name || entry.displayName || entry.modelName).slice(0, 60);
+    const crackerModel = String(entry.crackerModel || entry.cracker_model || '').trim().toLowerCase();
+    const image = normalizeNovelModelIconUrl(
+      entry.image || entry.assets?.icon?.default || entry.icon?.default || entry.modelIcon || entry.iconUrl
+    );
+    const deletedAt = String(entry.deletedAt || '').trim();
+    const replacementChatModelId = String(entry.replacementChatModelId || '').trim();
+    if (!id || !name || !image || !/^[a-f0-9]{24}$/i.test(id)) return null;
+
+    return {
+      id,
+      name,
+      crackerModel,
+      image,
+      retired: entry.retired === true || !!deletedAt,
+      deletedAt,
+      replacementChatModelId,
+      updatedAt: Number(entry.updatedAt) || Date.now(),
+    };
+  }
+
+  function choosePreferredNovelModelCatalogEntry(current, next) {
+    if (!current) return next;
+    if (current.id === next.id) return next;
+    if (current.retired !== next.retired) return current.retired ? next : current;
+    return next.updatedAt >= current.updatedAt ? next : current;
+  }
+
+  function scheduleNovelModelCatalogSave() {
+    novelModelCatalogDirty = true;
+    if (novelModelCatalogSaveTimer) return;
+    novelModelCatalogSaveTimer = setTimeout(() => {
+      novelModelCatalogSaveTimer = null;
+      saveNovelModelCatalog();
+    }, 250);
+  }
+
+  function saveNovelModelCatalog() {
+    if (!novelModelCatalogDirty) return;
+    novelModelCatalogDirty = false;
+    const entries = [...novelModelCatalogById.values()]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, NOVEL_MODEL_CATALOG_LIMIT);
+    writeJsonStorage(LS.novelModelCatalog, {
+      version: 1,
+      entries,
+    });
+  }
+
+  function flushNovelModelCatalogSave() {
+    if (novelModelCatalogSaveTimer) {
+      clearTimeout(novelModelCatalogSaveTimer);
+      novelModelCatalogSaveTimer = null;
+    }
+    saveNovelModelCatalog();
+  }
+
+  function registerNovelModelCatalogEntry(entry, { persist = false } = {}) {
+    const incoming = normalizeNovelModelCatalogEntry(entry);
+    if (!incoming) return false;
+
+    const previousById = novelModelCatalogById.get(incoming.id);
+    const normalized = previousById ? {
+      ...previousById,
+      ...incoming,
+      retired: previousById.retired === true || incoming.retired === true,
+      deletedAt: incoming.deletedAt || previousById.deletedAt || '',
+      replacementChatModelId: incoming.replacementChatModelId || previousById.replacementChatModelId || '',
+      updatedAt: Math.max(previousById.updatedAt || 0, incoming.updatedAt || 0),
+    } : incoming;
+    const changed = !previousById || (
+      previousById.name !== normalized.name ||
+      previousById.crackerModel !== normalized.crackerModel ||
+      previousById.image !== normalized.image ||
+      previousById.retired !== normalized.retired ||
+      previousById.deletedAt !== normalized.deletedAt ||
+      previousById.replacementChatModelId !== normalized.replacementChatModelId
+    );
+
+    if (!novelModelCatalogNameOrder.includes(normalized.name)) {
+      novelModelCatalogNameOrder.push(normalized.name);
+    }
+
+    novelModelCatalogById.set(normalized.id, normalized);
+    novelModelCatalogByName.set(
+      normalized.name,
+      choosePreferredNovelModelCatalogEntry(novelModelCatalogByName.get(normalized.name), normalized)
+    );
+    if (normalized.crackerModel) {
+      novelModelCatalogByCracker.set(
+        normalized.crackerModel,
+        choosePreferredNovelModelCatalogEntry(novelModelCatalogByCracker.get(normalized.crackerModel), normalized)
+      );
+    }
+
+    CHAT_MODEL_ID_NAME[normalized.id] = normalized.name;
+    novelModelNetworkInfoByName.set(normalized.name, {
+      image: normalized.image,
+      retired: normalized.retired,
+      deletedAt: normalized.deletedAt,
+    });
+
+    if (changed && persist) scheduleNovelModelCatalogSave();
+    return changed;
+  }
+
+  function loadNovelModelCatalog() {
+    for (const entry of NOVEL_MODEL_BUILTIN_CATALOG) {
+      registerNovelModelCatalogEntry(entry);
+    }
+
+    const raw = readStorage(LS.novelModelCatalog);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      const entries = Array.isArray(parsed) ? parsed : parsed?.entries;
+      if (!Array.isArray(entries)) return;
+      for (const entry of entries.slice(0, NOVEL_MODEL_CATALOG_LIMIT)) {
+        registerNovelModelCatalogEntry(entry);
+      }
+    } catch {
+    }
+  }
+
+  function toNovelModelInfo(entry) {
+    if (!entry) return null;
+    const image = normalizeNovelModelIconUrl(entry.image);
+    const name = normalizeText(entry.name);
+    if (!name || !image) return null;
+    return {
+      name,
+      image,
+      chatModelId: String(entry.id || entry.chatModelId || ''),
+      crackerModel: String(entry.crackerModel || ''),
+      retired: entry.retired === true,
+      deletedAt: String(entry.deletedAt || ''),
+      replacementChatModelId: String(entry.replacementChatModelId || ''),
+    };
+  }
+
+  loadNovelModelCatalog();
+
+  function getNovelModelInfoByName(name) {
+    const normalized = normalizeText(name);
+    if (!normalized) return null;
+
+    const catalogInfo = novelModelCatalogByName.get(normalized);
+    const info = CHAT_MODEL_INFO[normalized] || catalogInfo || novelModelNetworkInfoByName.get(normalized) || DEFAULT_CHAT_MODEL_INFO[normalized] || NOVEL_MODEL_LEGACY_INFO[normalized];
+    const image = normalizeNovelModelIconUrl(info?.image);
+    if (!image) return null;
+    return {
+      name: normalized,
+      image,
+      chatModelId: String(catalogInfo?.id || ''),
+      crackerModel: String(catalogInfo?.crackerModel || ''),
+      retired: catalogInfo?.retired === true || info?.retired === true,
+      deletedAt: String(catalogInfo?.deletedAt || info?.deletedAt || ''),
+      replacementChatModelId: String(catalogInfo?.replacementChatModelId || ''),
+    };
+  }
+
+  function getNovelModelInfoByChatModelId(value) {
+    const id = String(value || '').trim();
+    if (!id) return null;
+    return toNovelModelInfo(novelModelCatalogById.get(id)) || getNovelModelInfoByName(CHAT_MODEL_ID_NAME[id]);
+  }
+
+  function getNovelModelInfoByCrackerModel(value) {
+    const code = String(value || '').trim().toLowerCase();
+    if (!code) return null;
+    return toNovelModelInfo(novelModelCatalogByCracker.get(code)) || getNovelModelInfoByName(DEFAULT_CRACKER_MODEL_NAME[code]);
+  }
+
+  function getNovelModelInfoByLooseToken(value) {
+    const token = String(value || '').trim().toLowerCase().replace(/[\s.-]+/g, '_');
+    if (!token) return null;
+    const compact = token.replace(/_/g, '');
+    const aliases = {
+      fablechat10: '페이블챗 1.0',
+      fable5: '페이블챗 1.0',
+      hyperchat20: '하이퍼챗 2.0',
+      opus48: '하이퍼챗 2.0',
+      hyperchat15: '하이퍼챗 1.5',
+      opus47: '하이퍼챗 1.5',
+      hyperchat: '하이퍼챗 1.0',
+      opus46: '하이퍼챗 1.0',
+      superchat30: '슈퍼챗 3.0',
+      sonnet50: '슈퍼챗 3.0',
+      superchat25: '슈퍼챗 2.5',
+      sonnet46: '슈퍼챗 2.5',
+      superchat20: '슈퍼챗 2.0',
+      sonnet45: '슈퍼챗 2.0',
+      superchat15: '슈퍼챗 1.5',
+      sonnet40: '슈퍼챗 1.5',
+      prochat25: '프로챗 2.5',
+      gemini31pro: '프로챗 2.5',
+      gemini31: '프로챗 2.5',
+      prochat20: '프로챗 2.0',
+      gemini30pro: '프로챗 2.0',
+      gemini30: '프로챗 2.0',
+      prochat10: '프로챗 1.0',
+      gemini25pro: '프로챗 1.0',
+      gemini25: '프로챗 1.0',
+      powerchat: '파워챗',
+      normalchat: '일반챗',
+    };
+    return getNovelModelInfoByName(aliases[compact]);
+  }
+
+  function getNovelNetworkObjectIcon(value) {
+    if (!value || typeof value !== 'object') return '';
+    const candidates = [
+      value.assets?.icon?.default,
+      value.assets?.icon?.light,
+      value.icon?.default,
+      value.icon?.light,
+      value.modelIcon,
+      value.modelIconUrl,
+      value.iconUrl,
+      typeof value.icon === 'string' ? value.icon : '',
+      typeof value.image === 'string' ? value.image : '',
+    ];
+    return candidates.map(normalizeNovelModelIconUrl).find(Boolean) || '';
+  }
+
+  function getNovelModelInfoFromNetworkObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+    const nestedCandidates = [
+      value.chatModel,
+      value.modelInfo,
+      value.generationModel,
+      value.generationInfo,
+      value.metadata?.chatModel,
+      value.metadata?.modelInfo,
+      value.metadata?.generationModel,
+      typeof value.model === 'object' ? value.model : null,
+    ].filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+
+    const idCandidates = [
+      value.chatModelId,
+      value.chat_model_id,
+      value.chatModelID,
+      value.modelId,
+      value.model_id,
+      ...nestedCandidates.flatMap((item) => [item.chatModelId, item._id, item.id, item.modelId]),
+    ];
+    for (const id of idCandidates) {
+      const info = getNovelModelInfoByChatModelId(id);
+      if (info) return info;
+    }
+
+    for (const item of [value, ...nestedCandidates]) {
+      const image = getNovelNetworkObjectIcon(item);
+      if (!image) continue;
+
+      const iconFile = getModelIconFileFromUrl(image);
+      const name =
+        CHAT_MODEL_ICON_MAP[iconFile] ||
+        normalizeText(item.name || item.displayName || item.modelName) ||
+        DEFAULT_CRACKER_MODEL_NAME[String(item.crackerModel || '').toLowerCase()] ||
+        iconFile.replace(/\.(?:webp|png|svg|avif)$/i, '') ||
+        '모델';
+      const known = getNovelModelInfoByName(name);
+      return known ? { ...known, image } : { name, image };
+    }
+
+    const directNames = [
+      value.modelName,
+      value.displayModelName,
+      value.chatModelName,
+      typeof value.model === 'string' ? value.model : '',
+      ...nestedCandidates.flatMap((item) => [item.name, item.displayName, item.modelName]),
+    ];
+    for (const name of directNames) {
+      const info = getNovelModelInfoByName(name) || getNovelModelInfoByLooseToken(name);
+      if (info) return info;
+    }
+
+    const crackerCandidates = [
+      value.crackerModel,
+      value.cracker_model,
+      ...nestedCandidates.map((item) => item.crackerModel),
+    ];
+    for (const code of crackerCandidates) {
+      const info = getNovelModelInfoByCrackerModel(code);
+      if (info) return info;
+    }
+
+    return null;
+  }
+
+  function getNovelNestedModelInfoForGroupObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+    const directChildren = [
+      value.message,
+      value.assistantMessage,
+      value.botMessage,
+      value.response,
+      value.generation,
+      value.lastMessage,
+    ];
+    for (const child of directChildren) {
+      const info = getNovelModelInfoFromNetworkObject(child);
+      if (info) return info;
+    }
+
+    const arrays = [value.messages, value.messageList, value.items, value.turns];
+    for (const array of arrays) {
+      if (!Array.isArray(array)) continue;
+      for (let index = array.length - 1; index >= 0; index -= 1) {
+        const info = getNovelModelInfoFromNetworkObject(array[index]);
+        if (info) return info;
+      }
+    }
+
+    return null;
+  }
+
+  function harvestNovelModelCatalogEntry(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const id = String(value._id || value.id || '').trim();
+    const name = normalizeText(value.name || value.displayName || value.modelName);
+    const image = getNovelNetworkObjectIcon(value);
+    if (!id || !name || !image || !/^[a-f0-9]{24}$/i.test(id)) return false;
+    if (value.serviceType && value.serviceType !== 'story') return false;
+
+    return registerNovelModelCatalogEntry({
+      id,
+      name,
+      crackerModel: value.crackerModel || value.cracker_model || '',
+      image,
+      retired: !!value.deletedAt,
+      deletedAt: value.deletedAt || '',
+      replacementChatModelId: value.replacementChatModelId || '',
+      updatedAt: Date.now(),
+    }, { persist: true });
+  }
+
+  function normalizeNovelModelMatchText(value) {
+    return String(value || '')
+      .replace(/\[\/\/\]: # \([^)]+\)/g, ' ')
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/```/g, ' ')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/[“”"]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function compactNovelModelMatchText(value) {
+    return normalizeNovelModelMatchText(value)
+      .replace(/[^\p{L}\p{N}]/gu, '')
+      .toLowerCase();
+  }
+
+  function hashNovelModelText(value) {
+    const text = String(value || '');
+    let h1 = 0xdeadbeef;
+    let h2 = 0x41c6ce57;
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      h1 = Math.imul(h1 ^ code, 2654435761);
+      h2 = Math.imul(h2 ^ code, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
+
+  function makeNovelModelFingerprints(value) {
+    const compact = compactNovelModelMatchText(value);
+    if (compact.length < 30) return [];
+
+    const positions = new Set([
+      0,
+      Math.floor(compact.length * 0.25),
+      Math.floor(compact.length * 0.5),
+      Math.floor(compact.length * 0.75),
+      Math.max(0, compact.length - 80),
+    ]);
+    const fingerprints = [];
+    for (const position of positions) {
+      const chunk = compact.slice(position, position + 55);
+      if (chunk.length >= 35) fingerprints.push(chunk);
+    }
+    return [...new Set(fingerprints)];
+  }
+
+  function getNovelNetworkMessageContent(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+
+    const direct = [
+      value.content,
+      value.text,
+      value.messageContent,
+      value.message_content,
+      value.output,
+      value.answer,
+      value.responseText,
+      value.message?.content,
+      value.message?.text,
+      value.assistantMessage?.content,
+      value.assistantMessage?.text,
+      value.botMessage?.content,
+      value.botMessage?.text,
+      value.response?.content,
+      value.response?.text,
+      value.data?.content,
+      value.payload?.content,
+    ];
+    for (const candidate of direct) {
+      if (typeof candidate === 'string' && candidate.trim()) return candidate;
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+        const nestedText = candidate.text || candidate.content || candidate.value || '';
+        if (typeof nestedText === 'string' && nestedText.trim()) return nestedText;
+      }
+      if (Array.isArray(candidate)) {
+        const joined = candidate
+          .map((item) => typeof item === 'string' ? item : item?.text || item?.content || item?.value || '')
+          .filter(Boolean)
+          .join('\n');
+        if (joined.trim()) return joined;
+      }
+    }
+    return '';
+  }
+
+  function getNovelNetworkCandidateIds(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const ids = new Set();
+    const add = (candidate) => {
+      const id = String(candidate || '').trim();
+      if (id && id.length <= 120) ids.add(id);
+    };
+
+    add(value.messageGroupId);
+    add(value.message_group_id);
+    add(value.messageGroupID);
+    add(value.groupId);
+    add(value.group_id);
+    add(value.messageId);
+    add(value.message_id);
+    add(value._id);
+    add(value.id);
+    add(value.messageGroup?._id);
+    add(value.messageGroup?.id);
+    add(value.group?._id);
+    add(value.group?.id);
+
+    return [...ids];
+  }
+
+  function isNovelNetworkAssistantMessage(value, content, modelInfo) {
+    if (!content || !modelInfo) return false;
+    const role = String(value?.role || value?.senderRole || value?.authorRole || value?.type || '').toLowerCase();
+    if (/user|human|customer|member/.test(role)) return false;
+    if (/assistant|bot|ai|model|character/.test(role)) return true;
+    if (value?.story || value?.userNote || value?.title) return false;
+    return content.length >= 30;
+  }
+
+  function hasNovelExplicitMessageIdentity(value) {
+    if (!value || typeof value !== 'object') return false;
+    return !!(
+      value.messageGroupId || value.message_group_id || value.messageGroupID ||
+      value.groupId || value.group_id || value.messageId || value.message_id ||
+      /assistant|bot|ai|model|character/i.test(String(value.role || value.senderRole || value.type || ''))
+    );
+  }
+
+  function deindexNovelModelNetworkRecord(recordKey, record) {
+    for (const fingerprint of record?.fingerprints || []) {
+      const keys = novelModelFingerprintIndex.get(fingerprint);
+      if (!keys) continue;
+      keys.delete(recordKey);
+      if (!keys.size) novelModelFingerprintIndex.delete(fingerprint);
+    }
+  }
+
+  function indexNovelModelNetworkRecord(recordKey, record) {
+    for (const fingerprint of record.fingerprints) {
+      let keys = novelModelFingerprintIndex.get(fingerprint);
+      if (!keys) {
+        keys = new Set();
+        novelModelFingerprintIndex.set(fingerprint, keys);
+      }
+      keys.add(recordKey);
+    }
+  }
+
+  function storeNovelModelNetworkCandidate(roomKey, messageGroupId, modelInfo, sourceUrl = '') {
+    const id = String(messageGroupId || '').trim();
+    const image = normalizeNovelModelIconUrl(modelInfo?.image);
+    const name = normalizeText(modelInfo?.name) || '모델';
+    if (!roomKey || !id || !image) return false;
+
+    const key = makeNovelModelCacheKey(roomKey, id);
+    if (novelModelNetworkCandidates.has(key)) novelModelNetworkCandidates.delete(key);
+    novelModelNetworkCandidates.set(key, {
+      roomKey,
+      messageGroupId: id,
+      name,
+      image,
+      chatModelId: String(modelInfo?.chatModelId || ''),
+      crackerModel: String(modelInfo?.crackerModel || ''),
+      retired: modelInfo?.retired === true,
+      deletedAt: String(modelInfo?.deletedAt || ''),
+      replacementChatModelId: String(modelInfo?.replacementChatModelId || ''),
+      sourceUrl: String(sourceUrl || '').slice(0, 500),
+      updatedAt: Date.now(),
+    });
+
+    while (novelModelNetworkCandidates.size > NOVEL_MODEL_NETWORK_CANDIDATE_LIMIT) {
+      const oldestKey = novelModelNetworkCandidates.keys().next().value;
+      if (!oldestKey) break;
+      novelModelNetworkCandidates.delete(oldestKey);
+    }
+    return true;
+  }
+
+  function storeNovelModelNetworkMessage(roomKey, value, modelInfo, sourceUrl = '') {
+    const content = getNovelNetworkMessageContent(value);
+    if (!isNovelNetworkAssistantMessage(value, content, modelInfo)) return false;
+
+    const compactContent = compactNovelModelMatchText(content);
+    const fingerprints = makeNovelModelFingerprints(content);
+    if (compactContent.length < 30 || !fingerprints.length) return false;
+
+    const ids = getNovelNetworkCandidateIds(value);
+    const primaryId = ids[0] || hashNovelModelText(`${compactContent.length}:${compactContent.slice(0, 120)}:${compactContent.slice(-120)}`);
+    const recordKey = `${roomKey}::network::${primaryId}`;
+    const normalizedModelInfo = {
+      name: normalizeText(modelInfo.name) || '모델',
+      image: normalizeNovelModelIconUrl(modelInfo.image),
+      chatModelId: String(modelInfo.chatModelId || ''),
+      crackerModel: String(modelInfo.crackerModel || ''),
+      retired: modelInfo.retired === true,
+      deletedAt: String(modelInfo.deletedAt || ''),
+      replacementChatModelId: String(modelInfo.replacementChatModelId || ''),
+    };
+    if (!normalizedModelInfo.image) return false;
+
+    for (const id of ids) storeNovelModelNetworkCandidate(roomKey, id, normalizedModelInfo, sourceUrl);
+
+    const previous = novelModelNetworkMessages.get(recordKey);
+    if (
+      previous?.compactContent === compactContent &&
+      previous?.modelInfo?.name === normalizedModelInfo.name &&
+      previous?.modelInfo?.image === normalizedModelInfo.image &&
+      previous?.modelInfo?.retired === normalizedModelInfo.retired
+    ) {
+      previous.updatedAt = Date.now();
+      return false;
+    }
+    if (previous) deindexNovelModelNetworkRecord(recordKey, previous);
+
+    const record = {
+      roomKey,
+      ids,
+      modelInfo: normalizedModelInfo,
+      compactContent,
+      fingerprints,
+      fingerprintSet: new Set(fingerprints),
+      sourceUrl: String(sourceUrl || '').slice(0, 500),
+      updatedAt: Date.now(),
+    };
+
+    if (novelModelNetworkMessages.has(recordKey)) novelModelNetworkMessages.delete(recordKey);
+    novelModelNetworkMessages.set(recordKey, record);
+    indexNovelModelNetworkRecord(recordKey, record);
+
+    while (novelModelNetworkMessages.size > NOVEL_MODEL_NETWORK_MESSAGE_LIMIT) {
+      const oldestKey = novelModelNetworkMessages.keys().next().value;
+      if (!oldestKey) break;
+      const oldest = novelModelNetworkMessages.get(oldestKey);
+      deindexNovelModelNetworkRecord(oldestKey, oldest);
+      novelModelNetworkMessages.delete(oldestKey);
+    }
+
+    novelModelNetworkMessageRevision += 1;
+    return true;
+  }
+
+  function harvestNovelModelNetworkPayload(payload, sourceUrl = '', roomKey = getNovelModelRoomKey()) {
+    if (!payload || !roomKey) return 0;
+
+    const seen = new WeakSet();
+    let visited = 0;
+    let matches = 0;
+    let catalogChanged = false;
+
+    const visit = (value, depth = 0) => {
+      if (visited >= 24000 || depth > 14 || !value || typeof value !== 'object') return;
+      if (seen.has(value)) return;
+      seen.add(value);
+      visited += 1;
+
+      if (Array.isArray(value)) {
+        for (const item of value) visit(item, depth + 1);
+        return;
+      }
+
+      if (Array.isArray(value.models)) {
+        catalogChanged = rememberNovelModelCatalogOrderFromList(value.models) || catalogChanged;
+        catalogChanged = syncChatModelRegistryFromApiModelList(value.models) || catalogChanged;
+      }
+
+      catalogChanged = harvestNovelModelCatalogEntry(value) || catalogChanged;
+      const directModelInfo = getNovelModelInfoFromNetworkObject(value);
+      const nestedModelInfo = directModelInfo || getNovelNestedModelInfoForGroupObject(value);
+      if (nestedModelInfo && storeNovelModelNetworkMessage(roomKey, value, nestedModelInfo, sourceUrl)) {
+        matches += 1;
+      } else if (nestedModelInfo && hasNovelExplicitMessageIdentity(value)) {
+        for (const id of getNovelNetworkCandidateIds(value)) {
+          if (storeNovelModelNetworkCandidate(roomKey, id, nestedModelInfo, sourceUrl)) matches += 1;
+        }
+      }
+
+      for (const child of Object.values(value)) visit(child, depth + 1);
+    };
+
+    visit(payload);
+    novelModelNetworkPayloadCount += 1;
+    novelModelNetworkLastUrl = String(sourceUrl || '').slice(0, 500);
+    novelModelNetworkLastMatchCount = matches;
+
+    if (matches || catalogChanged) scheduleNovelModelIndicatorScan({ immediate: true });
+    return matches;
+  }
+
+  function shouldInspectNovelModelNetworkUrl(value) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return false;
+    try {
+      const url = new URL(String(value || ''), location.href);
+      return url.hostname === 'crack-api.wrtn.ai' || url.hostname.endsWith('.wrtn.ai');
+    } catch {
+      return false;
+    }
+  }
+
+  function handleNovelModelPayloadText(text, sourceUrl = '', roomKey = getNovelModelRoomKey()) {
+    if (!text || text.length > NOVEL_MODEL_NETWORK_MAX_BODY_CHARS) return 0;
+    const trimmed = String(text).trim();
+    if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return 0;
+    if (!/(?:chatModelId|crackerModel|modelIcon|messageGroupId|"role"|"content")/.test(trimmed)) return 0;
+    try {
+      return harvestNovelModelNetworkPayload(JSON.parse(trimmed), sourceUrl, roomKey);
+    } catch {
+      return 0;
+    }
+  }
+
+  function inspectNovelModelFetchResponse(response, requestUrl = '') {
+    if (!response || !shouldInspectNovelModelNetworkUrl(response.url || requestUrl)) return;
+    const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+    if (contentType && !contentType.includes('json') && !contentType.includes('text')) return;
+
+    const roomKey = getNovelModelRoomKey();
+    try {
+      response.clone().text().then((text) => {
+        if (!novelModelIndicator || roomKey !== getNovelModelRoomKey()) return;
+        handleNovelModelPayloadText(text, response.url || requestUrl, roomKey);
+      }).catch(() => {});
+    } catch {
+    }
+  }
+
+  function inspectNovelModelXhrResponse(xhr) {
+    if (!xhr || !shouldInspectNovelModelNetworkUrl(xhr.responseURL)) return;
+    const roomKey = getNovelModelRoomKey();
+    try {
+      if (xhr.responseType === 'json' && xhr.response) {
+        harvestNovelModelNetworkPayload(xhr.response, xhr.responseURL, roomKey);
+        return;
+      }
+      handleNovelModelPayloadText(String(xhr.responseText || ''), xhr.responseURL, roomKey);
+    } catch {
+    }
+  }
+
+  function installNovelModelNetworkCapture() {
+    if (novelModelNetworkCaptureInstalled) return true;
+    const publicWindow = getCrackUiPublicWindow();
+    let installed = false;
+
+    try {
+      const originalFetch = publicWindow.fetch;
+      if (typeof originalFetch === 'function') {
+        if (originalFetch.__crackUiNovelModelWrapped === true) {
+          installed = true;
+        } else {
+          const wrappedFetch = function (...args) {
+            const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+            const result = originalFetch.apply(this, args);
+            if (novelModelIndicator && isNovelModelIndicatorRoute()) {
+              Promise.resolve(result).then((response) => inspectNovelModelFetchResponse(response, requestUrl)).catch(() => {});
+            }
+            return result;
+          };
+          wrappedFetch.__crackUiNovelModelWrapped = true;
+          wrappedFetch.__crackUiNovelModelOriginal = originalFetch;
+          publicWindow.fetch = wrappedFetch;
+          installed = true;
+        }
+      }
+    } catch {
+    }
+
+    try {
+      const proto = publicWindow.XMLHttpRequest?.prototype;
+      const originalSend = proto?.send;
+      if (typeof originalSend === 'function') {
+        if (originalSend.__crackUiNovelModelWrapped === true) {
+          installed = true;
+        } else {
+          const wrappedSend = function (...args) {
+            if (novelModelIndicator && isNovelModelIndicatorRoute() && !this.__crackUiNovelModelObserved) {
+              this.__crackUiNovelModelObserved = true;
+              this.addEventListener('loadend', () => inspectNovelModelXhrResponse(this), { once: true });
+            }
+            return originalSend.apply(this, args);
+          };
+          wrappedSend.__crackUiNovelModelWrapped = true;
+          wrappedSend.__crackUiNovelModelOriginal = originalSend;
+          proto.send = wrappedSend;
+          installed = true;
+        }
+      }
+    } catch {
+    }
+
+    novelModelNetworkCaptureInstalled = installed;
+    return installed;
+  }
+
+  function scanNovelModelStaticData() {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute() || !document.body) return;
+    const roomKey = getNovelModelRoomKey();
+    if (novelModelStaticScanRoomKey !== roomKey) {
+      novelModelStaticScanRoomKey = roomKey;
+      novelModelStaticScanCount = 0;
+    }
+    if (novelModelStaticScanCount >= 3) return;
+    novelModelStaticScanCount += 1;
+
+    try {
+      const nextData = document.querySelector('#__NEXT_DATA__')?.textContent;
+      if (nextData) handleNovelModelPayloadText(nextData, 'dom:__NEXT_DATA__', roomKey);
+    } catch {
+    }
+
+    try {
+      for (const script of document.querySelectorAll('script')) {
+        const text = script.textContent || '';
+        if (!text || text.length > NOVEL_MODEL_NETWORK_MAX_BODY_CHARS) continue;
+        if (!/(?:crackerModel|chatModelId|messageGroupId)/.test(text)) continue;
+        handleNovelModelPayloadText(text, 'dom:script', roomKey);
+      }
+    } catch {
+    }
+
+    try {
+      for (const storage of [localStorage, sessionStorage]) {
+        const count = Math.min(storage.length, 250);
+        for (let index = 0; index < count; index += 1) {
+          const key = storage.key(index);
+          // UI+ caches are loaded by their dedicated loaders. Re-parsing them as
+          // Crack bootstrap data only feeds captured results back into the scanner.
+          if (key?.startsWith('crack_ui_') || key === 'wrtn_img_resizer_config') continue;
+          const value = key ? storage.getItem(key) : '';
+          if (!value || value.length > NOVEL_MODEL_NETWORK_MAX_BODY_CHARS) continue;
+          if (!/(?:crackerModel|chatModelId|messageGroupId)/.test(value)) continue;
+          handleNovelModelPayloadText(value, `storage:${key}`, roomKey);
+        }
+      }
+    } catch {
+    }
+  }
+
+  function normalizeNovelModelIconUrl(value) {
+    let raw = String(value || '').trim();
+    if (!raw) return '';
+
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const decoded = decodeURIComponent(raw);
+        if (decoded === raw) break;
+        raw = decoded;
+      } catch {
+        break;
+      }
+    }
+
+    const nestedUrl = raw.match(/https:\/\/[^\s"'<>]+\/model-icon\/[^\s"'<>?]+(?:\?[^\s"'<>]*)?/i)?.[0] || '';
+    const candidate = nestedUrl || raw;
+
+    try {
+      const url = new URL(candidate, location.href);
+      if (url.protocol !== 'https:') return '';
+      if (/\/model-icon\//i.test(url.pathname)) return url.href;
+    } catch {
+    }
+
+    const iconFile = getModelIconFileFromUrl(raw);
+    const knownName = CHAT_MODEL_ICON_MAP[iconFile];
+    const knownImage = knownName ? String(CHAT_MODEL_INFO[knownName]?.image || '') : '';
+    if (!knownImage || knownImage === value) return '';
+
+    try {
+      const url = new URL(knownImage, location.href);
+      return url.protocol === 'https:' && /\/model-icon\//i.test(url.pathname) ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function normalizeNovelModelCacheEntry(entry) {
+    const roomKey = String(entry?.roomKey || '').slice(0, 180);
+    const messageGroupId = String(entry?.messageGroupId || '').slice(0, 100);
+    const image = normalizeNovelModelIconUrl(entry?.image);
+    const name = normalizeText(entry?.name).slice(0, 60) || '모델';
+    const updatedAt = Number(entry?.updatedAt) || 0;
+    const source = String(entry?.source || '').slice(0, 40);
+
+    if (!roomKey || !messageGroupId || !image) return null;
+    return { roomKey, messageGroupId, image, name, updatedAt, source };
+  }
+
+  function loadNovelModelMessageCache() {
+    const raw = readStorage(LS.novelModelMessageCache);
+    if (!raw) return {};
+
+    try {
+      const parsed = JSON.parse(raw);
+      const sourceEntries = parsed?.entries && typeof parsed.entries === 'object'
+        ? parsed.entries
+        : parsed;
+      if (!sourceEntries || typeof sourceEntries !== 'object' || Array.isArray(sourceEntries)) return {};
+
+      const entries = {};
+      for (const [key, value] of Object.entries(sourceEntries)) {
+        const entry = normalizeNovelModelCacheEntry(value);
+        if (!entry) continue;
+        entries[String(key).slice(0, 320)] = entry;
+      }
+      return entries;
+    } catch {
+      return {};
+    }
+  }
+
+  function loadNovelModelManualMap() {
+    const raw = readStorage(LS.novelModelManualMap);
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const result = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        const name = normalizeText(value).slice(0, 60);
+        if (name && getNovelModelInfoByName(name)) result[String(key).slice(0, 320)] = name;
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  let novelModelMessageCache = loadNovelModelMessageCache();
+  let novelModelManualMap = loadNovelModelManualMap();
+
+  function makeNovelModelCacheKey(roomKey, messageGroupId) {
+    return `${String(roomKey || '')}::${String(messageGroupId || '')}`;
+  }
+
+  function getNovelModelManualKey(group, roomKey = getNovelModelRoomKey()) {
+    const messageGroupId = getMessageGroupId(group);
+    if (messageGroupId) return makeNovelModelCacheKey(roomKey, messageGroupId);
+    const compact = compactNovelModelMatchText(findMessageMarkdown(group)?.textContent || '');
+    return `${roomKey}::text::${compact.length}::${hashNovelModelText(compact.slice(0, 120) + compact.slice(-120))}`;
+  }
+
+  function saveNovelModelManualMap() {
+    const keys = Object.keys(novelModelManualMap);
+    if (keys.length > NOVEL_MODEL_CACHE_LIMIT) {
+      keys.slice(0, keys.length - NOVEL_MODEL_CACHE_LIMIT).forEach((key) => delete novelModelManualMap[key]);
+    }
+    writeJsonStorage(LS.novelModelManualMap, novelModelManualMap);
+  }
+
+  function getManualNovelModelInfo(group, roomKey) {
+    const name = novelModelManualMap[getNovelModelManualKey(group, roomKey)];
+    const info = getNovelModelInfoByName(name);
+    return info ? { ...info, manual: true, source: 'manual' } : null;
+  }
+
+  function setManualNovelModelInfo(group, modelName, roomKey = getNovelModelRoomKey()) {
+    const key = getNovelModelManualKey(group, roomKey);
+    const info = getNovelModelInfoByName(modelName);
+    if (!info) return false;
+    novelModelManualMap[key] = info.name;
+    saveNovelModelManualMap();
+    return true;
+  }
+
+  function clearManualNovelModelInfo(group, roomKey = getNovelModelRoomKey()) {
+    const key = getNovelModelManualKey(group, roomKey);
+    if (!Object.prototype.hasOwnProperty.call(novelModelManualMap, key)) return false;
+    delete novelModelManualMap[key];
+    saveNovelModelManualMap();
+    return true;
+  }
+
+  function pruneNovelModelMessageCache() {
+    const keys = Object.keys(novelModelMessageCache);
+    if (keys.length <= NOVEL_MODEL_CACHE_LIMIT) return;
+
+    keys
+      .sort((a, b) => (novelModelMessageCache[b]?.updatedAt || 0) - (novelModelMessageCache[a]?.updatedAt || 0))
+      .slice(NOVEL_MODEL_CACHE_LIMIT)
+      .forEach((key) => delete novelModelMessageCache[key]);
+  }
+
+  function saveNovelModelMessageCache() {
+    pruneNovelModelMessageCache();
+    writeJsonStorage(LS.novelModelMessageCache, {
+      version: 2,
+      entries: novelModelMessageCache,
+    });
+  }
+
+  function getCachedNovelModelInfo(roomKey, messageGroupId) {
+    return novelModelMessageCache[makeNovelModelCacheKey(roomKey, messageGroupId)] || null;
+  }
+
+  function cacheNovelModelInfo(roomKey, messageGroupId, modelInfo, source = 'unknown') {
+    const image = normalizeNovelModelIconUrl(modelInfo?.image);
+    const name = normalizeText(modelInfo?.name).slice(0, 60) || '모델';
+    if (!roomKey || !messageGroupId || !image) return false;
+
+    const key = makeNovelModelCacheKey(roomKey, messageGroupId);
+    const previous = novelModelMessageCache[key];
+    const chatModelId = String(modelInfo?.chatModelId || '');
+    const crackerModel = String(modelInfo?.crackerModel || '');
+    const retired = modelInfo?.retired === true;
+    const deletedAt = String(modelInfo?.deletedAt || '');
+    const replacementChatModelId = String(modelInfo?.replacementChatModelId || '');
+    if (
+      previous?.image === image &&
+      previous?.name === name &&
+      previous?.source === source &&
+      String(previous?.chatModelId || '') === chatModelId &&
+      String(previous?.crackerModel || '') === crackerModel &&
+      previous?.retired === retired &&
+      String(previous?.deletedAt || '') === deletedAt &&
+      String(previous?.replacementChatModelId || '') === replacementChatModelId
+    ) return false;
+
+    novelModelMessageCache[key] = {
+      roomKey,
+      messageGroupId,
+      image,
+      name,
+      source,
+      chatModelId,
+      crackerModel,
+      retired,
+      deletedAt,
+      replacementChatModelId,
+      updatedAt: Date.now(),
+    };
+    return true;
+  }
+
+  function getMessageGroupId(group) {
+    return String(group?.getAttribute?.('data-message-group-id') || '').trim();
+  }
+
+  function findMessageGroups() {
+    if (!isNovelModelIndicatorRoute()) return [];
+    return [...document.querySelectorAll('[data-message-group-id]')];
+  }
+
+  function isAssistantMessageGroup(group) {
+    if (!(group instanceof HTMLElement)) return false;
+    const shell = group.firstElementChild;
+    if (!(shell instanceof HTMLElement) || !shell.classList.contains('items-start')) return false;
+    return !!group.querySelector('.wrtn-markdown, [class*="wrtn-markdown"]');
+  }
+
+  function findAssistantMessageGroups() {
+    return findMessageGroups().filter(isAssistantMessageGroup);
+  }
+
+  function findNovelAssistantMessageGroups() {
+    return findAssistantMessageGroups().filter(isNovelAssistantMessageGroup);
+  }
+
+  function findMessageMarkdown(group) {
+    return group?.querySelector?.('.wrtn-markdown, [class*="wrtn-markdown"]') || null;
+  }
+
+  function findMessageBubble(group) {
+    const markdown = findMessageMarkdown(group);
+    const bubble = markdown?.parentElement || null;
+    return bubble instanceof HTMLElement ? bubble : null;
+  }
+
+  function isNovelAssistantMessageGroup(group) {
+    if (!isAssistantMessageGroup(group)) return false;
+    const bubble = findMessageBubble(group);
+    if (!bubble) return false;
+
+    const classes = bubble.classList;
+    return (
+      classes.contains('px-0') &&
+      classes.contains('py-0') &&
+      classes.contains('rounded-none') &&
+      classes.contains('bg-transparent')
+    );
+  }
+
+  function findNativeMessageModelIcon(group) {
+    if (!(group instanceof HTMLElement)) return null;
+    return [...group.querySelectorAll('img[src*="model-icon"], img[srcset*="model-icon"]')]
+      .find((icon) => !icon.closest('.crack-ui-novel-model-indicator')) || null;
+  }
+
+  function getModelInfoFromIconElement(icon) {
+    if (!(icon instanceof HTMLImageElement)) return null;
+    const image = normalizeNovelModelIconUrl(getModelIconSourceFromNode(icon));
+    if (!image) return null;
+
+    const iconFile = getModelIconFileFromUrl(image);
+    let name = CHAT_MODEL_ICON_MAP[iconFile] || '';
+    if (!name) {
+      const alt = normalizeText(icon.getAttribute('alt'));
+      if (alt && alt.toLowerCase() !== 'model') name = alt;
+    }
+    if (!name) name = iconFile.replace(/\.(?:webp|png|svg|avif)$/i, '') || '모델';
+
+    const known = getNovelModelInfoByName(name);
+    return known ? { ...known, image } : { name, image };
+  }
+
+  function getCurrentSelectedModelInfoForNovelIndicator() {
+    const candidates = [
+      DOM.modelButton(),
+      document.getElementById(ID.bottomModelButton),
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      const image = normalizeNovelModelIconUrl(getModelIconSourceFromNode(candidate));
+      if (!image) continue;
+
+      const iconFile = getModelIconFileFromUrl(image);
+      const mappedName = CHAT_MODEL_ICON_MAP[iconFile] || '';
+      const rawName = normalizeText(getRawModelNameFromNode(candidate));
+      const name = mappedName || (isKnownChatModelName(rawName) ? rawName : '') || '모델';
+      return { name, image };
+    }
+
+    return null;
+  }
+
+  function findMessageActionFooter(group) {
+    if (!(group instanceof HTMLElement)) return null;
+
+    const candidates = [...group.querySelectorAll('div.flex.items-center.justify-between.mt-2')];
+    return candidates.find((footer) => (
+      footer.querySelector('button[aria-label="메시지 옵션"]') ||
+      footer.querySelector('svg path[d^="M3.8 12"]')
+    )) || null;
+  }
+
+  function findMessageActionFooterLeftSlot(group) {
+    const footer = findMessageActionFooter(group);
+    const left = footer?.firstElementChild || null;
+    if (!(left instanceof HTMLElement)) return null;
+    if (!left.classList.contains('flex') || !left.classList.contains('items-center')) return null;
+    return left;
+  }
+
+  function removeNovelModelIndicatorFromGroup(group) {
+    group?.querySelectorAll?.('.crack-ui-novel-model-indicator').forEach((element) => element.remove());
+  }
+
+  function closeNovelModelManualMenu() {
+    document.querySelectorAll('.crack-ui-novel-model-menu, .crack-ui-novel-model-menu-backdrop').forEach((element) => element.remove());
+  }
+
+  function getNovelModelManualChoices() {
+    const names = new Set([
+      ...CHAT_MODEL_ORDER,
+      ...novelModelCatalogNameOrder,
+      ...Object.keys(DEFAULT_CHAT_MODEL_INFO),
+      ...Object.keys(NOVEL_MODEL_LEGACY_INFO),
+      ...novelModelCatalogByName.keys(),
+    ]);
+    const officialRank = new Map(CHAT_MODEL_ORDER.map((name, index) => [name, index]));
+    const catalogRank = new Map(novelModelCatalogNameOrder.map((name, index) => [name, index]));
+    const activeFallbackBase = CHAT_MODEL_ORDER.length + 1000;
+
+    return [...names]
+      .map((name) => getNovelModelInfoByName(name))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.retired !== b.retired) return a.retired ? 1 : -1;
+
+        if (!a.retired) {
+          const aRank = officialRank.has(a.name)
+            ? officialRank.get(a.name)
+            : activeFallbackBase + (catalogRank.get(a.name) ?? 100000);
+          const bRank = officialRank.has(b.name)
+            ? officialRank.get(b.name)
+            : activeFallbackBase + (catalogRank.get(b.name) ?? 100000);
+          if (aRank !== bRank) return aRank - bRank;
+        } else {
+          const aRank = catalogRank.get(a.name) ?? 100000;
+          const bRank = catalogRank.get(b.name) ?? 100000;
+          if (aRank !== bRank) return aRank - bRank;
+        }
+
+        return a.name.localeCompare(b.name, 'ko');
+      });
+  }
+
+  function openNovelModelManualMenu(anchor, group) {
+    if (!(anchor instanceof HTMLElement) || !(group instanceof HTMLElement)) return;
+    closeNovelModelManualMenu();
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'crack-ui-novel-model-menu-backdrop';
+    backdrop.addEventListener('click', closeNovelModelManualMenu, { once: true });
+    document.body.appendChild(backdrop);
+
+    const menu = document.createElement('div');
+    menu.className = 'crack-ui-novel-model-menu';
+    menu.dataset.crackUiTheme = normalizeThemeMode(themeMode);
+    menu.dataset.crackUiMenuOwner = 'novel-model-indicator';
+    menu.setAttribute('role', 'menu');
+
+    for (const info of getNovelModelManualChoices()) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'crack-ui-novel-model-menu-item';
+      item.dataset.retired = info.retired ? '1' : '0';
+      item.setAttribute('role', 'menuitem');
+
+      const icon = document.createElement('img');
+      icon.src = info.image;
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+
+      const label = document.createElement('span');
+      label.className = 'crack-ui-novel-model-menu-label';
+      label.textContent = `${info.name}${info.retired ? ' · 서비스 종료' : ''}`;
+
+      item.append(icon, label);
+      item.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setManualNovelModelInfo(group, info.name);
+        closeNovelModelManualMenu();
+        scheduleNovelModelIndicatorScan({ immediate: true });
+      });
+      menu.appendChild(item);
+    }
+
+    const automatic = document.createElement('button');
+    automatic.type = 'button';
+    automatic.className = 'crack-ui-novel-model-menu-clear';
+    automatic.textContent = '자동 판정 다시 사용';
+    automatic.addEventListener('click', (event) => {
+      event.stopPropagation();
+      clearManualNovelModelInfo(group);
+      closeNovelModelManualMenu();
+      scheduleNovelModelIndicatorScan({ immediate: true });
+    });
+    menu.appendChild(automatic);
+    document.body.appendChild(menu);
+
+    const rect = anchor.getBoundingClientRect();
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const top = window.innerHeight - rect.bottom >= height + 12
+      ? rect.bottom + 6
+      : Math.max(8, rect.top - height - 6);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  function renderNovelModelIndicator(group, modelInfo = null) {
+    const leftSlot = findMessageActionFooterLeftSlot(group);
+    if (!leftSlot) {
+      removeNovelModelIndicatorFromGroup(group);
+      return false;
+    }
+
+    const duplicates = [...leftSlot.children]
+      .filter((element) => element.classList?.contains('crack-ui-novel-model-indicator'));
+    let indicator = duplicates.shift() || null;
+    duplicates.forEach((element) => element.remove());
+
+    if (!indicator) {
+      indicator = document.createElement('button');
+      indicator.type = 'button';
+      indicator.className = 'crack-ui-novel-model-indicator';
+      indicator.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openNovelModelManualMenu(indicator, group);
+      });
+      leftSlot.prepend(indicator);
+    }
+
+    const image = normalizeNovelModelIconUrl(modelInfo?.image);
+    const name = normalizeText(modelInfo?.name) || '';
+    const source = String(modelInfo?.source || '');
+    const manual = modelInfo?.manual === true || source === 'manual';
+    const retired = modelInfo?.retired === true;
+    const marker = `${image}|${name}|${source}|${manual ? '1' : '0'}|${retired ? '1' : '0'}`;
+    const currentIcon = indicator.querySelector('img');
+    const alreadyRendered = indicator.dataset.crackUiNovelModelMarker === marker && (
+      image
+        ? currentIcon?.getAttribute('src') === image
+        : !currentIcon && indicator.textContent === '?'
+    );
+    if (alreadyRendered) return true;
+
+    indicator.replaceChildren();
+    indicator.dataset.crackUiNovelModelMarker = marker;
+    indicator.dataset.crackUiNovelModelName = name;
+    indicator.dataset.crackUiNovelModelImage = image;
+    indicator.dataset.crackUiNovelModelSource = source;
+    indicator.dataset.crackUiNovelModelRetired = retired ? '1' : '0';
+    indicator.dataset.crackUiNovelModelUnresolved = image ? '0' : '1';
+
+    if (image) {
+      const icon = document.createElement('img');
+      icon.src = image;
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+      indicator.appendChild(icon);
+      const retiredLabel = retired ? ' · 서비스 종료' : '';
+      indicator.title = `${name || '모델'}${retiredLabel}${manual ? ' · 수동 지정' : ''}`;
+      indicator.setAttribute('aria-label', `응답 모델: ${name || '모델'}${retired ? ', 서비스 종료' : ''}${manual ? ', 수동 지정' : ''}`);
+    } else {
+      indicator.textContent = '?';
+      indicator.title = '모델을 자동으로 확인하지 못함 · 눌러서 직접 선택';
+      indicator.setAttribute('aria-label', '응답 모델 선택');
+    }
+
+    return true;
+  }
+
+  function removeAllNovelModelIndicators() {
+    closeNovelModelManualMenu();
+    document.querySelectorAll('.crack-ui-novel-model-indicator').forEach((element) => element.remove());
+    novelModelIndicatorCleanupPending = false;
+  }
+
+  function clearNovelModelIndicatorScanSchedule() {
+    if (novelModelIndicatorScanTimer) {
+      clearTimeout(novelModelIndicatorScanTimer);
+      novelModelIndicatorScanTimer = null;
+    }
+    if (novelModelIndicatorScanRaf) {
+      cancelAnimationFrame(novelModelIndicatorScanRaf);
+      novelModelIndicatorScanRaf = 0;
+    }
+  }
+
+  function clearPendingNovelModelObserver() {
+    if (!pendingNovelModelObserver) return;
+    pendingNovelModelObserver.disconnect();
+    pendingNovelModelObserver = null;
+  }
+
+  function clearPendingNovelModelCapture() {
+    pendingNovelModelCapture = null;
+    clearPendingNovelModelObserver();
+    if (pendingNovelModelExpiryTimer) {
+      clearTimeout(pendingNovelModelExpiryTimer);
+      pendingNovelModelExpiryTimer = null;
+    }
+  }
+
+  function bindPendingNovelModelObserver(targetGroup) {
+    clearPendingNovelModelObserver();
+    if (!(targetGroup instanceof HTMLElement)) return;
+
+    pendingNovelModelObserver = new MutationObserver(() => {
+      if (!pendingNovelModelCapture) {
+        clearPendingNovelModelObserver();
+        return;
+      }
+      scheduleNovelModelIndicatorScan();
+    });
+    pendingNovelModelObserver.observe(targetGroup, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+
+  function disableNovelModelIndicatorUi() {
+    clearNovelModelIndicatorScanSchedule();
+    clearPendingNovelModelCapture();
+    closeNovelModelManualMenu();
+    if (novelModelIndicatorCleanupPending) removeAllNovelModelIndicators();
+  }
+
+  function getNovelMessageContentSignature(group) {
+    const text = normalizeText(findMessageMarkdown(group)?.textContent || '');
+    if (!text) return '';
+    return `${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
+  }
+
+  function chooseNewestAssistantGroup(groups) {
+    if (!groups.length) return null;
+    let best = groups[0];
+    let bestTop = Number.NEGATIVE_INFINITY;
+
+    for (const group of groups) {
+      const top = Number(group.getBoundingClientRect?.().top);
+      if (Number.isFinite(top) && top >= bestTop) {
+        bestTop = top;
+        best = group;
+      }
+    }
+    return best;
+  }
+
+  function resolveNovelModelNetworkCandidates(groups, roomKey) {
+    let changed = false;
+    for (const group of groups) {
+      if (!isAssistantMessageGroup(group)) continue;
+      const messageGroupId = getMessageGroupId(group);
+      if (!messageGroupId) continue;
+
+      const key = makeNovelModelCacheKey(roomKey, messageGroupId);
+      const candidate = novelModelNetworkCandidates.get(key);
+      if (!candidate) continue;
+
+      changed = cacheNovelModelInfo(roomKey, messageGroupId, candidate, 'network-id') || changed;
+      novelModelNetworkCandidates.delete(key);
+    }
+    return changed;
+  }
+
+  function scoreNovelModelNetworkRecord(record, visibleCompact, visibleFingerprints, groupHtml) {
+    if (!record || record.roomKey !== getNovelModelRoomKey()) return 0;
+    if (record.ids.some((id) => id && groupHtml.includes(id))) return 100000;
+
+    let score = 0;
+    for (const fingerprint of visibleFingerprints) {
+      if (record.fingerprintSet.has(fingerprint)) score += fingerprint.length * 10;
+    }
+
+    const head = visibleCompact.slice(0, 100);
+    if (head.length >= 60 && record.compactContent.includes(head)) score += 1000;
+
+    const tail = visibleCompact.slice(-100);
+    if (tail.length >= 60 && record.compactContent.includes(tail)) score += 800;
+
+    const lengthDifference = Math.abs(record.compactContent.length - visibleCompact.length);
+    const lengthBase = Math.max(record.compactContent.length, visibleCompact.length, 1);
+    if (lengthDifference / lengthBase <= 0.03) score += 300;
+    else if (lengthDifference / lengthBase <= 0.1) score += 120;
+
+    return score;
+  }
+
+  function findNovelModelByContent(group, roomKey) {
+    const markdown = findMessageMarkdown(group);
+    const visibleCompact = compactNovelModelMatchText(markdown?.textContent || '');
+    if (visibleCompact.length < 30) return null;
+
+    const visibleFingerprints = makeNovelModelFingerprints(visibleCompact);
+    const candidateKeys = new Set();
+    for (const fingerprint of visibleFingerprints) {
+      const keys = novelModelFingerprintIndex.get(fingerprint);
+      if (!keys) continue;
+      for (const key of keys) candidateKeys.add(key);
+    }
+
+    if (!candidateKeys.size && novelModelNetworkMessages.size <= 240) {
+      for (const [key, record] of novelModelNetworkMessages) {
+        if (record.roomKey === roomKey) candidateKeys.add(key);
+      }
+    }
+    if (!candidateKeys.size) return null;
+
+    const html = group.outerHTML || '';
+    let best = null;
+    let second = null;
+    for (const key of candidateKeys) {
+      const record = novelModelNetworkMessages.get(key);
+      if (!record || record.roomKey !== roomKey) continue;
+      const score = scoreNovelModelNetworkRecord(record, visibleCompact, visibleFingerprints, html);
+      const candidate = { record, score };
+      if (!best || score > best.score) {
+        second = best;
+        best = candidate;
+      } else if (!second || score > second.score) {
+        second = candidate;
+      }
+    }
+
+    if (!best || best.score < NOVEL_MODEL_AUTO_MATCH_MIN_SCORE) return null;
+    if (second && second.score > 0 && best.score < second.score * NOVEL_MODEL_AUTO_MATCH_AMBIGUITY_RATIO) return null;
+    return { ...best.record.modelInfo, source: 'network-content', matchScore: best.score };
+  }
+
+  function resolveNovelModelContentMatches(groups, roomKey) {
+    let changed = false;
+    for (const group of groups) {
+      if (!isNovelAssistantMessageGroup(group)) continue;
+      const messageGroupId = getMessageGroupId(group);
+      if (!messageGroupId || getCachedNovelModelInfo(roomKey, messageGroupId)) continue;
+      if (getManualNovelModelInfo(group, roomKey)) continue;
+
+      const signature = `${getNovelMessageContentSignature(group)}|${novelModelNetworkMessageRevision}`;
+      if (group.dataset.crackUiNovelModelMatchAttempt === signature) continue;
+      group.dataset.crackUiNovelModelMatchAttempt = signature;
+
+      const modelInfo = findNovelModelByContent(group, roomKey);
+      if (!modelInfo) continue;
+      changed = cacheNovelModelInfo(roomKey, messageGroupId, modelInfo, 'network-content') || changed;
+    }
+    return changed;
+  }
+
+  function resolvePendingNovelModelCapture(groups, roomKey) {
+    const pending = pendingNovelModelCapture;
+    if (!pending) return false;
+
+    if (pending.roomKey !== roomKey || Date.now() - pending.createdAt > NOVEL_MODEL_PENDING_MAX_AGE_MS) {
+      clearPendingNovelModelCapture();
+      return false;
+    }
+
+    const assistantGroups = groups.filter(isAssistantMessageGroup);
+    let candidate = null;
+
+    if (pending.targetMessageGroupId) {
+      const target = assistantGroups.find((group) => getMessageGroupId(group) === pending.targetMessageGroupId) || null;
+      if (target) {
+        const targetReplaced = target !== pending.targetElement;
+        if (targetReplaced) {
+          pending.targetElement = target;
+          bindPendingNovelModelObserver(target);
+        }
+        const signature = getNovelMessageContentSignature(target);
+        if (targetReplaced || (signature && signature !== pending.targetSignature)) candidate = target;
+      }
+    }
+
+    if (!candidate) {
+      const newGroups = assistantGroups.filter((group) => {
+        const id = getMessageGroupId(group);
+        return id && !pending.knownMessageGroupIds.has(id);
+      });
+      candidate = chooseNewestAssistantGroup(newGroups);
+    }
+
+    if (!candidate) return false;
+
+    const messageGroupId = getMessageGroupId(candidate);
+    if (!messageGroupId) return false;
+
+    const isNovelMessage = isNovelAssistantMessageGroup(candidate);
+    let modelInfo = pending.modelInfo;
+    if (!isNovelMessage) {
+      const nativeInfo = getModelInfoFromIconElement(findNativeMessageModelIcon(candidate));
+      if (!nativeInfo) return false;
+      modelInfo = nativeInfo;
+    }
+
+    const changed = cacheNovelModelInfo(
+      roomKey,
+      messageGroupId,
+      modelInfo,
+      isNovelMessage ? 'generation-trigger' : 'chat-ui'
+    );
+    clearPendingNovelModelCapture();
+    return changed;
+  }
+
+  function scanNovelModelIndicators() {
+    novelModelIndicatorLastScanAt = performance.now();
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) {
+      disableNovelModelIndicatorUi();
+      return;
+    }
+
+    novelModelIndicatorCleanupPending = true;
+    const roomKey = getNovelModelRoomKey();
+    const groups = findMessageGroups();
+    let cacheChanged = false;
+
+    for (const group of groups) {
+      if (!isAssistantMessageGroup(group)) {
+        removeNovelModelIndicatorFromGroup(group);
+        continue;
+      }
+
+      if (isNovelAssistantMessageGroup(group)) continue;
+
+      removeNovelModelIndicatorFromGroup(group);
+      const messageGroupId = getMessageGroupId(group);
+      const nativeIcon = findNativeMessageModelIcon(group);
+      const modelInfo = getModelInfoFromIconElement(nativeIcon);
+      if (!messageGroupId || !modelInfo) continue;
+
+      const marker = `${modelInfo.image}|${modelInfo.name}`;
+      if (group.dataset.crackUiNovelModelHarvested === marker) continue;
+      group.dataset.crackUiNovelModelHarvested = marker;
+      cacheChanged = cacheNovelModelInfo(roomKey, messageGroupId, modelInfo, 'chat-ui') || cacheChanged;
+    }
+
+    cacheChanged = resolvePendingNovelModelCapture(groups, roomKey) || cacheChanged;
+    cacheChanged = resolveNovelModelNetworkCandidates(groups, roomKey) || cacheChanged;
+    cacheChanged = resolveNovelModelContentMatches(groups, roomKey) || cacheChanged;
+    if (cacheChanged) saveNovelModelMessageCache();
+
+    for (const group of groups) {
+      if (!isNovelAssistantMessageGroup(group)) continue;
+      const messageGroupId = getMessageGroupId(group);
+      const manualInfo = getManualNovelModelInfo(group, roomKey);
+      const exactInfo = getCachedNovelModelInfo(roomKey, messageGroupId);
+      renderNovelModelIndicator(group, manualInfo || exactInfo || null);
+    }
+  }
+
+  function scheduleNovelModelIndicatorScan({ immediate = false } = {}) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) {
+      disableNovelModelIndicatorUi();
+      return;
+    }
+
+    const elapsed = performance.now() - novelModelIndicatorLastScanAt;
+    const delay = immediate ? 0 : Math.max(0, NOVEL_MODEL_SCAN_THROTTLE_MS - elapsed);
+
+    if (immediate && novelModelIndicatorScanTimer) {
+      clearTimeout(novelModelIndicatorScanTimer);
+      novelModelIndicatorScanTimer = null;
+    }
+    if (novelModelIndicatorScanTimer || novelModelIndicatorScanRaf) return;
+
+    novelModelIndicatorScanTimer = setTimeout(() => {
+      novelModelIndicatorScanTimer = null;
+      novelModelIndicatorScanRaf = requestAnimationFrame(() => {
+        novelModelIndicatorScanRaf = 0;
+        scanNovelModelIndicators();
+      });
+    }, delay);
+  }
+
+  function ensureNovelModelIndicator() {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) {
+      disableNovelModelIndicatorUi();
+      return;
+    }
+
+    installNovelModelNetworkCapture();
+    scanNovelModelStaticData();
+    scheduleNovelModelIndicatorScan({ immediate: novelModelIndicatorLastScanAt === 0 });
+  }
+
+  function beginNovelModelCapture(triggerElement, reason = 'generation') {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return false;
+
+    const modelInfo = getCurrentSelectedModelInfoForNovelIndicator();
+    if (!modelInfo?.image) return false;
+
+    const assistantGroups = findAssistantMessageGroups();
+    const targetGroup = triggerElement?.closest?.('[data-message-group-id]') || null;
+    const targetMessageGroupId = isAssistantMessageGroup(targetGroup) ? getMessageGroupId(targetGroup) : '';
+
+    clearPendingNovelModelCapture();
+    pendingNovelModelCapture = {
+      roomKey: getNovelModelRoomKey(),
+      modelInfo,
+      reason,
+      targetMessageGroupId,
+      targetElement: targetMessageGroupId ? targetGroup : null,
+      targetSignature: targetMessageGroupId ? getNovelMessageContentSignature(targetGroup) : '',
+      knownMessageGroupIds: new Set(assistantGroups.map(getMessageGroupId).filter(Boolean)),
+      createdAt: Date.now(),
+    };
+    pendingNovelModelExpiryTimer = setTimeout(() => {
+      clearPendingNovelModelCapture();
+    }, NOVEL_MODEL_PENDING_MAX_AGE_MS);
+    if (targetMessageGroupId) bindPendingNovelModelObserver(targetGroup);
+    return true;
+  }
+
+  function getNovelModelGenerationButtonKind(button) {
+    if (!(button instanceof HTMLButtonElement)) return '';
+    if (button.closest(`#${ID.panel}, #${ID.bottomModelPopup}`)) return '';
+    if (isChatComposerSendButton(button)) return 'send';
+
+    const messageGroup = button.closest('[data-message-group-id]');
+    if (!isAssistantMessageGroup(messageGroup)) return '';
+
+    const label = normalizeText(`${button.getAttribute('aria-label') || ''} ${button.title || ''} ${button.textContent || ''}`);
+    if (/이어서\s*생성/.test(label)) return 'continue';
+    if (/재생성|다시\s*생성/.test(label)) return 'regenerate';
+    if (button.querySelector('svg path[d^="M3.8 12"]')) return 'regenerate';
+
+    return '';
+  }
+
+  function noteNovelModelGenerationTriggerFromClick(target) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return;
+    const element = target?.nodeType === 1 ? target : target?.parentElement;
+    const button = element?.closest?.('button');
+    const kind = getNovelModelGenerationButtonKind(button);
+    if (!kind) return;
+    if (kind === 'send' && shouldBlockEmptyComposerSend()) return;
+    beginNovelModelCapture(button, kind);
+  }
+
+  function noteNovelModelGenerationTriggerFromEnter(event) {
+    if (!novelModelIndicator || !isNovelModelIndicatorRoute()) return;
+    if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+    const editable = getFocusedComposerEditableForEnterEvent(event);
+    if (!editable) return;
+    if (emptySendGuard && normalizeComposerText(getEditableText(editable)).length === 0) return;
+    beginNovelModelCapture(editable, 'send-enter');
+  }
 
   // =====================================================
   // Feature: room settings auto hide
@@ -8051,6 +10298,8 @@
     mobileChatListToggle: () => findMobileChatListToggle(),
     mobileChatListPopover: () => getMobileChatListPopover(),
     situationImageButtons: () => findSituationImageButtons(),
+    messageGroups: () => findMessageGroups(),
+    novelAssistantMessages: () => findNovelAssistantMessageGroups(),
     loreEntryButton: () => findLoreEntryButton(),
     loreRoomTopBar: () => findLoreRoomTopBar(),
     fullscreenToolbar: () => findFullscreenToolbar(),
@@ -8073,6 +10322,8 @@
     mobileChatListToggle: DOM.mobileChatListToggle,
     mobileChatListPopover: DOM.mobileChatListPopover,
     situationImageButtons: DOM.situationImageButtons,
+    messageGroups: DOM.messageGroups,
+    novelAssistantMessages: DOM.novelAssistantMessages,
     loreEntryButton: DOM.loreEntryButton,
     loreRoomTopBar: DOM.loreRoomTopBar,
     fullscreenToolbar: DOM.fullscreenToolbar,
@@ -8616,6 +10867,7 @@
     document.addEventListener('click', (e) => {
       guardEmptyComposerSendEvent(e);
       if (e.defaultPrevented) return;
+      noteNovelModelGenerationTriggerFromClick(e.target);
 
       const modelPopup = document.getElementById(ID.bottomModelPopup);
       const modelButton = e.target.closest?.(`#${ID.bottomModelButton}`);
@@ -8708,6 +10960,7 @@
     // only the next Enter from the focused, empty composer is blocked.
     document.addEventListener('keydown', (e) => {
       guardEmptyComposerEnterEvent(e);
+      if (!e.defaultPrevented) noteNovelModelGenerationTriggerFromEnter(e);
     }, true);
 
     document.addEventListener('keydown', (e) => {
@@ -8744,6 +10997,8 @@
     window.addEventListener('pagehide', () => {
       flushImageSizeSave();
       flushChatWidthSave();
+      flushNovelModelCatalogSave();
+      if (novelModelIndicator) saveNovelModelMessageCache();
     });
   }
 
@@ -8781,6 +11036,31 @@
         pauseAnimatedThumbs,
         hideStatBar,
         hideSituationImage,
+        novelModelIndicator,
+        novelModelIndicatorCacheCount: Object.keys(novelModelMessageCache).length,
+        novelModelIndicatorCatalogCount: novelModelCatalogById.size,
+        novelModelIndicatorRetiredCatalogCount: [...novelModelCatalogById.values()].filter((entry) => entry.retired).length,
+        novelModelIndicatorRenderedCount: document.querySelectorAll('.crack-ui-novel-model-indicator').length,
+        novelModelIndicatorScanScheduled: !!novelModelIndicatorScanTimer || !!novelModelIndicatorScanRaf,
+        novelModelIndicatorTemporaryObserver: !!pendingNovelModelObserver,
+        novelModelIndicatorNetworkCaptureInstalled: novelModelNetworkCaptureInstalled,
+        novelModelIndicatorNetworkCandidateCount: novelModelNetworkCandidates.size,
+        novelModelIndicatorNetworkMessageCount: novelModelNetworkMessages.size,
+        novelModelIndicatorFingerprintCount: novelModelFingerprintIndex.size,
+        novelModelIndicatorNetworkMessageRevision: novelModelNetworkMessageRevision,
+        novelModelIndicatorStaticScanCount: novelModelStaticScanCount,
+        novelModelIndicatorNetworkPayloadCount: novelModelNetworkPayloadCount,
+        novelModelIndicatorNetworkLastUrl: novelModelNetworkLastUrl,
+        novelModelIndicatorNetworkLastMatchCount: novelModelNetworkLastMatchCount,
+        novelModelIndicatorManualCount: Object.keys(novelModelManualMap).length,
+        novelModelIndicatorUnresolvedRenderedCount: document.querySelectorAll('.crack-ui-novel-model-indicator[data-crack-ui-novel-model-unresolved="1"]').length,
+        novelModelIndicatorPending: pendingNovelModelCapture ? {
+          roomKey: pendingNovelModelCapture.roomKey,
+          reason: pendingNovelModelCapture.reason,
+          targetMessageGroupId: pendingNovelModelCapture.targetMessageGroupId,
+          modelName: pendingNovelModelCapture.modelInfo?.name || '',
+          ageMs: Date.now() - pendingNovelModelCapture.createdAt,
+        } : null,
         situationImageMarkScheduled: !!situationImageMarkTimer || !!situationImageMarkRaf,
         chatWidthPercent,
         themeMode,
@@ -9018,6 +11298,7 @@
     syncChatModelRegistryFromOfficialMenu();
     ensureBottomModelPicker();
     syncOfficialModelVisibility();
+    ensureNovelModelIndicator();
     ensureRoomMenuHandle();
     ensureChatListAutoHide();
 
@@ -9078,6 +11359,8 @@
       attributeFilter: ['src', 'srcset'],
     });
   }
+
+  if (novelModelIndicator) installNovelModelNetworkCapture();
 
   ready(() => {
     installCrackUiDebugApi();
