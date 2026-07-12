@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.5.2
+// @version      2.5.3
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.5.2';
+  const CRACK_UI_VERSION = '2.5.3';
 
   function getCrackUiPublicWindow() {
     try {
@@ -443,6 +443,9 @@
   let roomPanelCloseTimer = null;
   let lastRoomPanelClickAt = 0;
   let lastRoomPanelToggleAttempt = null;
+  let roomPanelToggleRequestSeq = 0;
+  let roomPanelToggleVerifyTimer = null;
+  let roomPanelToggleFinalVerifyTimer = null;
   let lastRoomPanelBootCloseHref = '';
   let novelModelIndicatorScanTimer = null;
   let novelModelIndicatorScanRaf = 0;
@@ -2433,7 +2436,7 @@
           width: 26px;
           height: auto;
           transform: none;
-          pointer-events: auto !important;
+          pointer-events: none !important;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuZone}[data-crack-ui-handle-enabled="0"] {
@@ -2455,7 +2458,8 @@
           transform: translateY(-50%);
           pointer-events: auto !important;
           z-index: calc(var(--crack-ui-z-header) + 4);
-          touch-action: none;
+          touch-action: pan-y;
+          -webkit-tap-highlight-color: transparent;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle}::after {
@@ -9646,11 +9650,37 @@
     return DOM.roomToggle() || DOM.chatRoomSettingsButton();
   }
 
+  function getRoomPanelToggleOpenState(toggle) {
+    if (!toggle) return null;
+    const expanded = toggle.getAttribute?.('aria-expanded');
+    if (expanded === 'true') return true;
+    if (expanded === 'false') return false;
+    const state = String(toggle.dataset?.state || '').toLowerCase();
+    if (state === 'open') return true;
+    if (state === 'closed') return false;
+    return null;
+  }
+
+  function clearRoomPanelToggleVerification({ invalidate = false } = {}) {
+    if (invalidate) roomPanelToggleRequestSeq += 1;
+    if (roomPanelToggleVerifyTimer) {
+      clearTimeout(roomPanelToggleVerifyTimer);
+      roomPanelToggleVerifyTimer = null;
+    }
+    if (roomPanelToggleFinalVerifyTimer) {
+      clearTimeout(roomPanelToggleFinalVerifyTimer);
+      roomPanelToggleFinalVerifyTimer = null;
+    }
+  }
+
   function clickRoomPanelToggle(want, reason = '') {
+    clearRoomPanelToggleVerification({ invalidate: true });
+    const requestSeq = roomPanelToggleRequestSeq;
     const panel = DOM.roomPanel();
     const open = panel ? isRoomPanelOpen(panel) : false;
     if (open === want) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         skipped: 'already-matched',
@@ -9663,6 +9693,7 @@
     const now = Date.now();
     if (now - lastRoomPanelClickAt < 180) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         skipped: 'throttled',
@@ -9676,6 +9707,7 @@
     const toggle = getRoomPanelToggleForActivation();
     if (!toggle) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         error: 'toggle-not-found',
@@ -9690,6 +9722,7 @@
     try {
       const method = dispatchRoomPanelToggleActivation(toggle, reason || 'room-panel-toggle');
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         method: method || 'failed',
@@ -9705,25 +9738,40 @@
       }
 
       if (isTouchLikeDevice()) {
-        setTimeout(() => {
+        roomPanelToggleVerifyTimer = setTimeout(() => {
+          roomPanelToggleVerifyTimer = null;
+          if (requestSeq !== roomPanelToggleRequestSeq) return;
+
           const afterPanel = DOM.roomPanel();
           const openAfter = afterPanel ? isRoomPanelOpen(afterPanel) : false;
-          if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.openAfter = openAfter;
+          const toggleOpenAfter = getRoomPanelToggleOpenState(toggle);
+          if (lastRoomPanelToggleAttempt?.requestSeq === requestSeq) {
+            lastRoomPanelToggleAttempt.openAfter = openAfter;
+            lastRoomPanelToggleAttempt.toggleOpenAfter = toggleOpenAfter;
+          }
 
-          if (openAfter !== want) {
+          // During the slide animation the panel geometry can lag behind the
+          // button state. Never send a second toggle from geometry alone.
+          const explicitFailure = toggleOpenAfter !== null && toggleOpenAfter !== want;
+          if (openAfter !== want && (!method || explicitFailure)) {
             cachedRoomPanelToggle = null;
             cachedRoomMenuButton = null;
             const fallbackToggle = getRoomPanelToggleForActivation();
             const fallbackMethod = dispatchTouchLikeActivation(fallbackToggle, `${reason || 'room-panel-toggle'}:fallback`);
-            if (lastRoomPanelToggleAttempt) {
+            if (lastRoomPanelToggleAttempt?.requestSeq === requestSeq) {
               lastRoomPanelToggleAttempt.fallbackMethod = fallbackMethod || 'failed';
               lastRoomPanelToggleAttempt.fallbackToggle = getElementDebugInfo(fallbackToggle);
             }
 
-            setTimeout(() => {
+            roomPanelToggleFinalVerifyTimer = setTimeout(() => {
+              roomPanelToggleFinalVerifyTimer = null;
+              if (requestSeq !== roomPanelToggleRequestSeq) return;
+
               const finalPanel = DOM.roomPanel();
               const finalOpen = finalPanel ? isRoomPanelOpen(finalPanel) : false;
-              if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.finalOpen = finalOpen;
+              if (lastRoomPanelToggleAttempt?.requestSeq === requestSeq) {
+                lastRoomPanelToggleAttempt.finalOpen = finalOpen;
+              }
               if (!want) setTimeout(() => pulseRoomTopBarHidden(), 120);
             }, 180);
           }
@@ -9734,6 +9782,7 @@
       return !!method || !isTouchLikeDevice();
     } catch (error) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         error: String(error?.message || error || 'unknown'),
@@ -9813,8 +9862,8 @@
       openChatRoomSettingsMenu();
     };
 
-    handle.addEventListener('pointerdown', openFromHandle, { passive: false });
-    handle.addEventListener('touchstart', openFromHandle, { passive: false });
+    // A tap still produces click, while a vertical drag/scroll does not.
+    // Opening on pointerdown made scrolling from the edge open the menu accidentally.
     handle.addEventListener('click', openFromHandle, { passive: false });
   }
 
@@ -9824,6 +9873,7 @@
     if (!roomMenuHandle || !crackUiIsChatRoute()) {
       roomMenuReveal = false;
       clearRoomPanelCloseTimer();
+      clearRoomPanelToggleVerification({ invalidate: true });
       updateRoomMenuRevealClass();
       zone?.remove();
       setRoomTopBarHidden(false);
@@ -9887,6 +9937,7 @@
     if (lastRoomPanelBootCloseHref !== location.href) {
       lastRoomPanelBootCloseHref = location.href;
       setTimeout(() => {
+        if (isTouchLikeDevice() && Date.now() - lastRoomMenuNativeButtonClickAt < 1000) return;
         if (roomMenuHandle && !document.getElementById(ID.roomMenuZone)?.matches(':hover')) {
           clickRoomPanelToggle(false, 'boot');
           setTimeout(() => pulseRoomTopBarHidden(), 220);
@@ -10860,7 +10911,17 @@
     if (document.documentElement.dataset.crackUiGlobalBound === '1') return;
     document.documentElement.dataset.crackUiGlobalBound = '1';
     bindMenuSwipeGesture();
-    document.addEventListener('pointerdown', (e) => noteRoomTopBarInputInteraction(e.target), true);
+    document.addEventListener('pointerdown', (e) => {
+      if (roomMenuHandle && isTouchLikeDevice()) {
+        const roomButton = e.target.closest?.('button, [role="button"]');
+        if (isChatRoomSettingsButton(roomButton)) {
+          lastRoomMenuNativeButtonClickAt = Date.now();
+          clearRoomPanelCloseTimer();
+          clearRoomPanelToggleVerification({ invalidate: true });
+        }
+      }
+      noteRoomTopBarInputInteraction(e.target);
+    }, true);
     document.addEventListener('pointerdown', guardEmptyComposerSendEvent, true);
     document.addEventListener('mousedown', guardEmptyComposerSendEvent, true);
     document.addEventListener('focusin', (e) => noteRoomTopBarInputInteraction(e.target), true);
