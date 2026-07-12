@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.5.3
+// @version      2.5.4
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.5.3';
+  const CRACK_UI_VERSION = '2.5.4';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2385,7 +2385,7 @@
           width: 22px;
           height: auto;
           transform: none;
-          pointer-events: auto !important;
+          pointer-events: none !important;
         }
 
         html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone} {
@@ -2411,7 +2411,7 @@
           transform: translateY(-50%);
           pointer-events: auto !important;
           z-index: calc(var(--crack-ui-z-header) + 6);
-          touch-action: none;
+          touch-action: pan-y;
           -webkit-tap-highlight-color: transparent;
         }
 
@@ -3193,7 +3193,10 @@
   updateDeviceViewportClasses();
 
   function isChatWidthSupportedViewport() {
-    return window.matchMedia('(min-width: 768px)').matches;
+    // Keep physical phones unsupported in landscape as well. Viewport width
+    // alone can exceed 768px after rotation while getCrackUiViewportWidth()
+    // still correctly identifies the device as phone-like.
+    return !isPhoneLikeViewport();
   }
 
   function isDesktopChatListAutoHideViewport() {
@@ -10787,8 +10790,7 @@
       openChatListFromHandle();
     };
 
-    handle.addEventListener('pointerdown', openFromHandle, { passive: false });
-    handle.addEventListener('touchstart', openFromHandle, { passive: false });
+    // Match the room-menu handle: vertical edge drags scroll, taps open.
     handle.addEventListener('click', openFromHandle, { passive: false });
   }
 
