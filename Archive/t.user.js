@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.6
+// @version      2.4.7
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.6';
+  const CRACK_UI_VERSION = '2.4.7';
 
   function getCrackUiPublicWindow() {
     try {
@@ -63,8 +63,6 @@
     toggleBottomModelPicker: 'crack-ui-toggle-bottom-model-picker',
     toggleEmptySendGuard: 'crack-ui-toggle-empty-send-guard',
     toggleHideSituationImage: 'crack-ui-toggle-hide-situation-image',
-    themeModeValue: 'crack-ui-theme-mode-value',
-    episodeUiModeValue: 'crack-ui-episode-ui-mode-value',
     imageSlider: 'crack-ui-image-size-slider',
     imageValue: 'crack-ui-image-size-value',
     chatWidthSlider: 'crack-ui-chat-width-slider',
@@ -183,6 +181,8 @@
   const CRACK_API = {
     episodeUiSetting: 'https://crack-api.wrtn.ai/crack-api/profiles/ui-setting',
   };
+
+  const EPISODE_UI_REQUEST_TIMEOUT_MS = 10000;
 
   function clampImageSize(value) {
     const n = Number(value);
@@ -3252,26 +3252,43 @@
   }
 
   async function requestEpisodeUiModeWithFetch(payload) {
-    const response = await fetch(CRACK_API.episodeUiSetting, {
-      method: 'PATCH',
-      mode: 'cors',
-      credentials: 'include',
-      cache: 'no-store',
-      headers: getCrackUiSettingHeaders(),
-      body: JSON.stringify(payload),
-    });
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), EPISODE_UI_REQUEST_TIMEOUT_MS)
+      : null;
 
-    const text = await response.text().catch(() => '');
-    const result = parseEpisodeUiResponseText(text);
+    try {
+      const response = await fetch(CRACK_API.episodeUiSetting, {
+        method: 'PATCH',
+        mode: 'cors',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: getCrackUiSettingHeaders(),
+        body: JSON.stringify(payload),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
 
-    if (!response.ok) {
-      const error = new Error(`fetch ui-setting ${response.status}`);
-      error.status = response.status;
-      error.result = result;
+      const text = await response.text().catch(() => '');
+      const result = parseEpisodeUiResponseText(text);
+
+      if (!response.ok) {
+        const error = new Error(`fetch ui-setting ${response.status}`);
+        error.status = response.status;
+        error.result = result;
+        throw error;
+      }
+
+      return result;
+    } catch (error) {
+      if (controller?.signal.aborted) {
+        const timeoutError = new Error('fetch ui-setting timeout');
+        timeoutError.name = 'TimeoutError';
+        throw timeoutError;
+      }
       throw error;
+    } finally {
+      if (timeoutId != null) window.clearTimeout(timeoutId);
     }
-
-    return result;
   }
 
   function requestEpisodeUiModeWithGm(payload) {
@@ -3288,7 +3305,7 @@
         data: JSON.stringify(payload),
         withCredentials: true,
         anonymous: false,
-        timeout: 10000,
+        timeout: EPISODE_UI_REQUEST_TIMEOUT_MS,
         onload: (response) => {
           const result = parseEpisodeUiResponseText(response.responseText || '');
           if (response.status >= 200 && response.status < 300) {
@@ -3346,6 +3363,8 @@
         result = await requestEpisodeUiModeWithGm(payload);
       } catch (gmError) {
         errors.push(gmError);
+        if (requestSeq !== episodeUiSaveRequestSeq) return null;
+
         const combined = new Error(errors.map(describeEpisodeUiError).join(' | '));
         combined.errors = errors;
         throw combined;
