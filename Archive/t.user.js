@@ -2751,11 +2751,27 @@
       }
 
       @media (max-width: 767px) {
+        /* Keep the same visual backdrop treatment as tablet/desktop on phones.
+           The later reduced-motion rule still disables blur for accessibility. */
+        #${ID.panelBackdrop},
+        html.${CLS.androidFirefox} #${ID.panelBackdrop} {
+          background: rgba(0, 0, 0, .16);
+          backdrop-filter: blur(5px) saturate(.96);
+          -webkit-backdrop-filter: blur(5px) saturate(.96);
+        }
+
+        body[data-theme="light"] #${ID.panelBackdrop},
+        html[data-theme="light"] #${ID.panelBackdrop},
+        body[data-theme="light"].${CLS.androidFirefox} #${ID.panelBackdrop},
+        html[data-theme="light"].${CLS.androidFirefox} #${ID.panelBackdrop} {
+          background: rgba(15, 23, 42, .10);
+        }
+
         #${ID.panel} {
-          top: max(40px, env(safe-area-inset-top));
+          top: max(100px, env(safe-area-inset-top));
           left: 6px;
           right: 6px;
-          bottom: max(40px, env(safe-area-inset-bottom));
+          bottom: max(100px, env(safe-area-inset-bottom));
           width: auto;
           height: auto;
           max-width: none;
