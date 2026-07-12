@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.10
+// @version      2.4.11
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.10';
+  const CRACK_UI_VERSION = '2.4.11';
 
   function getCrackUiPublicWindow() {
     try {
@@ -54,6 +54,7 @@
     handle: 'crack-ui-mobile-handle',
     panel: 'crack-ui-settings-panel',
     panelBackdrop: 'crack-ui-settings-backdrop',
+    panelRoot: 'crack-ui-settings-root',
     gearDesktop: 'crack-ui-gear-desktop',
     gearMobile: 'crack-ui-gear-mobile',
     toggleHeader: 'crack-ui-toggle-header',
@@ -2307,11 +2308,20 @@
 
       }
 
-      /* Visual-only backdrop: blur is restored without stealing hover/click events. */
-      #${ID.panelBackdrop} {
+      /* Backdrop and settings surface share one isolated stacking context.
+         This prevents Android Chromium from compositing the blur above the panel. */
+      #${ID.panelRoot} {
         position: fixed;
         inset: 0;
-        z-index: calc(var(--crack-ui-z-panel) - 10);
+        z-index: var(--crack-ui-z-panel);
+        pointer-events: none;
+      }
+
+      /* Visual-only backdrop: local layer 0 always stays behind the panel. */
+      #${ID.panelBackdrop} {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
         display: none;
         pointer-events: none;
         background: rgba(0, 0, 0, .16);
@@ -2339,8 +2349,9 @@
          Header auto-hide/reveal behavior is intentionally untouched.
          ===================================================== */
       #${ID.panel} {
-        position: fixed;
-        z-index: var(--crack-ui-z-panel);
+        position: absolute;
+        z-index: 1;
+        pointer-events: auto;
         top: 50%;
         left: 50%;
         right: auto;
@@ -2772,7 +2783,7 @@
           left: 6px;
           right: 6px;
           bottom: max(100px, env(safe-area-inset-bottom));
-          z-index: var(--crack-ui-z-panel);
+          z-index: 1;
           width: auto;
           height: auto;
           max-width: none;
@@ -2781,8 +2792,8 @@
           isolation: isolate;
           padding: 7px;
           background: rgba(28, 28, 30, .94);
-          backdrop-filter: none;
-          -webkit-backdrop-filter: none;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
         }
 
         body[data-theme="light"] #${ID.panel},
@@ -4093,7 +4104,7 @@
       }
       cluster.remove();
     });
-    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}`)
+    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panelRoot}, #${ID.panelBackdrop}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}`)
       .forEach((el) => el.remove());
     document.documentElement.classList.remove(
       'crack-wrtn-ui-autohide',
@@ -4741,15 +4752,26 @@
   }
 
   function ensurePanel() {
+    let panelRoot = document.getElementById(ID.panelRoot);
+    if (!panelRoot) {
+      panelRoot = document.createElement('div');
+      panelRoot.id = ID.panelRoot;
+      document.body.appendChild(panelRoot);
+    }
+
     let panelBackdrop = document.getElementById(ID.panelBackdrop);
     if (!panelBackdrop) {
       panelBackdrop = document.createElement('div');
       panelBackdrop.id = ID.panelBackdrop;
       panelBackdrop.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(panelBackdrop);
     }
+    if (panelBackdrop.parentElement !== panelRoot) panelRoot.appendChild(panelBackdrop);
 
-    if (document.getElementById(ID.panel)) return;
+    const existingPanel = document.getElementById(ID.panel);
+    if (existingPanel) {
+      if (existingPanel.parentElement !== panelRoot) panelRoot.appendChild(existingPanel);
+      return;
+    }
 
     const panel = document.createElement('div');
     panel.id = ID.panel;
@@ -5014,7 +5036,7 @@
       e.stopPropagation();
       closePanel();
     });
-    document.body.appendChild(panel);
+    panelRoot.appendChild(panel);
 
     bindPanelSections(panel);
     bindPanelThemeStripScroll(panel);
