@@ -80,6 +80,8 @@
     chatListZone: 'crack-ui-chat-list-zone',
     chatListHandle: 'crack-ui-chat-list-handle',
     toggleChatListAutoHide: 'crack-ui-toggle-chat-list-auto-hide',
+    toggleFullscreenButton: 'crack-ui-toggle-fullscreen-button',
+    fullscreenButton: 'fullscreen-toolbar-btn',
   };
 
   const LS = {
@@ -106,6 +108,7 @@
     bottomModelVisibleModelsOpen: 'crack_ui_bottom_model_visible_models_open',
     roomMenuHandle: 'crack_ui_room_menu_handle',
     chatListAutoHide: 'crack_ui_chat_list_auto_hide',
+    fullscreenButton: 'crack_ui_fullscreen_button',
   };
 
   const CLS = {
@@ -118,6 +121,7 @@
     hideSituationImage: 'crack-ui-hide-situation-image',
     chatWidthCustom: 'crack-ui-chat-width-custom',
     widthDragging: 'crack-ui-width-dragging',
+    rangePreview: 'crack-ui-range-preview',
     roomMenuEnabled: 'crack-ui-room-menu-enabled',
     roomMenuReveal: 'crack-ui-room-menu-reveal',
     chatListEnabled: 'crack-ui-chat-list-enabled',
@@ -126,6 +130,7 @@
     roomTopBarHidden: 'crack-ui-room-top-bar-hidden',
     phoneViewport: 'crack-ui-phone-viewport',
     tabletViewport: 'crack-ui-tablet-viewport',
+    androidFirefox: 'crack-ui-android-firefox',
   };
 
   const THEME_MODE_LABEL = {
@@ -328,6 +333,7 @@
   let hideSituationImage = loadHideSituationImage();
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
+  let fullscreenButtonEnabled = readStorage(LS.fullscreenButton) === '1';
   let chatWidthPercent = loadChatWidthPercent();
   let themeMode = loadThemeMode();
   let episodeUiMode = loadEpisodeUiMode();
@@ -358,6 +364,7 @@
   let episodeUiSaveRequestSeq = 0;
   let episodeUiReloadTimer = null;
   let isChatWidthDragging = false;
+  let activePanelRangePreviewInput = null;
   let animatedThumbRafPending = false;
   let animatedThumbUrlMap = null;
   let animatedThumbStillUrlStatus = new Map();
@@ -1392,6 +1399,41 @@
       }
 
 
+      #${ID.fullscreenButton} {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        padding: 0 !important;
+        border-radius: 999px !important;
+        cursor: pointer !important;
+        line-height: 1 !important;
+        flex: 0 0 auto !important;
+      }
+
+      #${ID.fullscreenButton} > span {
+        position: absolute !important;
+        inset: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        height: 100% !important;
+        line-height: 0 !important;
+        pointer-events: none !important;
+      }
+
+      #${ID.fullscreenButton} svg {
+        display: block !important;
+        width: 19px !important;
+        height: 20px !important;
+        margin: 0 !important;
+        overflow: visible !important;
+        pointer-events: none !important;
+      }
+
       #${ID.bottomModelButton} {
         display: inline-flex !important;
         align-items: center !important;
@@ -2195,6 +2237,12 @@
         background: rgba(15, 23, 42, .10) !important;
       }
 
+      html.${CLS.androidFirefox} #${ID.panelBackdrop} {
+        background: rgba(0, 0, 0, .08) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
       /* =====================================================
          Settings workspace v4 — layout only.
          Header auto-hide/reveal behavior is intentionally untouched.
@@ -2248,9 +2296,89 @@
         flex: 0 0 auto !important;
         align-items: stretch !important;
         gap: 8px !important;
+        max-height: 160px !important;
         padding: 0 0 10px !important;
         min-width: 0 !important;
+        overflow: hidden !important;
+        opacity: 1 !important;
+        transform: translateY(0) !important;
         background: transparent !important;
+        transition:
+          max-height 160ms ease,
+          padding-bottom 160ms ease,
+          opacity 120ms ease,
+          transform 160ms ease !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"][data-crack-ui-theme-strip-hidden="1"] .crack-ui-panel-theme-strip {
+        max-height: 0 !important;
+        padding-bottom: 0 !important;
+        opacity: 0 !important;
+        transform: translateY(-12px) !important;
+        pointer-events: none !important;
+      }
+
+      /* Returning the strip used to animate its height and push the scroller down.
+         Restore the layout immediately at the absolute top, then only fade it in. */
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"][data-crack-ui-theme-strip-restoring="1"] .crack-ui-panel-theme-strip {
+        transition: opacity 110ms ease !important;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip {
+          transition: none !important;
+        }
+      }
+
+      /* While any panel range slider is being adjusted, leave only that control visible.
+         Removing the panel/backdrop surface lets the chat remain visible as a live preview. */
+      html.${CLS.rangePreview} #${ID.panelBackdrop} {
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] {
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] > .crack-ui-panel-head,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-theme-strip,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-nav {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] > .crack-ui-panel-shell,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-workspace,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-content,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-panel-body,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section,
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section-body {
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] .crack-ui-section-body > :not([data-crack-ui-range-preview-active="1"]) {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-range-preview="1"] [data-crack-ui-range-preview-active="1"] {
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #${ID.panel}[data-crack-ui-range-preview="1"] * {
+          transition: none !important;
+        }
       }
 
       #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title {
@@ -2643,6 +2771,11 @@
     return window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)').matches;
   }
 
+  function isAndroidFirefoxBrowser() {
+    const ua = String(navigator.userAgent || '');
+    return /Android/i.test(ua) && /Firefox\//i.test(ua);
+  }
+
   function getCrackUiViewportWidth() {
     const values = [
       window.innerWidth,
@@ -2669,6 +2802,7 @@
   function updateDeviceViewportClasses() {
     document.documentElement.classList.toggle(CLS.phoneViewport, isPhoneLikeViewport());
     document.documentElement.classList.toggle(CLS.tabletViewport, isTabletLikeViewport());
+    document.documentElement.classList.toggle(CLS.androidFirefox, isAndroidFirefoxBrowser());
   }
 
   updateDeviceViewportClasses();
@@ -3648,17 +3782,95 @@
     });
   }
 
-  function startChatWidthDrag() {
-    isChatWidthDragging = true;
-    document.documentElement.classList.add(CLS.widthDragging);
+  function getPanelRangeInput(target) {
+    if (!(target instanceof HTMLInputElement) || target.type !== 'range') return null;
+    return target.closest?.(`#${ID.panel}`) ? target : null;
   }
 
-  function stopChatWidthDrag() {
-    if (!isChatWidthDragging) return;
+  function startPanelRangePreview(input) {
+    if (!input || input.disabled) return;
 
-    isChatWidthDragging = false;
-    document.documentElement.classList.remove(CLS.widthDragging);
-    flushChatWidthSave();
+    const panel = input.closest?.(`#${ID.panel}`);
+    const row = input.closest?.('.crack-ui-range-row');
+    if (!panel || !row) return;
+
+    activePanelRangePreviewInput = input;
+    panel.querySelectorAll('[data-crack-ui-range-preview-active="1"]').forEach((element) => {
+      if (element !== row) delete element.dataset.crackUiRangePreviewActive;
+    });
+
+    row.dataset.crackUiRangePreviewActive = '1';
+    panel.dataset.crackUiRangePreview = '1';
+    document.documentElement.classList.add(CLS.rangePreview);
+  }
+
+  function stopPanelRangePreview() {
+    const panel = document.getElementById(ID.panel);
+    panel?.querySelectorAll('[data-crack-ui-range-preview-active="1"]').forEach((element) => {
+      delete element.dataset.crackUiRangePreviewActive;
+    });
+
+    if (panel) delete panel.dataset.crackUiRangePreview;
+    activePanelRangePreviewInput = null;
+    document.documentElement.classList.remove(CLS.rangePreview);
+  }
+
+  function startPanelRangeDrag(input) {
+    if (!input || input.disabled) return;
+
+    if (activePanelRangePreviewInput === input) {
+      if (input.id === ID.chatWidthSlider && !isChatWidthDragging) {
+        isChatWidthDragging = true;
+        document.documentElement.classList.add(CLS.widthDragging);
+      }
+      return;
+    }
+
+    if (activePanelRangePreviewInput) stopPanelRangeDrag();
+
+    startPanelRangePreview(input);
+
+    // Chat width additionally disables its layout transition while dragging.
+    // Every other current or future range input still gets the transparent preview automatically.
+    if (input.id === ID.chatWidthSlider) {
+      isChatWidthDragging = true;
+      document.documentElement.classList.add(CLS.widthDragging);
+    }
+  }
+
+  function stopPanelRangeDrag() {
+    const input = activePanelRangePreviewInput;
+
+    if (isChatWidthDragging) {
+      isChatWidthDragging = false;
+      document.documentElement.classList.remove(CLS.widthDragging);
+      flushChatWidthSave();
+    }
+
+    if (input) stopPanelRangePreview();
+  }
+
+  function bindPanelRangeDragDelegation(panel) {
+    if (!panel || panel.dataset.crackUiRangeDragBound === '1') return;
+    panel.dataset.crackUiRangeDragBound = '1';
+
+    const startFromEvent = (event) => {
+      const input = getPanelRangeInput(event.target);
+      if (input) startPanelRangeDrag(input);
+    };
+
+    const stopFromEvent = (event) => {
+      const input = getPanelRangeInput(event.target);
+      if (!input || input === activePanelRangePreviewInput) stopPanelRangeDrag();
+    };
+
+    // Event delegation means newly added range sliders are handled without extra binding code.
+    panel.addEventListener('pointerdown', startFromEvent, { passive: true });
+    panel.addEventListener('touchstart', startFromEvent, { passive: true });
+    panel.addEventListener('mousedown', startFromEvent);
+    panel.addEventListener('input', startFromEvent);
+    panel.addEventListener('change', stopFromEvent);
+    panel.addEventListener('blur', stopFromEvent, true);
   }
 
   function clearMobileHideTimer() {
@@ -3971,6 +4183,13 @@
     if (options.resetScroll !== false) {
       const scroller = panel.querySelector('.crack-ui-panel-body');
       if (scroller) scroller.scrollTop = 0;
+      panel.dataset.crackUiThemeStripRestoring = '1';
+      panel.dataset.crackUiThemeStripHidden = '0';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          delete panel.dataset.crackUiThemeStripRestoring;
+        });
+      });
     }
   }
 
@@ -4016,6 +4235,47 @@
         panel.querySelector(`[data-crack-ui-section-nav="${nextSection}"]`)?.focus?.();
       });
     });
+  }
+
+  function bindPanelThemeStripScroll(panel) {
+    const scroller = panel.querySelector('.crack-ui-panel-body');
+    if (!scroller || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
+
+    scroller.dataset.crackUiThemeStripScrollBound = '1';
+    let restoreCleanupRaf = 0;
+
+    const clearRestoreMode = () => {
+      if (restoreCleanupRaf) cancelAnimationFrame(restoreCleanupRaf);
+      restoreCleanupRaf = requestAnimationFrame(() => {
+        restoreCleanupRaf = requestAnimationFrame(() => {
+          delete panel.dataset.crackUiThemeStripRestoring;
+          restoreCleanupRaf = 0;
+        });
+      });
+    };
+
+    const updateThemeStripVisibility = () => {
+      const scrollTop = Math.max(0, scroller.scrollTop);
+      const hidden = panel.dataset.crackUiThemeStripHidden === '1';
+
+      // Hysteresis prevents rapid hide/show changes around the boundary.
+      if (!hidden && scrollTop > 12) {
+        delete panel.dataset.crackUiThemeStripRestoring;
+        panel.dataset.crackUiThemeStripHidden = '1';
+        return;
+      }
+
+      // Restore only after the scroller has actually reached the top.
+      // Height/padding return immediately, avoiding the upward "thud" effect.
+      if (hidden && scrollTop <= 1) {
+        panel.dataset.crackUiThemeStripRestoring = '1';
+        panel.dataset.crackUiThemeStripHidden = '0';
+        clearRestoreMode();
+      }
+    };
+
+    scroller.addEventListener('scroll', updateThemeStripVisibility, { passive: true });
+    updateThemeStripVisibility();
   }
 
   function bindCheckbox(panel, id, checked, onChange) {
@@ -4333,6 +4593,17 @@
               </span>
             </label>
 
+            <label class="crack-ui-row">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">전체화면 버튼</span>
+              </span>
+
+              <span>
+                <input id="${ID.toggleFullscreenButton}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
+
             <label class="crack-ui-row" data-crack-ui-chat-list-auto-hide-row data-disabled="${isChatListAutoHideSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatListAutoHideSupportedViewport() ? 'false' : 'true'}">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">채팅 목록 자동 숨김</span>
@@ -4371,6 +4642,7 @@
     document.body.appendChild(panel);
 
     bindPanelSections(panel);
+    bindPanelThemeStripScroll(panel);
     bindChoiceButtons(panel);
     syncPanelSections();
     updateVisibleModelChoicesUi();
@@ -4430,6 +4702,11 @@
       ensureRoomMenuHandle();
       applyState();
     });
+    bindCheckbox(panel, ID.toggleFullscreenButton, fullscreenButtonEnabled, (checked) => {
+      fullscreenButtonEnabled = checked;
+      writeStorage(LS.fullscreenButton, fullscreenButtonEnabled ? '1' : '0');
+      ensureFullscreenButton();
+    });
     bindCheckbox(panel, ID.toggleChatListAutoHide, chatListAutoHide, (checked, input) => {
       if (isTabletLikeViewport()) {
         chatListAutoHide = false;
@@ -4447,21 +4724,10 @@
       if (checked && isDesktopChatListAutoHideViewport()) scheduleChatListClose(450);
     });
     bindRangeInput(panel, ID.imageSlider, setImageSize, flushImageSizeSave);
+    bindRangeInput(panel, ID.chatWidthSlider, setChatWidthPercent);
 
-    const chatWidthSlider = bindRangeInput(panel, ID.chatWidthSlider, setChatWidthPercent);
-
-    if (chatWidthSlider) {
-      chatWidthSlider.addEventListener('pointerdown', startChatWidthDrag);
-      chatWidthSlider.addEventListener('touchstart', startChatWidthDrag, { passive: true });
-      chatWidthSlider.addEventListener('mousedown', startChatWidthDrag);
-      chatWidthSlider.addEventListener('pointerup', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('pointercancel', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('touchend', stopChatWidthDrag, { passive: true });
-      chatWidthSlider.addEventListener('touchcancel', stopChatWidthDrag, { passive: true });
-      chatWidthSlider.addEventListener('mouseup', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('change', stopChatWidthDrag);
-      chatWidthSlider.addEventListener('blur', stopChatWidthDrag);
-    }
+    // One delegated handler covers every current and future range slider in the panel.
+    bindPanelRangeDragDelegation(panel);
 
     updateImageSizeUi();
     updateChatWidthUi();
@@ -4506,6 +4772,7 @@
     syncCheckbox(ID.toggleHideSituationImage, hideSituationImage);
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
+    syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
 
@@ -4527,6 +4794,7 @@
 
     panelOpen = false;
     panel.dataset.open = '0';
+    stopPanelRangeDrag();
     isChatWidthDragging = false;
     document.documentElement.classList.remove(CLS.widthDragging);
     flushImageSizeSave();
@@ -6966,6 +7234,131 @@
     return cachedMobileChatListToggle;
   }
 
+  function isFullscreenButtonRoute() {
+    const path = String(window.location.pathname || '');
+    return path.includes('/stories/') && path.includes('/episodes/') ||
+      path.includes('/characters/') && path.includes('/chats/');
+  }
+
+  function getFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function findFullscreenToolbar() {
+    const originalToolbar = document.querySelector('.flex.items-center.space-x-2');
+    if (originalToolbar) return originalToolbar;
+
+    const externalAnchors = ['cap-toolbar-btn', 'txt-palette-toolbar-btn', 'hlp-toolbar-btn'];
+    for (const id of externalAnchors) {
+      const anchor = document.getElementById(id);
+      if (anchor?.parentElement) return anchor.parentElement;
+    }
+
+    const recommendButton = [...document.querySelectorAll('button')].find((button) =>
+      String(button.textContent || '').includes('추천답변')
+    );
+    if (recommendButton) {
+      return recommendButton.closest('.flex.items-center.space-x-2') || recommendButton.parentElement;
+    }
+
+    return null;
+  }
+
+  function getFullscreenButtonIcon(active) {
+    const stateMark = active
+      ? '<path d="m8.4 12.4 3.6 3.6 3.6-3.6" stroke-width="1.85" />'
+      : '<path d="m8.4 15.6 3.6-3.6 3.6 3.6" stroke-width="1.85" />';
+
+    return `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3.25" y="3.5" width="17.5" height="17" rx="2.25" stroke-width="1.15" />
+        <path d="M3.25 8.25h17.5" stroke-width="1.15" />
+        ${stateMark}
+      </svg>
+    `;
+  }
+
+  function updateFullscreenButtonUi() {
+    const button = document.getElementById(ID.fullscreenButton);
+    if (!button) return;
+    const active = !!getFullscreenElement();
+    const label = active ? '전체화면 종료' : '전체화면 시작';
+    const span = button.querySelector('span');
+    if (span) span.innerHTML = getFullscreenButtonIcon(active);
+    button.dataset.active = active ? '1' : '0';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+  }
+
+  async function toggleFullscreen() {
+    try {
+      const active = getFullscreenElement();
+      if (active) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (typeof exit !== 'function') throw new Error('이 브라우저는 전체화면 종료를 지원하지 않습니다.');
+        await exit.call(document);
+      } else {
+        const root = document.documentElement;
+        const request = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (typeof request !== 'function') throw new Error('이 브라우저는 전체화면을 지원하지 않습니다.');
+        await request.call(root);
+      }
+    } catch (error) {
+      reportCrackUiError('fullscreen-toggle', error);
+    } finally {
+      updateFullscreenButtonUi();
+    }
+  }
+
+  function removeFullscreenButton() {
+    document.getElementById(ID.fullscreenButton)?.remove();
+  }
+
+  function ensureFullscreenButton() {
+    if (!fullscreenButtonEnabled || !isFullscreenButtonRoute()) {
+      removeFullscreenButton();
+      return;
+    }
+
+    const container = findFullscreenToolbar();
+    if (!container) return;
+
+    let button = document.getElementById(ID.fullscreenButton);
+    if (!button) {
+      button = document.createElement('button');
+      button.id = ID.fullscreenButton;
+      button.type = 'button';
+      button.className = 'relative inline-flex items-center gap-1 rounded-full text-sm font-medium transition-colors border border-border bg-card text-line-gray-1 hover:bg-secondary p-0 size-7 justify-center ml-1';
+      button.innerHTML = `<span aria-hidden="true">${getFullscreenButtonIcon(false)}</span>`;
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleFullscreen();
+      });
+    }
+
+    if (button.parentElement !== container) {
+      const externalButtons = ['cap-toolbar-btn', 'txt-palette-toolbar-btn', 'hlp-toolbar-btn']
+        .map((id) => document.getElementById(id))
+        .filter((element) => element?.parentElement === container);
+      const recommendButton = [...container.querySelectorAll('button')]
+        .find((element) => element !== button && String(element.textContent || '').includes('추천답변')) || null;
+
+      if (externalButtons.length) {
+        const lastExternalButton = externalButtons
+          .sort((a, b) => [...container.children].indexOf(a) - [...container.children].indexOf(b))
+          .at(-1);
+        lastExternalButton.after(button);
+      } else if (recommendButton) {
+        container.insertBefore(button, recommendButton);
+      } else {
+        container.appendChild(button);
+      }
+    }
+
+    updateFullscreenButtonUi();
+  }
+
   // =====================================================
   // DOM: locator facade / debug snapshot / cache reset
   // =====================================================
@@ -6993,6 +7386,8 @@
     situationImageButtons: () => findSituationImageButtons(),
     loreEntryButton: () => findLoreEntryButton(),
     loreRoomTopBar: () => findLoreRoomTopBar(),
+    fullscreenToolbar: () => findFullscreenToolbar(),
+    fullscreenButton: () => document.getElementById(ID.fullscreenButton),
   };
 
   const DOM_LOCATORS = {
@@ -7013,6 +7408,8 @@
     situationImageButtons: DOM.situationImageButtons,
     loreEntryButton: DOM.loreEntryButton,
     loreRoomTopBar: DOM.loreRoomTopBar,
+    fullscreenToolbar: DOM.fullscreenToolbar,
+    fullscreenButton: DOM.fullscreenButton,
   };
 
   function getDomLocatorDebugSnapshot() {
@@ -7538,6 +7935,8 @@ function markMobileChatListOpenState() {
         closePanel();
       }
     });
+    document.addEventListener('fullscreenchange', updateFullscreenButtonUi);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenButtonUi);
     window.addEventListener('resize', () => {
       updateDeviceViewportClasses();
       applyChatWidth();
@@ -7553,11 +7952,11 @@ function markMobileChatListOpenState() {
     });
 
     window.visualViewport?.addEventListener?.('resize', updateDeviceViewportClasses, { passive: true });
-    window.addEventListener('pointerup', stopChatWidthDrag);
-    window.addEventListener('pointercancel', stopChatWidthDrag);
-    window.addEventListener('mouseup', stopChatWidthDrag);
-    window.addEventListener('touchend', stopChatWidthDrag, { passive: true });
-    window.addEventListener('touchcancel', stopChatWidthDrag, { passive: true });
+    window.addEventListener('pointerup', stopPanelRangeDrag);
+    window.addEventListener('pointercancel', stopPanelRangeDrag);
+    window.addEventListener('mouseup', stopPanelRangeDrag);
+    window.addEventListener('touchend', stopPanelRangeDrag, { passive: true });
+    window.addEventListener('touchcancel', stopPanelRangeDrag, { passive: true });
     window.addEventListener('pagehide', () => {
       flushImageSizeSave();
       flushChatWidthSave();
@@ -7615,6 +8014,8 @@ function markMobileChatListOpenState() {
         emptySendGuard,
         roomMenuHandle,
         chatListAutoHide,
+        fullscreenButtonEnabled,
+        fullscreenActive: !!getFullscreenElement(),
         chatListAutoHideMode: getChatListAutoHideMode(),
         chatListAutoHideActive: chatListAutoHide && isChatListAutoHideSupportedViewport(),
         chatListAutoHidePhone: chatListAutoHide && isPhoneLikeViewport(),
@@ -7821,6 +8222,7 @@ function markMobileChatListOpenState() {
       ensureGearButtons(header);
     }
     ensureLoreEntryButtonInRoomTopBar();
+    ensureFullscreenButton();
 
     bindOfficialModelRegistryScan();
     syncChatModelRegistryFromOfficialMenu();
