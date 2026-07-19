@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.14
+// @version      2.4.3
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.14';
+  const CRACK_UI_VERSION = '2.4.3';
 
   function getCrackUiPublicWindow() {
     try {
@@ -54,7 +54,6 @@
     handle: 'crack-ui-mobile-handle',
     panel: 'crack-ui-settings-panel',
     panelBackdrop: 'crack-ui-settings-backdrop',
-    panelRoot: 'crack-ui-settings-root',
     gearDesktop: 'crack-ui-gear-desktop',
     gearMobile: 'crack-ui-gear-mobile',
     toggleHeader: 'crack-ui-toggle-header',
@@ -64,6 +63,8 @@
     toggleBottomModelPicker: 'crack-ui-toggle-bottom-model-picker',
     toggleEmptySendGuard: 'crack-ui-toggle-empty-send-guard',
     toggleHideSituationImage: 'crack-ui-toggle-hide-situation-image',
+    themeModeValue: 'crack-ui-theme-mode-value',
+    episodeUiModeValue: 'crack-ui-episode-ui-mode-value',
     imageSlider: 'crack-ui-image-size-slider',
     imageValue: 'crack-ui-image-size-value',
     chatWidthSlider: 'crack-ui-chat-width-slider',
@@ -100,6 +101,9 @@
     pendingThemeMode: 'crack_ui_pending_theme_mode',
     pendingEpisodeUiMode: 'crack_ui_pending_episode_ui_mode',
     lastEpisodeUiError: 'crack_ui_last_episode_ui_error',
+    sectionDisplayOpen: 'crack_ui_section_display_open',
+    sectionThemeOpen: 'crack_ui_section_theme_open',
+    sectionChatOpen: 'crack_ui_section_chat_open',
     panelActiveSection: 'crack_ui_panel_active_section',
     bottomModelPicker: 'crack_ui_bottom_model_picker',
     emptySendGuard: 'crack_ui_empty_send_guard',
@@ -159,10 +163,8 @@
     maxMs: 600,
     cooldownMs: 600,
     topOffset: 36,
+    feedbackMs: 200,
   });
-
-  let cachedAndroidFirefoxBrowser = null;
-  let cachedIosDevice = null;
 
   function normalizeMenuAssistMode(value) {
     const mode = String(value || '').toLowerCase();
@@ -182,8 +184,6 @@
   const CRACK_API = {
     episodeUiSetting: 'https://crack-api.wrtn.ai/crack-api/profiles/ui-setting',
   };
-
-  const EPISODE_UI_REQUEST_TIMEOUT_MS = 10000;
 
   function clampImageSize(value) {
     const n = Number(value);
@@ -355,6 +355,12 @@
     return 'novel';
   }
 
+  function loadSectionOpen(key, fallback = true) {
+    const raw = readStorage(key);
+    if (raw == null) return fallback;
+    return raw === '1';
+  }
+
   let autoHideHeader = readStorage(LS.autoHideHeader) === '1';
   let imageSize = loadImageSize();
   let lineBreakOptimize = loadLineBreakOptimize();
@@ -375,6 +381,9 @@
   let chatWidthPercent = loadChatWidthPercent();
   let themeMode = loadThemeMode();
   let episodeUiMode = loadEpisodeUiMode();
+  let displaySectionOpen = loadSectionOpen(LS.sectionDisplayOpen, true);
+  let themeSectionOpen = loadSectionOpen(LS.sectionThemeOpen, true);
+  let chatSectionOpen = loadSectionOpen(LS.sectionChatOpen, true);
   let activePanelSection = ['display', 'chat'].includes(readStorage(LS.panelActiveSection))
     ? readStorage(LS.panelActiveSection)
     : 'chat';
@@ -419,7 +428,6 @@
   let cachedChatListPanel = null;
   let cachedChatListToggle = null;
   let cachedMobileChatListToggle = null;
-  let mobileChatListCleanupPending = true;
   let cachedRoomPanel = null;
   let cachedRoomPanelToggle = null;
   let situationImageMarkTimer = null;
@@ -842,6 +850,54 @@
         pointer-events: none !important;
       }
 
+      #${ID.panel} {
+        position: fixed;
+        z-index: var(--crack-ui-z-panel);
+        width: 318px;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100dvh - 16px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        display: none;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, .11);
+        border-radius: 22px;
+        background: rgba(28, 28, 30, .74);
+        color: rgba(255, 255, 255, .94);
+        box-shadow:
+          0 18px 46px rgba(0, 0, 0, .30),
+          inset 0 1px 0 rgba(255, 255, 255, .07);
+        backdrop-filter: blur(24px) saturate(1.18);
+        -webkit-backdrop-filter: blur(24px) saturate(1.18);
+        font-family: inherit;
+        animation: crackUiPop .14s ease-out;
+      }
+
+      #${ID.panel}[data-open="1"] {
+        display: block;
+      }
+
+      @keyframes crackUiPop {
+        from {
+          opacity: 0;
+          transform: translateY(-6px) scale(.985);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .crack-ui-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 2px 7px;
+        min-height: 26px;
+      }
+
       .crack-ui-title-wrap {
         display: flex;
         flex-direction: row;
@@ -865,6 +921,101 @@
         letter-spacing: -.01em;
         color: rgba(255, 255, 255, .42);
         user-select: none;
+      }
+
+      .crack-ui-panel-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .crack-ui-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 6px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, .035);
+        border: 1px solid rgba(255, 255, 255, .055);
+        overflow: hidden;
+      }
+
+      .crack-ui-section-head {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 28px;
+        padding: 3px 7px 4px;
+        box-sizing: border-box;
+        border: 0;
+        border-radius: 14px;
+        background: transparent;
+        color: rgba(255, 255, 255, .92);
+        cursor: pointer;
+        font-family: inherit;
+        transform: none !important;
+        transition: background-color 130ms ease;
+      }
+
+      .crack-ui-section-head:hover {
+        background: rgba(255, 255, 255, .055);
+      }
+
+      .crack-ui-section-head:active {
+        transform: none !important;
+      }
+
+      .crack-ui-section-head:focus,
+      .crack-ui-section-head:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+      }
+
+      .crack-ui-section-title {
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: -.02em;
+        color: rgba(255, 255, 255, .94);
+      }
+
+
+      .crack-ui-section-chevron {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 0;
+        color: rgba(255, 255, 255, .54);
+        font-size: 10px;
+        font-weight: 900;
+        line-height: 1;
+        transform: rotate(0deg);
+        transition:
+          transform 150ms ease,
+          color 130ms ease;
+      }
+
+      .crack-ui-section-head:hover .crack-ui-section-chevron {
+        background: transparent;
+        color: rgba(255, 255, 255, .80);
+      }
+
+      .crack-ui-section[data-open="0"] .crack-ui-section-chevron {
+        transform: rotate(-90deg);
+      }
+
+      .crack-ui-section-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .crack-ui-section[data-open="0"] .crack-ui-section-body {
+        display: none;
       }
 
       .crack-ui-panel-close {
@@ -1912,6 +2063,28 @@
         user-select: none !important;
       }
 
+      #${ID.menuSwipeZone}::after {
+        content: "";
+        position: absolute;
+        inset: 7px 18px;
+        border-radius: 999px;
+        background: rgba(165, 165, 175, .16);
+        opacity: 0;
+        transform: scaleX(.96);
+        transition: opacity 180ms ease, transform 180ms ease;
+        pointer-events: none;
+      }
+
+      #${ID.menuSwipeZone}[data-feedback="1"]::after {
+        opacity: 1;
+        transform: scaleX(1);
+      }
+
+      html[data-theme="light"] #${ID.menuSwipeZone}::after,
+      body[data-theme="light"] #${ID.menuSwipeZone}::after {
+        background: rgba(120, 120, 128, .13);
+      }
+
       .crack-ui-range-row[data-disabled="1"] .crack-ui-range::-webkit-slider-runnable-track {
         background: rgba(120, 120, 128, .24) !important;
       }
@@ -1947,6 +2120,8 @@
 
       body[data-theme="light"] #${ID.panel} .crack-ui-panel-title,
       html[data-theme="light"] #${ID.panel} .crack-ui-panel-title,
+      body[data-theme="light"] #${ID.panel} .crack-ui-section-title,
+      html[data-theme="light"] #${ID.panel} .crack-ui-section-title,
       body[data-theme="light"] #${ID.panel} .crack-ui-row-name,
       html[data-theme="light"] #${ID.panel} .crack-ui-row-name,
       body[data-theme="light"] #${ID.panel} .crack-ui-choice-title,
@@ -1969,6 +2144,33 @@
       body[data-theme="light"] #${ID.panel} .crack-ui-choice-value,
       html[data-theme="light"] #${ID.panel} .crack-ui-choice-value {
         color: rgba(75, 85, 99, .86);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-section,
+      html[data-theme="light"] #${ID.panel} .crack-ui-section {
+        background: rgba(17, 24, 39, .035);
+        border-color: rgba(17, 24, 39, .065);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-section-head,
+      html[data-theme="light"] #${ID.panel} .crack-ui-section-head {
+        color: rgba(17, 24, 39, .92);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover,
+      html[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover {
+        background: rgba(17, 24, 39, .055);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-section-chevron,
+      html[data-theme="light"] #${ID.panel} .crack-ui-section-chevron {
+        color: rgba(75, 85, 99, .62);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover .crack-ui-section-chevron,
+      html[data-theme="light"] #${ID.panel} .crack-ui-section-head:hover .crack-ui-section-chevron {
+        background: transparent;
+        color: rgba(17, 24, 39, .82);
       }
 
       body[data-theme="light"] #${ID.panel} .crack-ui-panel-close,
@@ -2283,6 +2485,13 @@
           z-index: 1;
         }
 
+        #${ID.panel} {
+          width: min(318px, calc(100vw - 16px));
+          border-radius: 21px;
+          padding: 8px;
+        }
+
+
         #${ID.bottomModelButton} {
           max-width: 28px !important;
           width: 28px !important;
@@ -2309,151 +2518,117 @@
 
       }
 
-      /* Backdrop and settings surface share one isolated stacking context.
-         This prevents Android Chromium from compositing the blur above the panel. */
-      #${ID.panelRoot} {
-        position: fixed;
-        inset: 0;
-        z-index: var(--crack-ui-z-panel);
-        pointer-events: none;
-      }
-
-      /* Visual-only backdrop: local layer 0 always stays behind the panel. */
+      /* Visual-only backdrop: blur is restored without stealing hover/click events. */
       #${ID.panelBackdrop} {
-        position: absolute;
-        inset: 0;
-        z-index: 0;
-        display: none;
-        pointer-events: none;
-        background: rgba(0, 0, 0, .16);
-        backdrop-filter: blur(5px) saturate(.96);
-        -webkit-backdrop-filter: blur(5px) saturate(.96);
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: calc(var(--crack-ui-z-panel) - 1) !important;
+        display: none !important;
+        pointer-events: none !important;
+        background: rgba(0, 0, 0, .16) !important;
+        backdrop-filter: blur(5px) saturate(.96) !important;
+        -webkit-backdrop-filter: blur(5px) saturate(.96) !important;
       }
 
       html.${CLS.panelOpen} #${ID.panelBackdrop} {
-        display: block;
+        display: block !important;
       }
 
       body[data-theme="light"] #${ID.panelBackdrop},
       html[data-theme="light"] #${ID.panelBackdrop} {
-        background: rgba(15, 23, 42, .10);
+        background: rgba(15, 23, 42, .10) !important;
       }
 
       html.${CLS.androidFirefox} #${ID.panelBackdrop} {
-        background: rgba(0, 0, 0, .08);
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
+        background: rgba(0, 0, 0, .08) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
       }
 
       /* =====================================================
-         Settings workspace — final layout.
+         Settings workspace v4 — layout only.
          Header auto-hide/reveal behavior is intentionally untouched.
          ===================================================== */
-      #${ID.panel} {
-        position: absolute;
-        z-index: 1;
-        pointer-events: auto;
-        top: 50%;
-        left: 50%;
-        right: auto;
-        bottom: auto;
-        width: min(980px, calc(100vw - 32px));
-        height: min(760px, calc(100dvh - 32px));
-        max-width: calc(100vw - 32px);
-        max-height: calc(100dvh - 32px);
-        display: none;
-        box-sizing: border-box;
-        transform: translate(-50%, -50%);
-        padding: 10px;
-        overflow: hidden;
-        overscroll-behavior: contain;
-        border: 1px solid rgba(255, 255, 255, .11);
-        border-radius: 22px;
-        background: rgba(28, 28, 30, .74);
-        color: rgba(255, 255, 255, .94);
-        box-shadow:
-          0 18px 46px rgba(0, 0, 0, .30),
-          inset 0 1px 0 rgba(255, 255, 255, .07);
-        backdrop-filter: blur(24px) saturate(1.18);
-        -webkit-backdrop-filter: blur(24px) saturate(1.18);
-        font-family: inherit;
-        animation: crackUiWorkspacePop .14s ease-out;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] {
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: min(980px, calc(100vw - 32px)) !important;
+        height: min(760px, calc(100dvh - 32px)) !important;
+        max-width: calc(100vw - 32px) !important;
+        max-height: calc(100dvh - 32px) !important;
+        transform: translate(-50%, -50%) !important;
+        padding: 10px !important;
+        overflow: hidden !important;
       }
 
-      #${ID.panel}[data-open="1"] {
-        display: flex;
-        flex-direction: column;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"][data-open="1"] {
+        display: flex !important;
+        flex-direction: column !important;
       }
 
-      @keyframes crackUiWorkspacePop {
-        from { opacity: 0; }
-        to { opacity: 1; }
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] > .crack-ui-panel-head {
+        flex: 0 0 auto !important;
+        min-height: 38px !important;
+        padding: 2px 6px 10px !important;
+        margin: 0 !important;
+        position: relative !important;
+        top: auto !important;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
       }
 
-      #${ID.panel} > .crack-ui-panel-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex: 0 0 auto;
-        min-height: 38px;
-        padding: 2px 6px 10px;
-        margin: 0;
-        position: relative;
-        top: auto;
-        background: transparent;
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
-      }
-
-      #${ID.panel} > .crack-ui-panel-shell {
-        display: flex;
-        flex: 1 1 auto;
-        flex-direction: column;
-        min-width: 0;
-        min-height: 0;
-        overflow: hidden;
-        border: 0;
-        border-radius: 0;
-        background: transparent;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] > .crack-ui-panel-shell {
+        display: flex !important;
+        flex: 1 1 auto !important;
+        flex-direction: column !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
       }
 
       /* Theme stays visible above both pages. Only these compact controls get a surface. */
-      #${ID.panel} .crack-ui-panel-theme-strip {
-        display: flex;
-        flex: 0 0 auto;
-        align-items: stretch;
-        gap: 8px;
-        max-height: 160px;
-        padding: 0 0 10px;
-        min-width: 0;
-        overflow: hidden;
-        opacity: 1;
-        transform: translateY(0);
-        background: transparent;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip {
+        display: flex !important;
+        flex: 0 0 auto !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+        max-height: 160px !important;
+        padding: 0 0 10px !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+        opacity: 1 !important;
+        transform: translateY(0) !important;
+        background: transparent !important;
         transition:
           max-height 160ms ease,
           padding-bottom 160ms ease,
           opacity 120ms ease,
-          transform 160ms ease;
+          transform 160ms ease !important;
       }
 
-      #${ID.panel}[data-crack-ui-theme-strip-hidden="1"] .crack-ui-panel-theme-strip {
-        max-height: 0;
-        padding-bottom: 0;
-        opacity: 0;
-        transform: translateY(-12px);
-        pointer-events: none;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"][data-crack-ui-theme-strip-hidden="1"] .crack-ui-panel-theme-strip {
+        max-height: 0 !important;
+        padding-bottom: 0 !important;
+        opacity: 0 !important;
+        transform: translateY(-12px) !important;
+        pointer-events: none !important;
       }
 
       /* Returning the strip used to animate its height and push the scroller down.
          Restore the layout immediately at the absolute top, then only fade it in. */
-      #${ID.panel}[data-crack-ui-theme-strip-restoring="1"] .crack-ui-panel-theme-strip {
-        transition: opacity 110ms ease;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"][data-crack-ui-theme-strip-restoring="1"] .crack-ui-panel-theme-strip {
+        transition: opacity 110ms ease !important;
       }
 
       @media (prefers-reduced-motion: reduce) {
-        #${ID.panel} .crack-ui-panel-theme-strip {
-          transition: none;
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip {
+          transition: none !important;
         }
       }
 
@@ -2508,402 +2683,373 @@
         }
       }
 
-      #${ID.panel} .crack-ui-theme-strip-title {
-        display: inline-flex;
-        flex: 0 0 auto;
-        align-items: center;
-        padding: 0 2px;
-        color: rgba(255, 255, 255, .90);
-        font-size: 12px;
-        font-weight: 900;
-        line-height: 1;
-        white-space: nowrap;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title {
+        display: inline-flex !important;
+        flex: 0 0 auto !important;
+        align-items: center !important;
+        padding: 0 2px !important;
+        color: rgba(255, 255, 255, .90) !important;
+        font-size: 12px !important;
+        font-weight: 900 !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
       }
 
-      #${ID.panel} .crack-ui-theme-strip-group {
-        display: flex;
-        flex: 1 1 0;
-        min-width: 0;
-        align-items: center;
-        gap: 9px;
-        box-sizing: border-box;
-        padding: 8px 10px;
-        border: 1px solid rgba(255, 255, 255, .07);
-        border-radius: 14px;
-        background: rgba(0, 0, 0, .28);
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group {
+        display: flex !important;
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        align-items: center !important;
+        gap: 9px !important;
+        box-sizing: border-box !important;
+        padding: 8px 10px !important;
+        border: 1px solid rgba(255, 255, 255, .07) !important;
+        border-radius: 14px !important;
+        background: rgba(0, 0, 0, .28) !important;
       }
 
-      #${ID.panel} .crack-ui-theme-strip-label {
-        flex: 0 0 auto;
-        min-width: 30px;
-        color: rgba(255, 255, 255, .58);
-        font-size: 11px;
-        font-weight: 850;
-        line-height: 1;
-        white-space: nowrap;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label {
+        flex: 0 0 auto !important;
+        min-width: 30px !important;
+        color: rgba(255, 255, 255, .58) !important;
+        font-size: 11px !important;
+        font-weight: 850 !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
       }
 
-      #${ID.panel} .crack-ui-theme-strip-options {
-        display: flex;
-        flex: 1 1 auto;
-        min-width: 0;
-        gap: 5px;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-options {
+        display: flex !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 5px !important;
       }
 
-      #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-row {
-        display: flex;
-        flex: 1 1 0;
-        width: auto;
-        min-width: 0;
-        min-height: 32px;
-        padding: 0 9px;
-        gap: 0;
-        border-radius: 10px;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-row {
+        display: flex !important;
+        flex: 1 1 0 !important;
+        width: auto !important;
+        min-width: 0 !important;
+        min-height: 32px !important;
+        padding: 0 9px !important;
+        gap: 0 !important;
+        border-radius: 10px !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
       }
 
-      #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-name {
-        font-size: 11px;
-        font-weight: 800;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-mark {
+        display: none !important;
       }
 
-      #${ID.panel} .crack-ui-panel-workspace {
-        display: grid;
-        grid-template-columns: 112px minmax(0, 1fr);
-        flex: 1 1 auto;
-        min-width: 0;
-        min-height: 0;
-        overflow: hidden;
-        border: 0;
-        background: transparent;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-name {
+        font-size: 11px !important;
+        font-weight: 800 !important;
       }
 
-      #${ID.panel} .crack-ui-panel-nav {
-        display: flex;
-        flex-direction: column;
-        width: auto;
-        min-width: 0;
-        padding: 4px 8px 4px 0;
-        gap: 6px;
-        overflow-x: hidden;
-        overflow-y: auto;
-        border-right: 1px solid rgba(255, 255, 255, .065);
-        background: transparent;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-workspace {
+        display: grid !important;
+        grid-template-columns: 112px minmax(0, 1fr) !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        background: transparent !important;
       }
 
-      #${ID.panel} .crack-ui-panel-nav-button {
-        appearance: none;
-        display: flex;
-        flex: 0 0 auto;
-        width: 100%;
-        min-width: 0;
-        min-height: 42px;
-        align-items: center;
-        justify-content: flex-start;
-        box-sizing: border-box;
-        padding: 0 11px;
-        border: 1px solid transparent;
-        border-radius: 12px;
-        background: transparent;
-        color: rgba(255, 255, 255, .68);
-        font-family: inherit;
-        font-size: 12px;
-        font-weight: 850;
-        line-height: 1;
-        text-align: left;
-        cursor: pointer;
-        transform: none;
-        transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+        display: flex !important;
+        flex-direction: column !important;
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 4px 8px 4px 0 !important;
+        gap: 6px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        border-right: 1px solid rgba(255, 255, 255, .065) !important;
+        background: transparent !important;
       }
 
-      #${ID.panel} .crack-ui-panel-nav-button:hover {
-        background: rgba(255, 255, 255, .055);
-        color: rgba(255, 255, 255, .92);
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button {
+        appearance: none !important;
+        display: flex !important;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 42px !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        box-sizing: border-box !important;
+        padding: 0 11px !important;
+        border: 1px solid transparent !important;
+        border-radius: 12px !important;
+        background: transparent !important;
+        color: rgba(255, 255, 255, .68) !important;
+        font-family: inherit !important;
+        font-size: 12px !important;
+        font-weight: 850 !important;
+        line-height: 1 !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        transform: none !important;
+        transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease !important;
       }
 
-      #${ID.panel} .crack-ui-panel-nav-button[data-active="1"] {
-        background: rgba(254, 69, 50, .14);
-        border-color: rgba(254, 69, 50, .38);
-        color: rgba(255, 255, 255, .96);
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button:hover {
+        background: rgba(255, 255, 255, .055) !important;
+        color: rgba(255, 255, 255, .92) !important;
       }
 
-      #${ID.panel} .crack-ui-panel-content {
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-        min-height: 0;
-        overflow: hidden;
-        background: transparent;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button[data-active="1"] {
+        background: rgba(254, 69, 50, .14) !important;
+        border-color: rgba(254, 69, 50, .38) !important;
+        color: rgba(255, 255, 255, .96) !important;
       }
 
-      #${ID.panel} .crack-ui-panel-body {
-        display: block;
-        flex: 1 1 auto;
-        min-width: 0;
-        min-height: 0;
-        padding: 4px 10px 12px 14px;
-        overflow-x: hidden;
-        overflow-y: auto;
-        overscroll-behavior: contain;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-content {
+        display: flex !important;
+        flex-direction: column !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        background: transparent !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body {
+        display: block !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        padding: 4px 10px 12px 14px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain !important;
         scrollbar-width: thin;
         scrollbar-color: rgba(120, 120, 128, .38) transparent;
-        background: transparent;
+        background: transparent !important;
       }
 
-      #${ID.panel} .crack-ui-panel-body::-webkit-scrollbar,
-      #${ID.panel} .crack-ui-panel-nav::-webkit-scrollbar {
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body::-webkit-scrollbar,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav::-webkit-scrollbar {
         width: 6px;
         height: 6px;
       }
 
-      #${ID.panel} .crack-ui-panel-body::-webkit-scrollbar-track,
-      #${ID.panel} .crack-ui-panel-nav::-webkit-scrollbar-track {
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body::-webkit-scrollbar-track,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav::-webkit-scrollbar-track {
         background: transparent;
       }
 
-      #${ID.panel} .crack-ui-panel-body::-webkit-scrollbar-thumb,
-      #${ID.panel} .crack-ui-panel-nav::-webkit-scrollbar-thumb {
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body::-webkit-scrollbar-thumb,
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav::-webkit-scrollbar-thumb {
         border-radius: 999px;
         background: rgba(120, 120, 128, .32);
         border: 2px solid transparent;
         background-clip: padding-box;
       }
 
-      #${ID.panel} .crack-ui-section {
-        display: flex;
-        width: 100%;
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-        border: 0;
-        border-radius: 0;
-        background: transparent;
-        overflow: visible;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section {
+        display: flex !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        overflow: visible !important;
       }
 
-      #${ID.panel} .crack-ui-section[hidden] {
-        display: none;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section[hidden] {
+        display: none !important;
       }
 
-      #${ID.panel} .crack-ui-section-body {
-        display: flex;
-        flex-direction: column;
-        width: 100%;
-        gap: 10px;
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section-head {
+        display: none !important;
+      }
+
+      #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section-body {
+        display: flex !important;
+        flex-direction: column !important;
+        width: 100% !important;
+        gap: 10px !important;
       }
 
       /* Chat page uses the wide workspace only on tablet/desktop.
          Phone layout intentionally remains the existing single column. */
       @media (min-width: 768px) {
-        #${ID.panel} .crack-ui-section-body.crack-ui-chat-layout-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          align-items: stretch;
-          gap: 10px;
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-section-body.crack-ui-chat-layout-grid {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          align-items: stretch !important;
+          gap: 10px !important;
         }
 
-        #${ID.panel} .crack-ui-chat-layout-grid > .crack-ui-chat-layout-full {
-          grid-column: 1 / -1;
-          min-width: 0;
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid > .crack-ui-chat-layout-full {
+          grid-column: 1 / -1 !important;
+          min-width: 0 !important;
         }
 
-        #${ID.panel} .crack-ui-chat-layout-grid > .crack-ui-chat-layout-half {
-          min-width: 0;
-          height: 100%;
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid > .crack-ui-chat-layout-half {
+          min-width: 0 !important;
+          height: 100% !important;
         }
 
-        #${ID.panel} .crack-ui-chat-layout-grid > label.crack-ui-chat-layout-half {
-          align-self: stretch;
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid > label.crack-ui-chat-layout-half {
+          align-self: stretch !important;
         }
 
-        #${ID.panel} .crack-ui-chat-layout-grid .crack-ui-visible-model-list {
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-        }
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-title,
-      html[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-title {
-        color: rgba(17, 24, 39, .94);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-group,
-      html[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-group {
-        border-color: rgba(17, 24, 39, .075);
-        background: rgba(255, 255, 255, .68);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-label,
-      html[data-theme="light"] #${ID.panel} .crack-ui-theme-strip-label {
-        color: rgba(75, 85, 99, .72);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav,
-      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav {
-        border-right-color: rgba(17, 24, 39, .075);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button,
-      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button {
-        color: rgba(75, 85, 99, .82);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button:hover,
-      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button:hover {
-        background: rgba(17, 24, 39, .055);
-        color: rgba(17, 24, 39, .94);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button[data-active="1"],
-      html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav-button[data-active="1"] {
-        background: rgba(254, 69, 50, .11);
-        border-color: rgba(254, 69, 50, .34);
-        color: rgba(17, 24, 39, .96);
-      }
-
-      @media (max-width: 767px) {
-        /* Keep the same visual backdrop treatment as tablet/desktop on phones.
-           The later reduced-motion rule still disables blur for accessibility. */
-        #${ID.panelBackdrop},
-        html.${CLS.androidFirefox} #${ID.panelBackdrop} {
-          background: rgba(0, 0, 0, .16);
-          backdrop-filter: blur(5px) saturate(.96);
-          -webkit-backdrop-filter: blur(5px) saturate(.96);
-        }
-
-        body[data-theme="light"] #${ID.panelBackdrop},
-        html[data-theme="light"] #${ID.panelBackdrop},
-        body[data-theme="light"].${CLS.androidFirefox} #${ID.panelBackdrop},
-        html[data-theme="light"].${CLS.androidFirefox} #${ID.panelBackdrop} {
-          background: rgba(15, 23, 42, .10);
-        }
-
-        #${ID.panel} {
-          /* Use a pure viewport-relative ratio for phone breathing room.
-             This avoids fixed CSS-pixel caps making different phone sizes look alike. */
-          top: max(8%, env(safe-area-inset-top));
-          left: 6px;
-          right: 6px;
-          bottom: max(8%, env(safe-area-inset-bottom));
-          z-index: 1;
-          width: auto;
-          height: auto;
-          max-width: none;
-          max-height: none;
-          transform: translateZ(0);
-          isolation: isolate;
-          padding: 7px;
-          background: rgba(28, 28, 30, .94);
-          backdrop-filter: none !important;
-          -webkit-backdrop-filter: none !important;
-        }
-
-        body[data-theme="light"] #${ID.panel},
-        html[data-theme="light"] #${ID.panel} {
-          background: rgba(255, 255, 255, .94);
-        }
-
-        #${ID.panel} > .crack-ui-panel-head {
-          min-height: 38px;
-          padding: 2px 3px 8px;
-        }
-
-        #${ID.panel} .crack-ui-panel-theme-strip {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 6px;
-          padding-bottom: 7px;
-        }
-
-        #${ID.panel} .crack-ui-theme-strip-title {
-          grid-column: 1 / -1;
-          padding: 0 2px 1px;
-          font-size: 11px;
-        }
-
-        #${ID.panel} .crack-ui-theme-strip-group {
-          flex-direction: column;
-          align-items: stretch;
-          gap: 6px;
-          padding: 7px;
-          border-radius: 13px;
-        }
-
-        #${ID.panel} .crack-ui-theme-strip-label {
-          min-width: 0;
-          padding-left: 2px;
-          font-size: 10px;
-        }
-
-        #${ID.panel} .crack-ui-theme-strip-options {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 4px;
-        }
-
-        #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-row {
-          grid-template-columns: minmax(0, 1fr);
-          min-height: 34px;
-          padding: 0 5px;
-          gap: 0;
-        }
-
-        #${ID.panel} .crack-ui-panel-theme-strip .crack-ui-choice-name {
-          font-size: 10px;
-          text-align: center;
-        }
-
-        #${ID.panel} .crack-ui-panel-workspace {
-          display: flex;
-          flex-direction: column;
-        }
-
-        #${ID.panel} .crack-ui-panel-nav {
-          flex: 0 0 auto;
-          width: auto;
-          flex-direction: row;
-          gap: 6px;
-          padding: 0 0 7px;
-          border-right: 0;
-          border-bottom: 1px solid rgba(255, 255, 255, .065);
-          overflow-x: auto;
-          overflow-y: hidden;
-          background: transparent;
-        }
-
-        #${ID.panel} .crack-ui-panel-nav-button {
-          flex: 1 1 0;
-          width: auto;
-          min-height: 38px;
-          justify-content: center;
-          padding: 0 10px;
-          border-radius: 12px;
-          font-size: 12px;
-          text-align: center;
-          white-space: nowrap;
-        }
-
-        #${ID.panel} .crack-ui-panel-body {
-          padding: 9px 2px 12px;
-        }
-
-        body[data-theme="light"] #${ID.panel} .crack-ui-panel-nav,
-        html[data-theme="light"] #${ID.panel} .crack-ui-panel-nav {
-          border-bottom-color: rgba(17, 24, 39, .075);
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-chat-layout-grid .crack-ui-visible-model-list {
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
         }
       }
 
-      @media (prefers-reduced-motion: reduce) {
-        #${ID.panel},
-        #${ID.panel} *,
-        #${ID.panelBackdrop} {
-          animation: none !important;
-          backdrop-filter: none !important;
-          -webkit-backdrop-filter: none !important;
-          scroll-behavior: auto !important;
-          transition-duration: .01ms !important;
-          transition-delay: 0ms !important;
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title {
+        color: rgba(17, 24, 39, .94) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group {
+        border-color: rgba(17, 24, 39, .075) !important;
+        background: rgba(255, 255, 255, .68) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label {
+        color: rgba(75, 85, 99, .72) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+        border-right-color: rgba(17, 24, 39, .075) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button {
+        color: rgba(75, 85, 99, .82) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button:hover,
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button:hover {
+        background: rgba(17, 24, 39, .055) !important;
+        color: rgba(17, 24, 39, .94) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button[data-active="1"],
+      html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button[data-active="1"] {
+        background: rgba(254, 69, 50, .11) !important;
+        border-color: rgba(254, 69, 50, .34) !important;
+        color: rgba(17, 24, 39, .96) !important;
+      }
+
+      @media (max-width: 640px) {
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] {
+          top: auto !important;
+          left: 6px !important;
+          right: 6px !important;
+          bottom: max(6px, env(safe-area-inset-bottom)) !important;
+          width: auto !important;
+          height: calc(100dvh - 12px - env(safe-area-inset-bottom)) !important;
+          max-width: none !important;
+          max-height: calc(100dvh - 12px - env(safe-area-inset-bottom)) !important;
+          transform: none !important;
+          padding: 7px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] > .crack-ui-panel-head {
+          min-height: 38px !important;
+          padding: 2px 3px 8px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          gap: 6px !important;
+          padding-bottom: 7px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-title {
+          grid-column: 1 / -1 !important;
+          padding: 0 2px 1px !important;
+          font-size: 11px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-group {
+          flex-direction: column !important;
+          align-items: stretch !important;
+          gap: 6px !important;
+          padding: 7px !important;
+          border-radius: 13px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-label {
+          min-width: 0 !important;
+          padding-left: 2px !important;
+          font-size: 10px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-theme-strip-options {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          gap: 4px !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-row {
+          grid-template-columns: minmax(0, 1fr) !important;
+          min-height: 34px !important;
+          padding: 0 5px !important;
+          gap: 0 !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-mark {
+          display: none !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-theme-strip .crack-ui-choice-name {
+          font-size: 10px !important;
+          text-align: center !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-workspace {
+          display: flex !important;
+          flex-direction: column !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+          flex: 0 0 auto !important;
+          width: auto !important;
+          flex-direction: row !important;
+          gap: 6px !important;
+          padding: 0 0 7px !important;
+          border-right: 0 !important;
+          border-bottom: 1px solid rgba(255, 255, 255, .065) !important;
+          overflow-x: auto !important;
+          overflow-y: hidden !important;
+          background: transparent !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav-button {
+          flex: 1 1 0 !important;
+          width: auto !important;
+          min-height: 38px !important;
+          justify-content: center !important;
+          padding: 0 10px !important;
+          border-radius: 12px !important;
+          font-size: 12px !important;
+          text-align: center !important;
+          white-space: nowrap !important;
+        }
+
+        #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-body {
+          padding: 9px 2px 12px !important;
+        }
+
+        body[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav,
+        html[data-theme="light"] #${ID.panel}[data-crack-ui-layout="workspace-v4"] .crack-ui-panel-nav {
+          border-bottom-color: rgba(17, 24, 39, .075) !important;
         }
       }
     `;
@@ -2928,18 +3074,14 @@
   }
 
   function isAndroidFirefoxBrowser() {
-    if (cachedAndroidFirefoxBrowser != null) return cachedAndroidFirefoxBrowser;
     const ua = String(navigator.userAgent || '');
-    cachedAndroidFirefoxBrowser = /Android/i.test(ua) && /Firefox\//i.test(ua);
-    return cachedAndroidFirefoxBrowser;
+    return /Android/i.test(ua) && /Firefox\//i.test(ua);
   }
 
   function isIosDevice() {
-    if (cachedIosDevice != null) return cachedIosDevice;
     const ua = String(navigator.userAgent || '');
-    cachedIosDevice = /iPad|iPhone|iPod/i.test(ua) ||
+    return /iPad|iPhone|iPod/i.test(ua) ||
       (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
-    return cachedIosDevice;
   }
 
   function getCrackUiViewportWidth() {
@@ -3292,43 +3434,26 @@
   }
 
   async function requestEpisodeUiModeWithFetch(payload) {
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timeoutId = controller
-      ? window.setTimeout(() => controller.abort(), EPISODE_UI_REQUEST_TIMEOUT_MS)
-      : null;
+    const response = await fetch(CRACK_API.episodeUiSetting, {
+      method: 'PATCH',
+      mode: 'cors',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: getCrackUiSettingHeaders(),
+      body: JSON.stringify(payload),
+    });
 
-    try {
-      const response = await fetch(CRACK_API.episodeUiSetting, {
-        method: 'PATCH',
-        mode: 'cors',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: getCrackUiSettingHeaders(),
-        body: JSON.stringify(payload),
-        ...(controller ? { signal: controller.signal } : {}),
-      });
+    const text = await response.text().catch(() => '');
+    const result = parseEpisodeUiResponseText(text);
 
-      const text = await response.text().catch(() => '');
-      const result = parseEpisodeUiResponseText(text);
-
-      if (!response.ok) {
-        const error = new Error(`fetch ui-setting ${response.status}`);
-        error.status = response.status;
-        error.result = result;
-        throw error;
-      }
-
-      return result;
-    } catch (error) {
-      if (controller?.signal.aborted) {
-        const timeoutError = new Error('fetch ui-setting timeout');
-        timeoutError.name = 'TimeoutError';
-        throw timeoutError;
-      }
+    if (!response.ok) {
+      const error = new Error(`fetch ui-setting ${response.status}`);
+      error.status = response.status;
+      error.result = result;
       throw error;
-    } finally {
-      if (timeoutId != null) window.clearTimeout(timeoutId);
     }
+
+    return result;
   }
 
   function requestEpisodeUiModeWithGm(payload) {
@@ -3345,7 +3470,7 @@
         data: JSON.stringify(payload),
         withCredentials: true,
         anonymous: false,
-        timeout: EPISODE_UI_REQUEST_TIMEOUT_MS,
+        timeout: 10000,
         onload: (response) => {
           const result = parseEpisodeUiResponseText(response.responseText || '');
           if (response.status >= 200 && response.status < 300) {
@@ -3399,17 +3524,10 @@
       result = await requestEpisodeUiModeWithFetch(payload);
     } catch (error) {
       errors.push(error);
-
-      // A newer selection supersedes this request. Do not start a second network
-      // fallback for a value that is no longer current.
-      if (requestSeq !== episodeUiSaveRequestSeq) return null;
-
       try {
         result = await requestEpisodeUiModeWithGm(payload);
       } catch (gmError) {
         errors.push(gmError);
-        if (requestSeq !== episodeUiSaveRequestSeq) return null;
-
         const combined = new Error(errors.map(describeEpisodeUiError).join(' | '));
         combined.errors = errors;
         throw combined;
@@ -4112,7 +4230,7 @@
       }
       cluster.remove();
     });
-    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panelRoot}, #${ID.panelBackdrop}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}`)
+    document.querySelectorAll(`#${ID.gearDesktop}, #${ID.gearMobile}, #${ID.panel}, #${ID.zone}, #${ID.handle}, #${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.roomMenuHandle}, #${ID.chatListZone}, #${ID.chatListHandle}, #${ID.menuSwipeZone}`)
       .forEach((el) => el.remove());
     document.documentElement.classList.remove(
       'crack-wrtn-ui-autohide',
@@ -4237,7 +4355,7 @@
       e.preventDefault();
       e.stopPropagation();
       clearMobileHideTimer();
-      togglePanel();
+      togglePanel(btn);
     });
     return btn;
   }
@@ -4519,8 +4637,7 @@
       const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
       if (button) button.textContent = MENU_ASSIST_MODE_LABEL[normalized];
 
-      const popover = document.querySelector(`[data-crack-ui-menu-mode-popover="${target}"]`);
-      popover?.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
+      document.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
         const selected = choice.dataset.crackUiMenuModeChoice === normalized;
         choice.dataset.selected = selected ? '1' : '0';
         choice.setAttribute('aria-checked', selected ? 'true' : 'false');
@@ -4582,6 +4699,8 @@
     }
 
     closeMenuAssistModePanels();
+    syncMenuAssistModeUi();
+    ensureMenuSwipeZone();
     applyState();
   }
 
@@ -4680,9 +4799,7 @@
       });
 
       document.addEventListener('scroll', () => {
-        if (document.querySelector('[data-crack-ui-menu-mode-popover]')) {
-          closeMenuAssistModePanels();
-        }
+        closeMenuAssistModePanels();
       }, true);
 
       window.addEventListener('resize', () => {
@@ -4760,29 +4877,19 @@
   }
 
   function ensurePanel() {
-    let panelRoot = document.getElementById(ID.panelRoot);
-    if (!panelRoot) {
-      panelRoot = document.createElement('div');
-      panelRoot.id = ID.panelRoot;
-      document.body.appendChild(panelRoot);
-    }
-
     let panelBackdrop = document.getElementById(ID.panelBackdrop);
     if (!panelBackdrop) {
       panelBackdrop = document.createElement('div');
       panelBackdrop.id = ID.panelBackdrop;
       panelBackdrop.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(panelBackdrop);
     }
-    if (panelBackdrop.parentElement !== panelRoot) panelRoot.appendChild(panelBackdrop);
 
-    const existingPanel = document.getElementById(ID.panel);
-    if (existingPanel) {
-      if (existingPanel.parentElement !== panelRoot) panelRoot.appendChild(existingPanel);
-      return;
-    }
+    if (document.getElementById(ID.panel)) return;
 
     const panel = document.createElement('div');
     panel.id = ID.panel;
+    panel.dataset.crackUiLayout = 'workspace-v4';
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Crack UI Plus 설정');
 
@@ -4830,9 +4937,21 @@
             <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="display" data-active="${activePanelSection === 'display' ? '1' : '0'}" aria-selected="${activePanelSection === 'display' ? 'true' : 'false'}">화면</button>
           </nav>
 
-          <div class="crack-ui-panel-content">
+          <main class="crack-ui-panel-content">
             <div class="crack-ui-panel-body">
-        <div class="crack-ui-section" data-crack-ui-section="chat">
+        <div class="crack-ui-section" data-crack-ui-section="chat" data-open="${chatSectionOpen ? '1' : '0'}">
+          <button
+            type="button"
+            class="crack-ui-section-head"
+            data-crack-ui-section-toggle="chat"
+            aria-expanded="${chatSectionOpen ? 'true' : 'false'}"
+          >
+            <span>
+              <span class="crack-ui-section-title">채팅</span>
+            </span>
+            <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
+          </button>
+
           <div class="crack-ui-section-body crack-ui-chat-layout-grid" data-crack-ui-section-body="chat">
             <div class="crack-ui-range-row crack-ui-chat-layout-half" data-crack-ui-chat-width-row data-disabled="${isChatWidthSupportedViewport() ? '0' : '1'}" aria-disabled="${isChatWidthSupportedViewport() ? 'false' : 'true'}">
               <div class="crack-ui-range-head">
@@ -4979,7 +5098,19 @@
           </div>
         </div>
 
-        <div class="crack-ui-section" data-crack-ui-section="display">
+        <div class="crack-ui-section" data-crack-ui-section="display" data-open="${displaySectionOpen ? '1' : '0'}">
+          <button
+            type="button"
+            class="crack-ui-section-head"
+            data-crack-ui-section-toggle="display"
+            aria-expanded="${displaySectionOpen ? 'true' : 'false'}"
+          >
+            <span>
+              <span class="crack-ui-section-title">화면</span>
+            </span>
+            <span class="crack-ui-section-chevron" aria-hidden="true">▾</span>
+          </button>
+
           <div class="crack-ui-section-body" data-crack-ui-section-body="display">
             <label class="crack-ui-row">
               <span class="crack-ui-row-text">
@@ -5033,7 +5164,7 @@
           </div>
         </div>
             </div>
-          </div>
+          </main>
         </div>
       </div>
     `;
@@ -5044,7 +5175,7 @@
       e.stopPropagation();
       closePanel();
     });
-    panelRoot.appendChild(panel);
+    document.body.appendChild(panel);
 
     bindPanelSections(panel);
     bindPanelThemeStripScroll(panel);
@@ -5101,13 +5232,12 @@
       hideSituationImage = checked;
       writeStorage(LS.hideSituationImage, hideSituationImage ? '1' : '0');
       applyState();
-      // User activation should reflect immediately; routine init scans stay throttled.
-      scheduleSituationImageButtonMark({ immediate: true });
     });
     bindCheckbox(panel, ID.toggleRoomMenuHandle, roomMenuHandle, (checked) => {
       roomMenuHandle = checked;
       writeStorage(LS.roomMenuHandle, roomMenuHandle ? '1' : '0');
       ensureRoomMenuHandle();
+      ensureMenuSwipeZone();
       applyState();
     });
     bindCheckbox(panel, ID.toggleFullscreenButton, fullscreenButtonEnabled, (checked, input) => {
@@ -5132,6 +5262,8 @@
       chatListAutoHide = checked;
       writeStorage(LS.chatListAutoHide, chatListAutoHide ? '1' : '0');
       ensureChatListAutoHide();
+      ensureMenuSwipeZone();
+      syncMenuAssistModeUi(panel);
       applyState();
 
       if (checked && isDesktopChatListAutoHideViewport()) scheduleChatListClose(450);
@@ -5146,12 +5278,33 @@
     updateChatWidthUi();
   }
 
-  function openPanel() {
+  function positionPanel(anchor) {
+    const panel = document.getElementById(ID.panel);
+    if (!panel) return;
+
+    anchor ||= document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
+    const panelWidth = Math.min(318, window.innerWidth - 16);
+    panel.style.width = `${panelWidth}px`;
+
+    const rect = anchor?.getBoundingClientRect();
+    const panelHeight = panel.offsetHeight || 330;
+    let left = rect ? rect.left : window.innerWidth - panelWidth - 8;
+    let top = rect ? rect.bottom + 10 : 64;
+
+    left = Math.max(8, Math.min(left, window.innerWidth - panelWidth - 8));
+    top = Math.max(8, Math.min(top, window.innerHeight - panelHeight - 8));
+
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+  }
+
+  function openPanel(anchor) {
     const panel = document.getElementById(ID.panel);
     if (!panel) return;
 
     panelOpen = true;
     panel.dataset.open = '1';
+    panel.style.visibility = 'hidden';
 
     clearMobileHideTimer();
 
@@ -5166,6 +5319,7 @@
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
     syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
     closeMenuAssistModePanels(panel);
+    syncMenuAssistModeUi(panel);
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
 
@@ -5175,6 +5329,10 @@
     updateImageSizeUi();
     updateChatWidthUi();
     applyState();
+    requestAnimationFrame(() => {
+      positionPanel(anchor);
+      panel.style.visibility = '';
+    });
   }
 
   function closePanel() {
@@ -5197,9 +5355,9 @@
     applyState();
   }
 
-  function togglePanel() {
+  function togglePanel(anchor) {
     if (panelOpen) closePanel();
-    else openPanel();
+    else openPanel(anchor);
   }
 
   function bindHeaderHover(header) {
@@ -5234,11 +5392,7 @@
   function applyState() {
     updateDeviceViewportClasses();
     if (hideStatBar) markStatBars();
-    // init can run repeatedly while the chat DOM is streaming. Keep later full
-    // button scans on the existing throttle, while preserving an immediate first scan.
-    scheduleSituationImageButtonMark({
-      immediate: hideSituationImage && situationImageLastScanAt === 0,
-    });
+    scheduleSituationImageButtonMark({ immediate: hideSituationImage });
     document.documentElement.classList.toggle(CLS.autoHide, autoHideHeader);
     document.documentElement.classList.toggle(CLS.lineBreak, lineBreakOptimize);
     document.documentElement.classList.toggle(CLS.pauseAnimatedThumbs, pauseAnimatedThumbs);
@@ -5320,6 +5474,15 @@
       menuSwipePositionRaf = 0;
       positionMenuSwipeZone();
     });
+  }
+
+  function flashMenuSwipeZone() {
+    const zone = document.getElementById(ID.menuSwipeZone);
+    if (!zone) return;
+    zone.dataset.feedback = '1';
+    setTimeout(() => {
+      if (zone.isConnected) zone.dataset.feedback = '0';
+    }, MENU_SWIPE.feedbackMs);
   }
 
   function pointInMenuSwipeZone(event) {
@@ -5445,6 +5608,7 @@
       suppressClickX = Number(event.clientX || 0);
       suppressClickY = Number(event.clientY || 0);
       event.preventDefault();
+      flashMenuSwipeZone();
     }, { capture: true, passive: false });
   }
 
@@ -5463,7 +5627,7 @@
       document.body?.appendChild(zone);
     }
 
-    scheduleMenuSwipeZonePosition();
+    positionMenuSwipeZone();
   }
 
   // =====================================================
@@ -7778,7 +7942,7 @@
     return score;
   }
 
-  function findChatListToggle() {
+  function findChatListToggle(panel = DOM.chatListPanel()) {
     if (!isDesktopChatListAutoHideViewport()) return null;
     if (cachedChatListToggle?.isConnected && scoreDesktopChatListToggle(cachedChatListToggle) >= 24) return cachedChatListToggle;
 
@@ -7929,21 +8093,13 @@
   function updateFullscreenButtonUi() {
     const button = document.getElementById(ID.fullscreenButton);
     if (!button) return;
-
     const active = !!getFullscreenElement();
-    const nextState = active ? '1' : '0';
     const label = active ? '전체화면 종료' : '전체화면 시작';
     const span = button.querySelector('span');
-    const stateChanged = button.dataset.active !== nextState;
-
-    // Replacing innerHTML creates a childList mutation. Doing that on every init
-    // feeds the global observer and can keep scheduleInit running indefinitely.
-    if (span && (stateChanged || !span.firstElementChild)) {
-      span.innerHTML = getFullscreenButtonIcon(active);
-    }
-    if (stateChanged) button.dataset.active = nextState;
-    if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
-    if (button.getAttribute('title') !== label) button.setAttribute('title', label);
+    if (span) span.innerHTML = getFullscreenButtonIcon(active);
+    button.dataset.active = active ? '1' : '0';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
   }
 
   async function toggleFullscreen() {
@@ -7981,16 +8137,10 @@
       return;
     }
 
-    const existingButton = document.getElementById(ID.fullscreenButton);
-    if (existingButton?.isConnected) {
-      updateFullscreenButtonUi();
-      return;
-    }
-
     const container = findFullscreenToolbar();
     if (!container) return;
 
-    let button = existingButton;
+    let button = document.getElementById(ID.fullscreenButton);
     if (!button) {
       button = document.createElement('button');
       button.id = ID.fullscreenButton;
@@ -8226,7 +8376,6 @@
         panel.style.setProperty('max-height', '100dvh', 'important');
       }
 
-      mobileChatListCleanupPending = true;
       document.documentElement.classList.add(CLS.chatListMobileHeaderGapCompensated);
       return true;
     } catch {
@@ -8245,38 +8394,27 @@
     }
   }
 
-
-  function markMobileChatListOpenState() {
-    const root = document.documentElement;
-
-    // The proxy feature is the only reason to inspect the native mobile list dialog.
-    // When it is off, clear our state without repeatedly scanning every open dialog.
-    if (!chatListAutoHide || !isPhoneLikeViewport()) {
-      root.classList.remove(CLS.chatListMobilePopoverOpen);
-      root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+  
+function markMobileChatListOpenState() {
+    if (!isPhoneLikeViewport()) {
+      document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
       return false;
     }
 
     const open = !!DOM.mobileChatListPopover();
-    root.classList.toggle(CLS.chatListMobilePopoverOpen, open);
-    if (open) mobileChatListCleanupPending = true;
-    else root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+    document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, open);
+    if (!open) document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
     return open;
   }
 
+  function applyMobileChatListPopoverInteractionFix() {
+    return markMobileChatListOpenState();
+  }
+
   function releaseMobileChatListPopoverForcedStyles() {
-    const root = document.documentElement;
-    const hasManagedState =
-      root.classList.contains(CLS.chatListMobilePopoverOpen) ||
-      root.classList.contains(CLS.chatListMobileHeaderGapCompensated);
-
-    // Run once at boot for legacy cleanup, and again only after this feature has
-    // actually managed a mobile popover. Avoid a full dialog/text scan every init.
-    if (!mobileChatListCleanupPending && !hasManagedState) return false;
-
     const mobilePopover = DOM.mobileChatListPopover();
-    root.classList.toggle(CLS.chatListMobilePopoverOpen, !!mobilePopover);
-    if (!mobilePopover) root.classList.remove(CLS.chatListMobileHeaderGapCompensated);
+    document.documentElement.classList.toggle(CLS.chatListMobilePopoverOpen, !!mobilePopover);
+    if (!mobilePopover) document.documentElement.classList.remove(CLS.chatListMobileHeaderGapCompensated);
     // Cleanup stale markers/styles from 2.0.20~2.0.24 without changing native Crack popover layout.
     for (const panel of document.querySelectorAll('[data-crack-ui-mobile-chat-list-popover="1"], [data-crack-ui-chat-list-panel="1"][role="dialog"]')) {
       if (!(panel instanceof HTMLElement)) continue;
@@ -8297,9 +8435,6 @@
       } catch {
       }
     }
-
-    mobileChatListCleanupPending = false;
-    return true;
   }
 
   function isChatListOpen(panel = DOM.chatListPanel()) {
@@ -8414,7 +8549,7 @@
     return true;
   }
 
-  function clickChatListToggle(want) {
+  function clickChatListToggle(want, reason = 'auto') {
     if (!isDesktopChatListAutoHideViewport()) return false;
     const panel = DOM.chatListPanel();
     const open = panel ? isChatListOpen(panel) : false;
@@ -8730,6 +8865,9 @@
         positionBottomModelPopup(document.getElementById(ID.bottomModelButton));
       }
 
+      if (!panelOpen) return;
+      const anchor = document.getElementById(ID.gearDesktop) || document.getElementById(ID.gearMobile);
+      positionPanel(anchor);
     });
 
     window.visualViewport?.addEventListener?.('resize', () => {
@@ -9020,6 +9158,7 @@
     syncOfficialModelVisibility();
     ensureRoomMenuHandle();
     ensureChatListAutoHide();
+    ensureMenuSwipeZone();
 
     applyImageSize();
     applyState();
