@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.3.5
+// @version      2.4.0
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.3.5';
+  const CRACK_UI_VERSION = '2.4.0';
 
   function getCrackUiPublicWindow() {
     try {
@@ -1853,10 +1853,6 @@
         cursor: default;
       }
 
-      .crack-ui-menu-assist-row[data-mode-open="1"] {
-        align-items: start;
-      }
-
       .crack-ui-menu-toggle-wrap {
         display: block;
         justify-self: end;
@@ -1892,48 +1888,88 @@
         color: rgba(255, 255, 255, .94);
       }
 
-      .crack-ui-menu-mode-panel {
-        grid-column: 1 / -1;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 6px;
-        width: 100%;
-        box-sizing: border-box;
-        padding-top: 8px;
+      .crack-ui-menu-mode-popover {
+        position: fixed !important;
+        z-index: 2147483646 !important;
+        display: block !important;
+        width: 180px !important;
+        box-sizing: border-box !important;
+        padding: 6px !important;
+        border: 1px solid rgba(255, 255, 255, .12) !important;
+        border-radius: 16px !important;
+        background: rgba(32, 32, 35, .97) !important;
+        color: rgba(255, 255, 255, .94) !important;
+        box-shadow:
+          0 16px 42px rgba(0, 0, 0, .34),
+          inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+        backdrop-filter: blur(20px) saturate(1.16) !important;
+        -webkit-backdrop-filter: blur(20px) saturate(1.16) !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        transform: translateY(0) scale(1) !important;
+        transform-origin: top right;
+        animation: crackUiMenuModePopoverIn 130ms ease-out;
       }
 
-      .crack-ui-menu-mode-panel[hidden] {
-        display: none !important;
+      @keyframes crackUiMenuModePopoverIn {
+        from {
+          opacity: 0;
+          transform: translateY(-7px) scale(.985);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
       }
 
       .crack-ui-menu-mode-choice {
         appearance: none;
-        min-width: 0;
-        min-height: 32px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 20px;
+        align-items: center;
+        width: 100%;
+        min-height: 40px;
         box-sizing: border-box;
-        padding: 6px 5px;
-        border: 1px solid rgba(255, 255, 255, .075);
-        border-radius: 10px;
-        background: rgba(255, 255, 255, .035);
-        color: rgba(255, 255, 255, .66);
+        padding: 0 10px 0 12px;
+        border: 0;
+        border-radius: 11px;
+        background: transparent;
+        color: rgba(255, 255, 255, .82);
         font-family: inherit;
-        font-size: 10px;
-        font-weight: 800;
+        font-size: 12px;
+        font-weight: 760;
         line-height: 1.2;
-        word-break: keep-all;
+        text-align: left;
         cursor: pointer;
         transform: none !important;
       }
 
-      .crack-ui-menu-mode-choice:hover {
-        background: rgba(255, 255, 255, .065);
-        color: rgba(255, 255, 255, .92);
+      .crack-ui-menu-mode-choice:hover,
+      .crack-ui-menu-mode-choice:active {
+        background: rgba(255, 255, 255, .075);
+        color: rgba(255, 255, 255, .98);
+      }
+
+      .crack-ui-menu-mode-choice::after {
+        content: "";
+        justify-self: end;
+        width: 7px;
+        height: 12px;
+        box-sizing: border-box;
+        border-right: 2px solid transparent;
+        border-bottom: 2px solid transparent;
+        transform: rotate(45deg) translateY(-1px);
       }
 
       .crack-ui-menu-mode-choice[data-selected="1"] {
-        border-color: rgba(254, 69, 50, .46);
-        background: rgba(254, 69, 50, .14);
-        color: rgba(255, 255, 255, .96);
+        color: #ff5b49;
+        background: rgba(254, 69, 50, .10);
+      }
+
+      .crack-ui-menu-mode-choice[data-selected="1"]::after {
+        border-right-color: currentColor;
+        border-bottom-color: currentColor;
       }
 
       .crack-ui-row[data-disabled="1"] .crack-ui-menu-mode-button {
@@ -1942,9 +1978,7 @@
       }
 
       body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button,
-      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button,
-      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice,
-      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice {
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button {
         border-color: rgba(17, 24, 39, .09);
         background: rgba(15, 23, 42, .045);
         color: rgba(17, 24, 39, .66);
@@ -1958,11 +1992,49 @@
         color: rgba(17, 24, 39, .92);
       }
 
-      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice[data-selected="1"],
-      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice[data-selected="1"] {
-        border-color: rgba(254, 69, 50, .42);
-        background: rgba(254, 69, 50, .12);
-        color: rgba(17, 24, 39, .94);
+      body[data-theme="light"] .crack-ui-menu-mode-popover,
+      html[data-theme="light"] .crack-ui-menu-mode-popover {
+        border-color: rgba(17, 24, 39, .10) !important;
+        background: rgba(250, 250, 252, .97) !important;
+        color: rgba(17, 24, 39, .94) !important;
+        box-shadow:
+          0 16px 42px rgba(15, 23, 42, .18),
+          inset 0 1px 0 rgba(255, 255, 255, .86) !important;
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice,
+      html[data-theme="light"] .crack-ui-menu-mode-choice {
+        color: rgba(17, 24, 39, .80);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice:hover,
+      html[data-theme="light"] .crack-ui-menu-mode-choice:hover,
+      body[data-theme="light"] .crack-ui-menu-mode-choice:active,
+      html[data-theme="light"] .crack-ui-menu-mode-choice:active {
+        background: rgba(15, 23, 42, .06);
+        color: rgba(17, 24, 39, .96);
+      }
+
+      body[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"],
+      html[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"] {
+        background: rgba(254, 69, 50, .10);
+        color: #e43e2d;
+      }
+
+      @media (min-width: 768px) {
+        .crack-ui-menu-assist-row {
+          grid-template-columns: minmax(0, 1fr) 35px !important;
+        }
+
+        .crack-ui-menu-mode-button {
+          display: none !important;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .crack-ui-menu-mode-popover {
+          animation: none !important;
+        }
       }
 
       #${ID.menuSwipeZone} {
@@ -4525,20 +4597,23 @@
     return input;
   }
 
-  function closeMenuAssistModePanels(panel = document.getElementById(ID.panel), except = '') {
-    if (!panel) return;
-    panel.querySelectorAll('[data-crack-ui-menu-mode-panel]').forEach((modePanel) => {
-      const target = modePanel.dataset.crackUiMenuModePanel || '';
-      const keepOpen = !!except && target === except;
-      modePanel.hidden = !keepOpen;
-      modePanel.closest('[data-crack-ui-menu-assist-row]')?.setAttribute('data-mode-open', keepOpen ? '1' : '0');
-      const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
-      button?.setAttribute('aria-expanded', keepOpen ? 'true' : 'false');
+  function getMenuAssistModePopoverId(target) {
+    return target === 'room' ? ID.roomMenuModePanel : ID.chatListModePanel;
+  }
+
+  function closeMenuAssistModePanels(panel = document.getElementById(ID.panel)) {
+    document.querySelectorAll('[data-crack-ui-menu-mode-popover]').forEach((popover) => {
+      popover.remove();
+    });
+
+    panel?.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
+      button.setAttribute('aria-expanded', 'false');
     });
   }
 
   function syncMenuAssistModeUi(panel = document.getElementById(ID.panel)) {
     if (!panel) return;
+
     const values = {
       room: roomMenuAssistMode,
       'chat-list': chatListAssistMode,
@@ -4548,10 +4623,49 @@
       const normalized = normalizeMenuAssistMode(mode);
       const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
       if (button) button.textContent = MENU_ASSIST_MODE_LABEL[normalized];
-      panel.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
-        choice.dataset.selected = choice.dataset.crackUiMenuModeChoice === normalized ? '1' : '0';
+
+      document.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
+        const selected = choice.dataset.crackUiMenuModeChoice === normalized;
+        choice.dataset.selected = selected ? '1' : '0';
+        choice.setAttribute('aria-checked', selected ? 'true' : 'false');
       });
     });
+  }
+
+  function positionMenuAssistModePopover(button, popover) {
+    if (!button || !popover) return;
+
+    const rect = button.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportLeft = Number(viewport?.offsetLeft || 0);
+    const viewportTop = Number(viewport?.offsetTop || 0);
+    const viewportWidth = Math.max(1, Number(viewport?.width || window.innerWidth || 1));
+    const viewportHeight = Math.max(1, Number(viewport?.height || window.innerHeight || 1));
+    const width = Math.min(180, viewportWidth - 20);
+
+    popover.style.setProperty('width', `${width}px`, 'important');
+
+    const measuredHeight = popover.getBoundingClientRect().height;
+    const popoverHeight = measuredHeight > 20 ? measuredHeight : 132;
+    const viewportRight = viewportLeft + viewportWidth;
+    const viewportBottom = viewportTop + viewportHeight;
+
+    const left = Math.max(
+      viewportLeft + 10,
+      Math.min(viewportRight - width - 10, viewportLeft + rect.right - width)
+    );
+
+    let top = viewportTop + rect.bottom + 8;
+
+    if (top + popoverHeight > viewportBottom - 10) {
+      top = Math.max(viewportTop + 10, viewportTop + rect.top - popoverHeight - 8);
+      popover.style.transformOrigin = 'bottom right';
+    } else {
+      popover.style.transformOrigin = 'top right';
+    }
+
+    popover.style.setProperty('left', `${Math.round(left)}px`, 'important');
+    popover.style.setProperty('top', `${Math.round(top)}px`, 'important');
   }
 
   function setMenuAssistMode(target, value) {
@@ -4575,35 +4689,106 @@
     applyState();
   }
 
-  function bindMenuAssistModeControls(panel) {
-    if (!panel || panel.dataset.crackUiMenuModeBound === '1') return;
-    panel.dataset.crackUiMenuModeBound = '1';
-
-    panel.addEventListener('click', (event) => {
-      const toggle = event.target.closest?.('[data-crack-ui-menu-mode-toggle]');
-      if (toggle && panel.contains(toggle)) {
-        event.preventDefault();
-        event.stopPropagation();
-        const target = toggle.dataset.crackUiMenuModeToggle || '';
-        const modePanel = panel.querySelector(`[data-crack-ui-menu-mode-panel="${target}"]`);
-        const opening = !!modePanel?.hidden;
-        closeMenuAssistModePanels(panel, opening ? target : '');
+  function openMenuAssistModePopover(target, button) {
+    try {
+      if (!button || !isPhoneLikeViewport()) {
+        closeMenuAssistModePanels();
         return;
       }
 
-      const choice = event.target.closest?.('[data-crack-ui-menu-mode-choice]');
-      if (choice && panel.contains(choice)) {
+      const selector = `[data-crack-ui-menu-mode-popover="${target}"]`;
+      const wasOpen = !!document.querySelector(selector);
+      closeMenuAssistModePanels();
+      if (wasOpen) return;
+
+      const popover = document.createElement('div');
+      popover.id = getMenuAssistModePopoverId(target);
+      popover.className = 'crack-ui-menu-mode-popover';
+      popover.dataset.crackUiMenuModePopover = target;
+      popover.setAttribute('role', 'menu');
+      popover.setAttribute('aria-label', '메뉴 열기 방식 선택');
+
+      const choices = [
+        ['handle', '핸들'],
+        ['swipe', '슬라이더'],
+        ['both', '핸들 + 슬라이더'],
+      ];
+
+      for (const [value, label] of choices) {
+        const choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'crack-ui-menu-mode-choice';
+        choice.dataset.crackUiMenuModeTarget = target;
+        choice.dataset.crackUiMenuModeChoice = value;
+        choice.setAttribute('role', 'menuitemradio');
+        choice.textContent = label;
+        popover.appendChild(choice);
+      }
+
+      popover.addEventListener('click', (event) => {
+        const choice = event.target.closest?.('[data-crack-ui-menu-mode-choice]');
+        if (!choice || !popover.contains(choice)) return;
+
         event.preventDefault();
         event.stopPropagation();
+
         setMenuAssistMode(
           choice.dataset.crackUiMenuModeTarget,
           choice.dataset.crackUiMenuModeChoice
         );
-        return;
-      }
+      });
 
-      closeMenuAssistModePanels(panel);
+      document.body.appendChild(popover);
+      button.setAttribute('aria-expanded', 'true');
+      syncMenuAssistModeUi();
+      positionMenuAssistModePopover(button, popover);
+    } catch (error) {
+      reportCrackUiError('menu-mode-popover', error);
+      closeMenuAssistModePanels();
+    }
+  }
+
+  function bindMenuAssistModeControls(panel) {
+    if (!panel || panel.dataset.crackUiMenuModeBound === '1') return;
+    panel.dataset.crackUiMenuModeBound = '1';
+
+    panel.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
+      if (button.dataset.crackUiMenuModeButtonBound === '1') return;
+      button.dataset.crackUiMenuModeButtonBound = '1';
+
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const target = button.dataset.crackUiMenuModeToggle || '';
+        openMenuAssistModePopover(target, button);
+      });
     });
+
+    const root = document.documentElement;
+    if (root.dataset.crackUiMenuModePopoverBound !== '1') {
+      root.dataset.crackUiMenuModePopoverBound = '1';
+
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('[data-crack-ui-menu-mode-popover]')) return;
+        if (target.closest('[data-crack-ui-menu-mode-toggle]')) return;
+        closeMenuAssistModePanels();
+      });
+
+      document.addEventListener('scroll', () => {
+        closeMenuAssistModePanels();
+      }, true);
+
+      window.addEventListener('resize', () => {
+        closeMenuAssistModePanels();
+      }, { passive: true });
+
+      window.visualViewport?.addEventListener?.('resize', () => {
+        closeMenuAssistModePanels();
+      }, { passive: true });
+    }
 
     syncMenuAssistModeUi(panel);
   }
@@ -4852,7 +5037,7 @@
                 <span class="crack-ui-row-name">채팅방 설정 자동 숨김</span>
               </span>
 
-              <button id="${ID.roomMenuModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="room" aria-expanded="false">
+              <button id="${ID.roomMenuModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="room" aria-haspopup="menu" aria-expanded="false">
                 ${MENU_ASSIST_MODE_LABEL[roomMenuAssistMode]}
               </button>
 
@@ -4861,11 +5046,6 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </label>
 
-              <div id="${ID.roomMenuModePanel}" class="crack-ui-menu-mode-panel" data-crack-ui-menu-mode-panel="room" hidden>
-                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="room" data-crack-ui-menu-mode-choice="handle">핸들</button>
-                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="room" data-crack-ui-menu-mode-choice="swipe">슬라이더</button>
-                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="room" data-crack-ui-menu-mode-choice="both">핸들 + 슬라이더</button>
-              </div>
             </div>
 
             <label class="crack-ui-row crack-ui-chat-layout-half">
@@ -4939,7 +5119,7 @@
                 <span class="crack-ui-row-name">채팅 목록 자동 숨김</span>
               </span>
 
-              <button id="${ID.chatListModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="chat-list" aria-expanded="false">
+              <button id="${ID.chatListModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="chat-list" aria-haspopup="menu" aria-expanded="false">
                 ${MENU_ASSIST_MODE_LABEL[chatListAssistMode]}
               </button>
 
@@ -4948,11 +5128,6 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </label>
 
-              <div id="${ID.chatListModePanel}" class="crack-ui-menu-mode-panel" data-crack-ui-menu-mode-panel="chat-list" hidden>
-                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="chat-list" data-crack-ui-menu-mode-choice="handle">핸들</button>
-                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="chat-list" data-crack-ui-menu-mode-choice="swipe">슬라이더</button>
-                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="chat-list" data-crack-ui-menu-mode-choice="both">핸들 + 슬라이더</button>
-              </div>
             </div>
 
             <label class="crack-ui-row">
