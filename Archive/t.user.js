@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.5.2
+// @version      2.5.5
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.5.2';
+  const CRACK_UI_VERSION = '2.5.5';
 
   function getCrackUiPublicWindow() {
     try {
@@ -442,7 +442,10 @@
   let lastRoomTopBarInputInteractionAt = 0;
   let roomPanelCloseTimer = null;
   let lastRoomPanelClickAt = 0;
+  let roomPanelTouchOpenGuardUntil = 0;
   let lastRoomPanelToggleAttempt = null;
+  let roomPanelToggleRequestSeq = 0;
+  let roomPanelToggleVerifyTimer = null;
   let lastRoomPanelBootCloseHref = '';
   let novelModelIndicatorScanTimer = null;
   let novelModelIndicatorScanRaf = 0;
@@ -2382,7 +2385,7 @@
           width: 22px;
           height: auto;
           transform: none;
-          pointer-events: auto !important;
+          pointer-events: none !important;
         }
 
         html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone} {
@@ -2408,7 +2411,7 @@
           transform: translateY(-50%);
           pointer-events: auto !important;
           z-index: calc(var(--crack-ui-z-header) + 6);
-          touch-action: none;
+          touch-action: pan-y;
           -webkit-tap-highlight-color: transparent;
         }
 
@@ -2433,7 +2436,7 @@
           width: 26px;
           height: auto;
           transform: none;
-          pointer-events: auto !important;
+          pointer-events: none !important;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuZone}[data-crack-ui-handle-enabled="0"] {
@@ -2455,7 +2458,8 @@
           transform: translateY(-50%);
           pointer-events: auto !important;
           z-index: calc(var(--crack-ui-z-header) + 4);
-          touch-action: none;
+          touch-action: pan-y;
+          -webkit-tap-highlight-color: transparent;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle}::after {
@@ -3189,7 +3193,10 @@
   updateDeviceViewportClasses();
 
   function isChatWidthSupportedViewport() {
-    return window.matchMedia('(min-width: 768px)').matches;
+    // Keep physical phones unsupported in landscape as well. Viewport width
+    // alone can exceed 768px after rotation while getCrackUiViewportWidth()
+    // still correctly identifies the device as phone-like.
+    return !isPhoneLikeViewport();
   }
 
   function isDesktopChatListAutoHideViewport() {
@@ -9591,6 +9598,29 @@
     return r.width > 120 && r.left < vw - 100;
   }
 
+  function isTargetInsideRoomPanel(target) {
+    const el = target?.nodeType === 1 ? target : target?.parentElement;
+    if (!(el instanceof Element)) return false;
+
+    const cached = cachedRoomPanel?.isConnected ? cachedRoomPanel : null;
+    if (cached?.contains(el)) return true;
+
+    // The panel locator can temporarily cache an inner shell while Crack is
+    // animating/re-rendering the mobile drawer. Check the touched element's
+    // ancestors too so a valid panel interaction is never treated as an
+    // outside click and immediately auto-closed.
+    for (let node = el; node && node !== document.body; node = node.parentElement) {
+      if (!(node instanceof HTMLElement)) continue;
+      if (node.dataset.crackUiRoomPanel === '1' || scoreRoomPanel(node) >= 12) {
+        cachedRoomPanel = node;
+        node.dataset.crackUiRoomPanel = '1';
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   function findRoomPanelToggle() {
     if (cachedRoomPanelToggle?.isConnected) return cachedRoomPanelToggle;
     if (!crackUiIsChatRoute()) return null;
@@ -9646,11 +9676,33 @@
     return DOM.roomToggle() || DOM.chatRoomSettingsButton();
   }
 
+  function getRoomPanelToggleOpenState(toggle) {
+    if (!toggle) return null;
+    const expanded = toggle.getAttribute?.('aria-expanded');
+    if (expanded === 'true') return true;
+    if (expanded === 'false') return false;
+    const state = String(toggle.dataset?.state || '').toLowerCase();
+    if (state === 'open') return true;
+    if (state === 'closed') return false;
+    return null;
+  }
+
+  function clearRoomPanelToggleVerification({ invalidate = false } = {}) {
+    if (invalidate) roomPanelToggleRequestSeq += 1;
+    if (roomPanelToggleVerifyTimer) {
+      clearTimeout(roomPanelToggleVerifyTimer);
+      roomPanelToggleVerifyTimer = null;
+    }
+  }
+
   function clickRoomPanelToggle(want, reason = '') {
+    clearRoomPanelToggleVerification({ invalidate: true });
+    const requestSeq = roomPanelToggleRequestSeq;
     const panel = DOM.roomPanel();
     const open = panel ? isRoomPanelOpen(panel) : false;
     if (open === want) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         skipped: 'already-matched',
@@ -9661,8 +9713,33 @@
     }
 
     const now = Date.now();
+    if (isTouchLikeDevice() && want) {
+      // Ignore delayed/cascaded outside-click handlers while the native drawer
+      // is mounting and sliding in. The mobile utility uses the same one-way
+      // open approach instead of trying to toggle again during this window.
+      roomPanelTouchOpenGuardUntil = Math.max(roomPanelTouchOpenGuardUntil, now + 900);
+    }
+
+    if (
+      isTouchLikeDevice() &&
+      !want &&
+      (reason === 'auto-close' || reason === 'boot') &&
+      now < roomPanelTouchOpenGuardUntil
+    ) {
+      lastRoomPanelToggleAttempt = {
+        requestSeq,
+        want,
+        reason,
+        skipped: 'touch-open-guard',
+        touchLike: true,
+        at: now,
+      };
+      return false;
+    }
+
     if (now - lastRoomPanelClickAt < 180) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         skipped: 'throttled',
@@ -9676,6 +9753,7 @@
     const toggle = getRoomPanelToggleForActivation();
     if (!toggle) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         error: 'toggle-not-found',
@@ -9690,6 +9768,7 @@
     try {
       const method = dispatchRoomPanelToggleActivation(toggle, reason || 'room-panel-toggle');
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         method: method || 'failed',
@@ -9705,35 +9784,29 @@
       }
 
       if (isTouchLikeDevice()) {
-        setTimeout(() => {
+        roomPanelToggleVerifyTimer = setTimeout(() => {
+          roomPanelToggleVerifyTimer = null;
+          if (requestSeq !== roomPanelToggleRequestSeq) return;
+
           const afterPanel = DOM.roomPanel();
           const openAfter = afterPanel ? isRoomPanelOpen(afterPanel) : false;
-          if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.openAfter = openAfter;
-
-          if (openAfter !== want) {
-            cachedRoomPanelToggle = null;
-            cachedRoomMenuButton = null;
-            const fallbackToggle = getRoomPanelToggleForActivation();
-            const fallbackMethod = dispatchTouchLikeActivation(fallbackToggle, `${reason || 'room-panel-toggle'}:fallback`);
-            if (lastRoomPanelToggleAttempt) {
-              lastRoomPanelToggleAttempt.fallbackMethod = fallbackMethod || 'failed';
-              lastRoomPanelToggleAttempt.fallbackToggle = getElementDebugInfo(fallbackToggle);
-            }
-
-            setTimeout(() => {
-              const finalPanel = DOM.roomPanel();
-              const finalOpen = finalPanel ? isRoomPanelOpen(finalPanel) : false;
-              if (lastRoomPanelToggleAttempt) lastRoomPanelToggleAttempt.finalOpen = finalOpen;
-              if (!want) setTimeout(() => pulseRoomTopBarHidden(), 120);
-            }, 180);
+          const toggleOpenAfter = getRoomPanelToggleOpenState(toggle);
+          if (lastRoomPanelToggleAttempt?.requestSeq === requestSeq) {
+            lastRoomPanelToggleAttempt.openAfter = openAfter;
+            lastRoomPanelToggleAttempt.toggleOpenAfter = toggleOpenAfter;
           }
-        }, 220);
+
+          // Mobile drawers may report stale geometry/aria state mid-animation.
+          // Verification is diagnostic only: a second activation here can turn
+          // a successfully opened native drawer straight back off.
+        }, 300);
       }
 
       if (!want) setTimeout(() => pulseRoomTopBarHidden(), 180);
       return !!method || !isTouchLikeDevice();
     } catch (error) {
       lastRoomPanelToggleAttempt = {
+        requestSeq,
         want,
         reason,
         error: String(error?.message || error || 'unknown'),
@@ -9763,6 +9836,7 @@
       const zone = document.getElementById(ID.roomMenuZone);
       const hovered = panel?.matches?.(':hover') || zone?.matches?.(':hover');
       if (hovered && !isTouchLikeDevice()) return;
+      if (isTouchLikeDevice() && Date.now() < roomPanelTouchOpenGuardUntil) return;
 
       roomMenuReveal = false;
       updateRoomMenuRevealClass();
@@ -9813,8 +9887,8 @@
       openChatRoomSettingsMenu();
     };
 
-    handle.addEventListener('pointerdown', openFromHandle, { passive: false });
-    handle.addEventListener('touchstart', openFromHandle, { passive: false });
+    // A tap still produces click, while a vertical drag/scroll does not.
+    // Opening on pointerdown made scrolling from the edge open the menu accidentally.
     handle.addEventListener('click', openFromHandle, { passive: false });
   }
 
@@ -9824,6 +9898,7 @@
     if (!roomMenuHandle || !crackUiIsChatRoute()) {
       roomMenuReveal = false;
       clearRoomPanelCloseTimer();
+      clearRoomPanelToggleVerification({ invalidate: true });
       updateRoomMenuRevealClass();
       zone?.remove();
       setRoomTopBarHidden(false);
@@ -9887,6 +9962,7 @@
     if (lastRoomPanelBootCloseHref !== location.href) {
       lastRoomPanelBootCloseHref = location.href;
       setTimeout(() => {
+        if (isTouchLikeDevice() && Date.now() - lastRoomMenuNativeButtonClickAt < 1000) return;
         if (roomMenuHandle && !document.getElementById(ID.roomMenuZone)?.matches(':hover')) {
           clickRoomPanelToggle(false, 'boot');
           setTimeout(() => pulseRoomTopBarHidden(), 220);
@@ -10736,8 +10812,7 @@
       openChatListFromHandle();
     };
 
-    handle.addEventListener('pointerdown', openFromHandle, { passive: false });
-    handle.addEventListener('touchstart', openFromHandle, { passive: false });
+    // Match the room-menu handle: vertical edge drags scroll, taps open.
     handle.addEventListener('click', openFromHandle, { passive: false });
   }
 
@@ -10860,7 +10935,17 @@
     if (document.documentElement.dataset.crackUiGlobalBound === '1') return;
     document.documentElement.dataset.crackUiGlobalBound = '1';
     bindMenuSwipeGesture();
-    document.addEventListener('pointerdown', (e) => noteRoomTopBarInputInteraction(e.target), true);
+    document.addEventListener('pointerdown', (e) => {
+      if (roomMenuHandle && isTouchLikeDevice()) {
+        const roomButton = e.target.closest?.('button, [role="button"]');
+        if (isChatRoomSettingsButton(roomButton)) {
+          lastRoomMenuNativeButtonClickAt = Date.now();
+          clearRoomPanelCloseTimer();
+          clearRoomPanelToggleVerification({ invalidate: true });
+        }
+      }
+      noteRoomTopBarInputInteraction(e.target);
+    }, true);
     document.addEventListener('pointerdown', guardEmptyComposerSendEvent, true);
     document.addEventListener('mousedown', guardEmptyComposerSendEvent, true);
     document.addEventListener('focusin', (e) => noteRoomTopBarInputInteraction(e.target), true);
@@ -10894,7 +10979,10 @@
           }, 120);
         } else {
           const roomPanel = DOM.roomPanel();
-          const safeRoomPanel = e.target.closest?.(`#${ID.roomMenuZone}, #${ID.roomMenuHandle}`) || roomPanel?.contains(e.target);
+          const safeRoomPanel =
+            e.target.closest?.(`#${ID.roomMenuZone}, #${ID.roomMenuHandle}`) ||
+            roomPanel?.contains(e.target) ||
+            isTargetInsideRoomPanel(e.target);
           if (!safeRoomPanel) scheduleRoomPanelClose(160);
         }
       }
