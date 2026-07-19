@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.5.5
+// @version      2.5.6
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.5.5';
+  const CRACK_UI_VERSION = '2.5.6';
 
   function getCrackUiPublicWindow() {
     try {
@@ -165,6 +165,9 @@
     cooldownMs: 600,
     topOffset: 36,
   });
+
+  const TOUCH_DRAWER_OPEN_GUARD_MS = 900;
+  const MOBILE_CHAT_LIST_SETTLE_STEPS = Object.freeze([0, 16, 48, 120, 260, 520]);
 
   let cachedAndroidFirefoxBrowser = null;
   let cachedIosDevice = null;
@@ -403,9 +406,11 @@
   let lastRoomMenuNativeButtonClickAt = 0;
   let lastMenuSwipeAt = 0;
   let menuSwipePositionRaf = 0;
+  let responsiveMenuSyncRaf = 0;
   let chatListCloseTimer = null;
   let lastChatListClickAt = 0;
   let lastChatListHandleOpenAt = 0;
+  let tabletChatListOpenGuardUntil = 0;
   let lastChatListBootCloseHref = '';
   let cleanedOnce = false;
   let imageSizeSaveTimer = null;
@@ -2389,7 +2394,7 @@
         }
 
         html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone} {
-          width: 26px;
+          width: 42px;
         }
 
         html.${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListZone}[data-crack-ui-handle-enabled="0"] {
@@ -2406,7 +2411,7 @@
           position: fixed;
           top: 50%;
           left: max(0px, env(safe-area-inset-left));
-          width: 22px;
+          width: 40px;
           height: 64px;
           transform: translateY(-50%);
           pointer-events: auto !important;
@@ -2419,7 +2424,7 @@
           content: "";
           position: absolute;
           top: 50%;
-          left: 5px;
+          left: 12px;
           width: 3px;
           height: 30px;
           border-radius: 999px;
@@ -3349,7 +3354,7 @@
     const point = getActivationPoint(target);
 
     // iPad Safari can accept both a synthetic click and HTMLElement.click(), which can toggle Radix twice.
-    // For touch-like devices, use exactly one activation first, then delayed fallback if the panel still did not open.
+    // Use one native click; only use the pointer sequence when no click method is available.
     const singleClick = dispatchSingleClickOnly(target, methodLabel);
     if (singleClick) return singleClick;
 
@@ -5527,7 +5532,16 @@
   }
 
   function isMenuSwipeZoneActive() {
-    return !panelOpen && (isLeftMenuSwipeEnabled() || isRightMenuSwipeEnabled());
+    if (panelOpen || !(isLeftMenuSwipeEnabled() || isRightMenuSwipeEnabled())) return false;
+
+    // Do not let the invisible gesture zone react through an already-open
+    // native drawer. CSS pointer-events cannot block the document-level hit test.
+    if (isPhoneLikeViewport() && DOM.mobileChatListPopover()) return false;
+    if (isTabletLikeViewport() && isTabletChatListOpen()) return false;
+    const roomPanel = DOM.roomPanel();
+    if (roomPanel && isRoomPanelOpen(roomPanel)) return false;
+
+    return true;
   }
 
   function findMenuSwipeComposerShell(editable = DOM.composerEditable()) {
@@ -5712,6 +5726,20 @@
     }
 
     scheduleMenuSwipeZonePosition();
+  }
+
+  function scheduleResponsiveMenuStateSync() {
+    if (responsiveMenuSyncRaf) return;
+    responsiveMenuSyncRaf = requestAnimationFrame(() => {
+      responsiveMenuSyncRaf = 0;
+      updateDeviceViewportClasses();
+      ensureRoomMenuHandle();
+      ensureChatListAutoHide();
+      ensureMenuSwipeZone();
+      markMobileChatListOpenState();
+      updateRoomMenuRevealClass();
+      scheduleMenuSwipeZonePosition();
+    });
   }
 
   // =====================================================
@@ -9717,7 +9745,10 @@
       // Ignore delayed/cascaded outside-click handlers while the native drawer
       // is mounting and sliding in. The mobile utility uses the same one-way
       // open approach instead of trying to toggle again during this window.
-      roomPanelTouchOpenGuardUntil = Math.max(roomPanelTouchOpenGuardUntil, now + 900);
+      roomPanelTouchOpenGuardUntil = Math.max(
+        roomPanelTouchOpenGuardUntil,
+        now + TOUCH_DRAWER_OPEN_GUARD_MS
+      );
     }
 
     if (
@@ -10157,19 +10188,22 @@
   }
 
   function scoreMobileChatListToggle(button) {
-    if (!button || !isPhoneLikeViewport()) return -1;
+    if (!(button instanceof HTMLElement) || !isPhoneLikeViewport()) return -1;
     if (button.id === ID.chatListHandle || button.id === ID.gearDesktop || button.id === ID.gearMobile || button.id === ID.bottomModelButton) return -1;
     if (button.closest?.(`#${ID.panel}, #${ID.chatListZone}, #${ID.roomMenuZone}, #${ID.bottomModelPopup}`)) return -1;
+    if (button.closest?.('[role="dialog"], [data-radix-popper-content-wrapper]')) return -1;
 
     const r = crackUiEdgeRect(button);
     if (!r) return -1;
-    if (r.width < 28 || r.width > 58 || r.height < 28 || r.height > 58) return -1;
+    if (r.width < 24 || r.width > 64 || r.height < 24 || r.height > 64) return -1;
+    if (r.left > 150 || r.top > 120) return -1;
 
     const svg = button.querySelector('svg');
     if (!svg) return -1;
 
     const classes = `${String(button.className || '')} ${String(button.parentElement?.className || '')}`;
     const text = crackUiEdgeText(button);
+    const label = String(button.getAttribute('aria-label') || button.title || '');
     const pathText = [...button.querySelectorAll('path')]
       .map((path) => String(path.getAttribute('d') || ''))
       .join(' ')
@@ -10182,7 +10216,8 @@
     if (!text) score += 1;
     if (r.left <= 92 && r.top <= 92) score += 7;
     if (r.left <= 140) score += 2;
-    if (pathText.includes('M21 6.4H3V4.8h18') || (pathText.includes('M21 6.4') && pathText.includes('M3 19.4h18'))) score += 14;
+    if (pathText.includes('M21 6.4') || pathText.includes('M3 19.4h18') || pathText.includes('M4 6h16')) score += 14;
+    if (/에피소드|보관함|채팅/.test(label)) score += 4;
 
     return score;
   }
@@ -10193,7 +10228,7 @@
 
     let best = null;
     let bestScore = -1;
-    for (const button of document.querySelectorAll('button')) {
+    for (const button of document.querySelectorAll('button, [role="button"]')) {
       const score = scoreMobileChatListToggle(button);
       if (score > bestScore) {
         best = button;
@@ -10564,12 +10599,20 @@
   function scheduleMobileChatListPopoverLayoutSettle() {
     // Keep phone popover native; only settle the height compensation right after the proxy click.
     if (!isPhoneLikeViewport()) return;
-    for (const delay of [0, 16, 48, 120, 260, 520]) {
+    // Do not stack another six-timer cycle when a quick repeated event arrives.
+    // The final pass sees the latest native open/closed state.
+    if (scheduleMobileChatListPopoverLayoutSettle._busy) return;
+    scheduleMobileChatListPopoverLayoutSettle._busy = true;
+
+    MOBILE_CHAT_LIST_SETTLE_STEPS.forEach((delay, index) => {
       setTimeout(() => {
         markMobileChatListOpenState();
         forceMobileChatListPopoverLayout();
+        if (index === MOBILE_CHAT_LIST_SETTLE_STEPS.length - 1) {
+          scheduleMobileChatListPopoverLayoutSettle._busy = false;
+        }
       }, delay);
-    }
+    });
   }
 
 
@@ -10644,43 +10687,75 @@
     return rect.width > 80 && rect.left > -70 && rect.right > 170;
   }
 
+  function getChatListToggleOpenState(toggle) {
+    if (!toggle) return null;
+    const expanded = String(toggle.getAttribute?.('aria-expanded') || '').toLowerCase();
+    if (expanded === 'true') return true;
+    if (expanded === 'false') return false;
+    const state = String(toggle.dataset?.state || '').toLowerCase();
+    if (state === 'open') return true;
+    if (state === 'closed') return false;
+    return null;
+  }
+
   function setTabletChatListOpen(wantOpen, reason = 'tablet') {
     if (!isTabletLikeViewport() || !chatListAutoHide) return false;
 
+    const now = Date.now();
     const panel = findTabletChatListPanel();
     const currentlyOpen = panel ? isTabletChatListOpen(panel) : false;
     if (currentlyOpen === wantOpen) return true;
 
-    const now = Date.now();
+    // A second open request during the native slide animation can be read as a
+    // toggle and close the tablet drawer. Treat recent opens as one-way.
+    if (wantOpen && now < tabletChatListOpenGuardUntil) return true;
+    if (!wantOpen && reason === 'outside-click' && now < tabletChatListOpenGuardUntil) return false;
     if (now - lastChatListClickAt < 240) return false;
 
-    resetDomLocatorCache();
+    cachedChatListPanel = panel?.isConnected ? panel : null;
+    cachedChatListToggle = null;
     const toggle = findTabletChatListToggle();
     if (!toggle) return false;
 
-    lastChatListClickAt = now;
+    const explicitOpen = getChatListToggleOpenState(toggle);
+    if (!panel && explicitOpen === wantOpen) return true;
 
-    try {
-      toggle.click();
-      return true;
-    } catch (error) {
-      try {
-        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        return true;
-      } catch (fallbackError) {
-        reportCrackUiError(`tablet-chat-list-${reason}`, fallbackError || error);
-        return false;
-      }
+    const method = dispatchSingleClickOnly(toggle, `tablet-chat-list-${reason}`);
+    if (!method) return false;
+
+    lastChatListClickAt = now;
+    if (wantOpen) {
+      tabletChatListOpenGuardUntil = now + TOUCH_DRAWER_OPEN_GUARD_MS;
     }
+    return true;
   }
 
   function clickTabletChatListNativeButton(reason = 'swipe') {
     return setTabletChatListOpen(true, reason);
   }
 
+  function isTargetInsideTabletChatListPanel(target, panel = findTabletChatListPanel()) {
+    const el = target?.nodeType === 1 ? target : target?.parentElement;
+    if (!(el instanceof Element)) return false;
+    if (panel?.contains(el)) return true;
+
+    // As with the right drawer, Crack can replace the outer tablet shell while
+    // animating. Re-resolve from the touched element before calling it outside.
+    for (let node = el; node && node !== document.body; node = node.parentElement) {
+      if (!(node instanceof HTMLElement)) continue;
+      if (node.dataset.crackUiChatListPanel === '1' || scoreChatListPanel(node) >= 12) {
+        cachedChatListPanel = node;
+        node.dataset.crackUiChatListPanel = '1';
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   function isTabletChatListOutsideCloseSafeTarget(target, panel, toggle) {
     if (!(target instanceof Element)) return true;
-    if (panel?.contains(target)) return true;
+    if (isTargetInsideTabletChatListPanel(target, panel)) return true;
     if (toggle?.contains(target)) return true;
 
     return !!target.closest?.(`
@@ -10690,6 +10765,8 @@
       #${ID.bottomModelPopup},
       #${ID.roomMenuZone},
       #${ID.roomMenuHandle},
+      #${ID.chatListZone},
+      #${ID.chatListHandle},
       [data-crack-ui-menu-mode-popover],
       [data-radix-popper-content-wrapper],
       [role="dialog"]
@@ -10718,25 +10795,27 @@
     if (isTabletLikeViewport()) return clickTabletChatListNativeButton(reason);
     if (!isPhoneLikeViewport()) return false;
 
+    // The handle is an opener, not a mirror toggle. State-class updates can lag
+    // one frame behind the native Radix dialog, so verify the dialog directly.
+    if (markMobileChatListOpenState()) {
+      forceMobileChatListPopoverLayout();
+      return true;
+    }
+
     const now = Date.now();
     if (now - lastChatListClickAt < 240) return false;
-    lastChatListClickAt = now;
 
     releaseMobileChatListPopoverForcedStyles();
-    resetDomLocatorCache();
+    cachedChatListPanel = null;
+    cachedChatListToggle = null;
+    cachedMobileChatListToggle = null;
     const toggle = DOM.mobileChatListToggle();
     if (!toggle) return false;
 
-    try {
-      toggle.click();
-    } catch {
-      try {
-        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      } catch {
-        return false;
-      }
-    }
+    const method = dispatchSingleClickOnly(toggle, `mobile-chat-list-${reason}`);
+    if (!method) return false;
 
+    lastChatListClickAt = now;
     scheduleMobileChatListPopoverLayoutSettle();
     return true;
   }
@@ -11065,7 +11144,7 @@
       updateDeviceViewportClasses();
       applyChatWidth();
       updateChatWidthUi();
-      scheduleMenuSwipeZonePosition();
+      scheduleResponsiveMenuStateSync();
 
       if (isBottomModelPopupOpen()) {
         positionBottomModelPopup(document.getElementById(ID.bottomModelButton));
@@ -11074,7 +11153,9 @@
     });
 
     window.visualViewport?.addEventListener?.('resize', () => {
-      updateDeviceViewportClasses();
+      scheduleResponsiveMenuStateSync();
+    }, { passive: true });
+    window.visualViewport?.addEventListener?.('scroll', () => {
       scheduleMenuSwipeZonePosition();
     }, { passive: true });
     window.addEventListener('pointerup', stopPanelRangeDrag);
