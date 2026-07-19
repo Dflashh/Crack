@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.4.3
+// @version      2.3.5
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.4.3';
+  const CRACK_UI_VERSION = '2.3.5';
 
   function getCrackUiPublicWindow() {
     try {
@@ -1853,6 +1853,10 @@
         cursor: default;
       }
 
+      .crack-ui-menu-assist-row[data-mode-open="1"] {
+        align-items: start;
+      }
+
       .crack-ui-menu-toggle-wrap {
         display: block;
         justify-self: end;
@@ -1888,88 +1892,48 @@
         color: rgba(255, 255, 255, .94);
       }
 
-      .crack-ui-menu-mode-popover {
-        position: fixed !important;
-        z-index: 2147483646 !important;
-        display: block !important;
-        width: 180px !important;
-        box-sizing: border-box !important;
-        padding: 6px !important;
-        border: 1px solid rgba(255, 255, 255, .12) !important;
-        border-radius: 16px !important;
-        background: rgba(32, 32, 35, .97) !important;
-        color: rgba(255, 255, 255, .94) !important;
-        box-shadow:
-          0 16px 42px rgba(0, 0, 0, .34),
-          inset 0 1px 0 rgba(255, 255, 255, .06) !important;
-        backdrop-filter: blur(20px) saturate(1.16) !important;
-        -webkit-backdrop-filter: blur(20px) saturate(1.16) !important;
-        pointer-events: auto !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        transform: translateY(0) scale(1) !important;
-        transform-origin: top right;
-        animation: crackUiMenuModePopoverIn 130ms ease-out;
+      .crack-ui-menu-mode-panel {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        padding-top: 8px;
       }
 
-      @keyframes crackUiMenuModePopoverIn {
-        from {
-          opacity: 0;
-          transform: translateY(-7px) scale(.985);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
+      .crack-ui-menu-mode-panel[hidden] {
+        display: none !important;
       }
 
       .crack-ui-menu-mode-choice {
         appearance: none;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 20px;
-        align-items: center;
-        width: 100%;
-        min-height: 40px;
+        min-width: 0;
+        min-height: 32px;
         box-sizing: border-box;
-        padding: 0 10px 0 12px;
-        border: 0;
-        border-radius: 11px;
-        background: transparent;
-        color: rgba(255, 255, 255, .82);
+        padding: 6px 5px;
+        border: 1px solid rgba(255, 255, 255, .075);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, .035);
+        color: rgba(255, 255, 255, .66);
         font-family: inherit;
-        font-size: 12px;
-        font-weight: 760;
+        font-size: 10px;
+        font-weight: 800;
         line-height: 1.2;
-        text-align: left;
+        word-break: keep-all;
         cursor: pointer;
         transform: none !important;
       }
 
-      .crack-ui-menu-mode-choice:hover,
-      .crack-ui-menu-mode-choice:active {
-        background: rgba(255, 255, 255, .075);
-        color: rgba(255, 255, 255, .98);
-      }
-
-      .crack-ui-menu-mode-choice::after {
-        content: "";
-        justify-self: end;
-        width: 7px;
-        height: 12px;
-        box-sizing: border-box;
-        border-right: 2px solid transparent;
-        border-bottom: 2px solid transparent;
-        transform: rotate(45deg) translateY(-1px);
+      .crack-ui-menu-mode-choice:hover {
+        background: rgba(255, 255, 255, .065);
+        color: rgba(255, 255, 255, .92);
       }
 
       .crack-ui-menu-mode-choice[data-selected="1"] {
-        color: #ff5b49;
-        background: rgba(254, 69, 50, .10);
-      }
-
-      .crack-ui-menu-mode-choice[data-selected="1"]::after {
-        border-right-color: currentColor;
-        border-bottom-color: currentColor;
+        border-color: rgba(254, 69, 50, .46);
+        background: rgba(254, 69, 50, .14);
+        color: rgba(255, 255, 255, .96);
       }
 
       .crack-ui-row[data-disabled="1"] .crack-ui-menu-mode-button {
@@ -1978,7 +1942,9 @@
       }
 
       body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button,
-      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button {
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-button,
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice,
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice {
         border-color: rgba(17, 24, 39, .09);
         background: rgba(15, 23, 42, .045);
         color: rgba(17, 24, 39, .66);
@@ -1992,55 +1958,11 @@
         color: rgba(17, 24, 39, .92);
       }
 
-      body[data-theme="light"] .crack-ui-menu-mode-popover,
-      html[data-theme="light"] .crack-ui-menu-mode-popover {
-        border-color: rgba(17, 24, 39, .10) !important;
-        background: rgba(250, 250, 252, .97) !important;
-        color: rgba(17, 24, 39, .94) !important;
-        box-shadow:
-          0 16px 42px rgba(15, 23, 42, .18),
-          inset 0 1px 0 rgba(255, 255, 255, .86) !important;
-      }
-
-      body[data-theme="light"] .crack-ui-menu-mode-choice,
-      html[data-theme="light"] .crack-ui-menu-mode-choice {
-        color: rgba(17, 24, 39, .80);
-      }
-
-      body[data-theme="light"] .crack-ui-menu-mode-choice:hover,
-      html[data-theme="light"] .crack-ui-menu-mode-choice:hover,
-      body[data-theme="light"] .crack-ui-menu-mode-choice:active,
-      html[data-theme="light"] .crack-ui-menu-mode-choice:active {
-        background: rgba(15, 23, 42, .06);
-        color: rgba(17, 24, 39, .96);
-      }
-
-      body[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"],
-      html[data-theme="light"] .crack-ui-menu-mode-choice[data-selected="1"] {
-        background: rgba(254, 69, 50, .10);
-        color: #e43e2d;
-      }
-
-      html:not(.${CLS.phoneViewport}):not(.${CLS.tabletViewport}) .crack-ui-menu-assist-row {
-        grid-template-columns: minmax(0, 1fr) 35px !important;
-      }
-
-      html:not(.${CLS.phoneViewport}):not(.${CLS.tabletViewport}) .crack-ui-menu-mode-button {
-        display: none !important;
-      }
-
-      html.${CLS.tabletViewport} [data-crack-ui-menu-assist-row="chat-list"] {
-        grid-template-columns: minmax(0, 1fr) 35px !important;
-      }
-
-      html.${CLS.tabletViewport} #${ID.chatListModeButton} {
-        display: none !important;
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .crack-ui-menu-mode-popover {
-          animation: none !important;
-        }
+      body[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice[data-selected="1"],
+      html[data-theme="light"] #${ID.panel} .crack-ui-menu-mode-choice[data-selected="1"] {
+        border-color: rgba(254, 69, 50, .42);
+        background: rgba(254, 69, 50, .12);
+        color: rgba(17, 24, 39, .94);
       }
 
       #${ID.menuSwipeZone} {
@@ -3126,15 +3048,14 @@
   function getChatListAutoHideMode() {
     if (!chatListAutoHide) return 'off';
     if (isPhoneLikeViewport()) return 'phone';
-    if (isTabletLikeViewport()) return 'tablet-swipe';
+    if (isTabletLikeViewport()) return 'tablet-blocked';
     if (isDesktopChatListAutoHideViewport()) return 'desktop';
     return 'unsupported';
   }
 
   function isChatListAutoHideSupportedViewport() {
-    return isPhoneLikeViewport() ||
-      isTabletLikeViewport() ||
-      isDesktopChatListAutoHideViewport();
+    const mode = getChatListAutoHideMode();
+    return mode === 'desktop' || mode === 'phone';
   }
 
   function getResolvedThemeMode(mode = themeMode) {
@@ -4019,8 +3940,8 @@
   function updateChatListAutoHideUi() {
     const input = document.getElementById(ID.toggleChatListAutoHide);
     const row = input?.closest('[data-crack-ui-chat-list-auto-hide-row]');
-    const tablet = isTabletLikeViewport();
-    const supported = isChatListAutoHideSupportedViewport();
+    const tabletBlocked = isTabletLikeViewport();
+    const supported = isPhoneLikeViewport() || isDesktopChatListAutoHideViewport();
 
     if (row) {
       row.dataset.disabled = supported ? '0' : '1';
@@ -4029,22 +3950,18 @@
 
     if (input) {
       input.disabled = !supported;
-      input.title = supported
-        ? (tablet ? '태블릿 채팅 목록 슬라이더 켜기/끄기' : '')
-        : 'PC/모바일 전용';
+      input.title = supported ? '' : 'PC/모바일 전용';
     }
 
     const modeButton = document.getElementById(ID.chatListModeButton);
     if (modeButton) {
       modeButton.disabled = !supported;
-      modeButton.title = supported
-        ? (tablet ? '태블릿에서는 슬라이더 전용' : '모바일 동작 방식 선택')
-        : 'PC/모바일 전용';
+      modeButton.title = supported ? '모바일 동작 방식 선택' : 'PC/모바일 전용';
     }
 
     const label = row?.querySelector('.crack-ui-row-name');
     if (label) {
-      label.textContent = tablet ? '채팅 목록 슬라이더' : '채팅 목록 자동 숨김';
+      label.textContent = tabletBlocked ? '채팅 목록 자동 숨김 (PC/모바일 전용)' : '채팅 목록 자동 숨김';
     }
   }
 
@@ -4608,83 +4525,37 @@
     return input;
   }
 
-  function getMenuAssistModePopoverId(target) {
-    return target === 'room' ? ID.roomMenuModePanel : ID.chatListModePanel;
-  }
-
-  function closeMenuAssistModePanels(panel = document.getElementById(ID.panel)) {
-    document.querySelectorAll('[data-crack-ui-menu-mode-popover]').forEach((popover) => {
-      popover.remove();
-    });
-
-    panel?.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
-      button.setAttribute('aria-expanded', 'false');
+  function closeMenuAssistModePanels(panel = document.getElementById(ID.panel), except = '') {
+    if (!panel) return;
+    panel.querySelectorAll('[data-crack-ui-menu-mode-panel]').forEach((modePanel) => {
+      const target = modePanel.dataset.crackUiMenuModePanel || '';
+      const keepOpen = !!except && target === except;
+      modePanel.hidden = !keepOpen;
+      modePanel.closest('[data-crack-ui-menu-assist-row]')?.setAttribute('data-mode-open', keepOpen ? '1' : '0');
+      const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
+      button?.setAttribute('aria-expanded', keepOpen ? 'true' : 'false');
     });
   }
 
   function syncMenuAssistModeUi(panel = document.getElementById(ID.panel)) {
     if (!panel) return;
-
     const values = {
       room: roomMenuAssistMode,
       'chat-list': chatListAssistMode,
     };
 
     Object.entries(values).forEach(([target, mode]) => {
-      const normalized = target === 'chat-list' && isTabletLikeViewport()
-        ? 'swipe'
-        : normalizeMenuAssistMode(mode);
+      const normalized = normalizeMenuAssistMode(mode);
       const button = panel.querySelector(`[data-crack-ui-menu-mode-toggle="${target}"]`);
       if (button) button.textContent = MENU_ASSIST_MODE_LABEL[normalized];
-
-      document.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
-        const selected = choice.dataset.crackUiMenuModeChoice === normalized;
-        choice.dataset.selected = selected ? '1' : '0';
-        choice.setAttribute('aria-checked', selected ? 'true' : 'false');
+      panel.querySelectorAll(`[data-crack-ui-menu-mode-target="${target}"]`).forEach((choice) => {
+        choice.dataset.selected = choice.dataset.crackUiMenuModeChoice === normalized ? '1' : '0';
       });
     });
   }
 
-  function positionMenuAssistModePopover(button, popover) {
-    if (!button || !popover) return;
-
-    const rect = button.getBoundingClientRect();
-    const viewport = window.visualViewport;
-    const viewportLeft = Number(viewport?.offsetLeft || 0);
-    const viewportTop = Number(viewport?.offsetTop || 0);
-    const viewportWidth = Math.max(1, Number(viewport?.width || window.innerWidth || 1));
-    const viewportHeight = Math.max(1, Number(viewport?.height || window.innerHeight || 1));
-    const width = Math.min(180, viewportWidth - 20);
-
-    popover.style.setProperty('width', `${width}px`, 'important');
-
-    const measuredHeight = popover.getBoundingClientRect().height;
-    const popoverHeight = measuredHeight > 20 ? measuredHeight : 132;
-    const viewportRight = viewportLeft + viewportWidth;
-    const viewportBottom = viewportTop + viewportHeight;
-
-    const left = Math.max(
-      viewportLeft + 10,
-      Math.min(viewportRight - width - 10, viewportLeft + rect.right - width)
-    );
-
-    let top = viewportTop + rect.bottom + 8;
-
-    if (top + popoverHeight > viewportBottom - 10) {
-      top = Math.max(viewportTop + 10, viewportTop + rect.top - popoverHeight - 8);
-      popover.style.transformOrigin = 'bottom right';
-    } else {
-      popover.style.transformOrigin = 'top right';
-    }
-
-    popover.style.setProperty('left', `${Math.round(left)}px`, 'important');
-    popover.style.setProperty('top', `${Math.round(top)}px`, 'important');
-  }
-
   function setMenuAssistMode(target, value) {
-    const mode = target === 'chat-list' && isTabletLikeViewport()
-      ? 'swipe'
-      : normalizeMenuAssistMode(value);
+    const mode = normalizeMenuAssistMode(value);
 
     if (target === 'room') {
       roomMenuAssistMode = mode;
@@ -4704,112 +4575,35 @@
     applyState();
   }
 
-  function openMenuAssistModePopover(target, button) {
-    try {
-      if (
-        !button ||
-        (!isPhoneLikeViewport() && !isTabletLikeViewport()) ||
-        (target === 'chat-list' && isTabletLikeViewport())
-      ) {
-        closeMenuAssistModePanels();
-        return;
-      }
-
-      const selector = `[data-crack-ui-menu-mode-popover="${target}"]`;
-      const wasOpen = !!document.querySelector(selector);
-      closeMenuAssistModePanels();
-      if (wasOpen) return;
-
-      const popover = document.createElement('div');
-      popover.id = getMenuAssistModePopoverId(target);
-      popover.className = 'crack-ui-menu-mode-popover';
-      popover.dataset.crackUiMenuModePopover = target;
-      popover.setAttribute('role', 'menu');
-      popover.setAttribute('aria-label', '메뉴 열기 방식 선택');
-
-      const choices = target === 'chat-list' && isTabletLikeViewport()
-        ? [['swipe', '슬라이더']]
-        : [
-            ['handle', '핸들'],
-            ['swipe', '슬라이더'],
-            ['both', '핸들 + 슬라이더'],
-          ];
-
-      for (const [value, label] of choices) {
-        const choice = document.createElement('button');
-        choice.type = 'button';
-        choice.className = 'crack-ui-menu-mode-choice';
-        choice.dataset.crackUiMenuModeTarget = target;
-        choice.dataset.crackUiMenuModeChoice = value;
-        choice.setAttribute('role', 'menuitemradio');
-        choice.textContent = label;
-        popover.appendChild(choice);
-      }
-
-      popover.addEventListener('click', (event) => {
-        const choice = event.target.closest?.('[data-crack-ui-menu-mode-choice]');
-        if (!choice || !popover.contains(choice)) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        setMenuAssistMode(
-          choice.dataset.crackUiMenuModeTarget,
-          choice.dataset.crackUiMenuModeChoice
-        );
-      });
-
-      document.body.appendChild(popover);
-      button.setAttribute('aria-expanded', 'true');
-      syncMenuAssistModeUi();
-      positionMenuAssistModePopover(button, popover);
-    } catch (error) {
-      reportCrackUiError('menu-mode-popover', error);
-      closeMenuAssistModePanels();
-    }
-  }
-
   function bindMenuAssistModeControls(panel) {
     if (!panel || panel.dataset.crackUiMenuModeBound === '1') return;
     panel.dataset.crackUiMenuModeBound = '1';
 
-    panel.querySelectorAll('[data-crack-ui-menu-mode-toggle]').forEach((button) => {
-      if (button.dataset.crackUiMenuModeButtonBound === '1') return;
-      button.dataset.crackUiMenuModeButtonBound = '1';
-
-      button.addEventListener('click', (event) => {
+    panel.addEventListener('click', (event) => {
+      const toggle = event.target.closest?.('[data-crack-ui-menu-mode-toggle]');
+      if (toggle && panel.contains(toggle)) {
         event.preventDefault();
         event.stopPropagation();
+        const target = toggle.dataset.crackUiMenuModeToggle || '';
+        const modePanel = panel.querySelector(`[data-crack-ui-menu-mode-panel="${target}"]`);
+        const opening = !!modePanel?.hidden;
+        closeMenuAssistModePanels(panel, opening ? target : '');
+        return;
+      }
 
-        const target = button.dataset.crackUiMenuModeToggle || '';
-        openMenuAssistModePopover(target, button);
-      });
+      const choice = event.target.closest?.('[data-crack-ui-menu-mode-choice]');
+      if (choice && panel.contains(choice)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setMenuAssistMode(
+          choice.dataset.crackUiMenuModeTarget,
+          choice.dataset.crackUiMenuModeChoice
+        );
+        return;
+      }
+
+      closeMenuAssistModePanels(panel);
     });
-
-    const root = document.documentElement;
-    if (root.dataset.crackUiMenuModePopoverBound !== '1') {
-      root.dataset.crackUiMenuModePopoverBound = '1';
-
-      document.addEventListener('click', (event) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        if (target.closest('[data-crack-ui-menu-mode-popover]')) return;
-        if (target.closest('[data-crack-ui-menu-mode-toggle]')) return;
-        closeMenuAssistModePanels();
-      });
-
-      document.addEventListener('scroll', () => {
-        closeMenuAssistModePanels();
-      }, true);
-
-      window.addEventListener('resize', () => {
-        closeMenuAssistModePanels();
-      }, { passive: true });
-
-      window.visualViewport?.addEventListener?.('resize', () => {
-        closeMenuAssistModePanels();
-      }, { passive: true });
-    }
 
     syncMenuAssistModeUi(panel);
   }
@@ -5058,7 +4852,7 @@
                 <span class="crack-ui-row-name">채팅방 설정 자동 숨김</span>
               </span>
 
-              <button id="${ID.roomMenuModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="room" aria-haspopup="menu" aria-expanded="false">
+              <button id="${ID.roomMenuModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="room" aria-expanded="false">
                 ${MENU_ASSIST_MODE_LABEL[roomMenuAssistMode]}
               </button>
 
@@ -5067,6 +4861,11 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </label>
 
+              <div id="${ID.roomMenuModePanel}" class="crack-ui-menu-mode-panel" data-crack-ui-menu-mode-panel="room" hidden>
+                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="room" data-crack-ui-menu-mode-choice="handle">핸들</button>
+                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="room" data-crack-ui-menu-mode-choice="swipe">슬라이더</button>
+                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="room" data-crack-ui-menu-mode-choice="both">핸들 + 슬라이더</button>
+              </div>
             </div>
 
             <label class="crack-ui-row crack-ui-chat-layout-half">
@@ -5140,7 +4939,7 @@
                 <span class="crack-ui-row-name">채팅 목록 자동 숨김</span>
               </span>
 
-              <button id="${ID.chatListModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="chat-list" aria-haspopup="menu" aria-expanded="false">
+              <button id="${ID.chatListModeButton}" type="button" class="crack-ui-menu-mode-button" data-crack-ui-menu-mode-toggle="chat-list" aria-expanded="false">
                 ${MENU_ASSIST_MODE_LABEL[chatListAssistMode]}
               </button>
 
@@ -5149,6 +4948,11 @@
                 <span class="crack-ui-switch" aria-hidden="true"></span>
               </label>
 
+              <div id="${ID.chatListModePanel}" class="crack-ui-menu-mode-panel" data-crack-ui-menu-mode-panel="chat-list" hidden>
+                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="chat-list" data-crack-ui-menu-mode-choice="handle">핸들</button>
+                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="chat-list" data-crack-ui-menu-mode-choice="swipe">슬라이더</button>
+                <button type="button" class="crack-ui-menu-mode-choice" data-crack-ui-menu-mode-target="chat-list" data-crack-ui-menu-mode-choice="both">핸들 + 슬라이더</button>
+              </div>
             </div>
 
             <label class="crack-ui-row">
@@ -5253,19 +5057,21 @@
       writeStorage(LS.fullscreenButton, fullscreenButtonEnabled ? '1' : '0');
       ensureFullscreenButton();
     });
-    bindCheckbox(panel, ID.toggleChatListAutoHide, chatListAutoHide, (checked) => {
-      if (checked && isTabletLikeViewport()) {
-        chatListAssistMode = 'swipe';
-        writeStorage(LS.chatListAssistMode, chatListAssistMode);
+    bindCheckbox(panel, ID.toggleChatListAutoHide, chatListAutoHide, (checked, input) => {
+      if (isTabletLikeViewport()) {
+        chatListAutoHide = false;
+        writeStorage(LS.chatListAutoHide, '0');
+        if (input) input.checked = false;
+        updateChatListAutoHideUi();
+        ensureChatListAutoHide();
+        applyState();
+        return;
       }
-
       chatListAutoHide = checked;
       writeStorage(LS.chatListAutoHide, chatListAutoHide ? '1' : '0');
       ensureChatListAutoHide();
       ensureMenuSwipeZone();
-      syncMenuAssistModeUi(panel);
       applyState();
-
       if (checked && isDesktopChatListAutoHideViewport()) scheduleChatListClose(450);
     });
     bindRangeInput(panel, ID.imageSlider, setImageSize, flushImageSizeSave);
@@ -5414,13 +5220,12 @@
 
 
   function isMobileMenuSwipeViewport() {
-    return (isPhoneLikeViewport() || isTabletLikeViewport()) && isTouchLikeDevice();
+    return isPhoneLikeViewport() && isTouchLikeDevice();
   }
 
   function isLeftMenuSwipeEnabled() {
-    const swipeModeEnabled = isTabletLikeViewport() || menuAssistModeHasSwipe(chatListAssistMode);
     return chatListAutoHide &&
-      swipeModeEnabled &&
+      menuAssistModeHasSwipe(chatListAssistMode) &&
       isMobileMenuSwipeViewport() &&
       crackUiIsChatRoute();
   }
@@ -7874,7 +7679,7 @@
 
   function scoreChatListPanel(el) {
     if (!el || el.tagName !== 'DIV') return -1;
-    if (!isDesktopChatListAutoHideViewport() && !isTabletLikeViewport()) return -1;
+    if (!isDesktopChatListAutoHideViewport()) return -1;
     if (el.closest(`#${ID.panel}, #${ID.bottomModelPopup}, #${ID.roomMenuZone}, #${ID.chatListZone}`)) return -1;
     if (el.getAttribute('role') === 'dialog' || el.closest('[data-radix-popper-content-wrapper]')) return -1;
 
@@ -7916,7 +7721,7 @@
   }
 
   function scoreDesktopChatListToggle(button) {
-    if (!button || (!isDesktopChatListAutoHideViewport() && !isTabletLikeViewport())) return -1;
+    if (!button || !isDesktopChatListAutoHideViewport()) return -1;
     if (button.id === ID.chatListHandle || button.id === ID.gearDesktop || button.id === ID.gearMobile || button.id === ID.bottomModelButton) return -1;
     if (button.closest?.(`#${ID.panel}, #${ID.roomMenuZone}, #${ID.bottomModelPopup}, [data-testid="virtuoso-scroller"]`)) return -1;
 
@@ -7952,43 +7757,6 @@
       const score = scoreDesktopChatListToggle(btn);
       if (score > bestScore) {
         best = btn;
-        bestScore = score;
-      }
-    }
-
-    cachedChatListToggle = bestScore >= 24 ? best : null;
-    return cachedChatListToggle;
-  }
-
-  function findTabletChatListPanel() {
-    if (!isTabletLikeViewport()) return null;
-    if (cachedChatListPanel?.isConnected && crackUiIsChatListPanel(cachedChatListPanel)) return cachedChatListPanel;
-    if (!crackUiIsChatListAutoHideRoute()) return null;
-
-    let best = null;
-    let bestScore = -1;
-    for (const el of document.querySelectorAll('main div, #__next div, body div')) {
-      const score = scoreChatListPanel(el);
-      if (score > bestScore) {
-        best = el;
-        bestScore = score;
-      }
-    }
-
-    cachedChatListPanel = bestScore >= 12 ? best : null;
-    return cachedChatListPanel;
-  }
-
-  function findTabletChatListToggle() {
-    if (!isTabletLikeViewport()) return null;
-    if (cachedChatListToggle?.isConnected && scoreDesktopChatListToggle(cachedChatListToggle) >= 24) return cachedChatListToggle;
-
-    let best = null;
-    let bestScore = -1;
-    for (const button of document.querySelectorAll('button')) {
-      const score = scoreDesktopChatListToggle(button);
-      if (score > bestScore) {
-        best = button;
         bestScore = score;
       }
     }
@@ -8445,87 +8213,8 @@ function markMobileChatListOpenState() {
     return r.left > -70 && r.right > 170;
   }
 
-  function isTabletChatListOpen(panel = findTabletChatListPanel()) {
-    if (!isTabletLikeViewport() || !panel) return false;
-    const rect = crackUiEdgeRect(panel);
-    if (!rect) return false;
-    return rect.width > 80 && rect.left > -70 && rect.right > 170;
-  }
-
-  function setTabletChatListOpen(wantOpen, reason = 'tablet') {
-    if (!isTabletLikeViewport() || !chatListAutoHide) return false;
-
-    const panel = findTabletChatListPanel();
-    const currentlyOpen = panel ? isTabletChatListOpen(panel) : false;
-    if (currentlyOpen === wantOpen) return true;
-
-    const now = Date.now();
-    if (now - lastChatListClickAt < 240) return false;
-
-    resetDomLocatorCache();
-    const toggle = findTabletChatListToggle();
-    if (!toggle) return false;
-
-    lastChatListClickAt = now;
-
-    try {
-      toggle.click();
-      return true;
-    } catch (error) {
-      try {
-        toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        return true;
-      } catch (fallbackError) {
-        reportCrackUiError(`tablet-chat-list-${reason}`, fallbackError || error);
-        return false;
-      }
-    }
-  }
-
-  function clickTabletChatListNativeButton(reason = 'swipe') {
-    return setTabletChatListOpen(true, reason);
-  }
-
-  function isTabletChatListOutsideCloseSafeTarget(target, panel, toggle) {
-    if (!(target instanceof Element)) return true;
-    if (panel?.contains(target)) return true;
-    if (toggle?.contains(target)) return true;
-
-    return !!target.closest?.(`
-      #${ID.panel},
-      #${ID.gearDesktop},
-      #${ID.gearMobile},
-      #${ID.bottomModelPopup},
-      #${ID.roomMenuZone},
-      #${ID.roomMenuHandle},
-      [data-crack-ui-menu-mode-popover],
-      [data-radix-popper-content-wrapper],
-      [role="dialog"]
-    `);
-  }
-
-  function closeTabletChatListFromOutsideClick(target) {
-    if (
-      !chatListAutoHide ||
-      !isTabletLikeViewport() ||
-      getChatListAutoHideMode() !== 'tablet-swipe'
-    ) {
-      return false;
-    }
-
-    const panel = findTabletChatListPanel();
-    if (!panel || !isTabletChatListOpen(panel)) return false;
-
-    const toggle = findTabletChatListToggle();
-    if (isTabletChatListOutsideCloseSafeTarget(target, panel, toggle)) return false;
-
-    return setTabletChatListOpen(false, 'outside-click');
-  }
-
   function clickMobileChatListNativeButton(reason = 'handle') {
-    if (isTabletLikeViewport()) return clickTabletChatListNativeButton(reason);
     if (!isPhoneLikeViewport()) return false;
-
     const now = Date.now();
     if (now - lastChatListClickAt < 240) return false;
     lastChatListClickAt = now;
@@ -8635,7 +8324,7 @@ function markMobileChatListOpenState() {
   function ensureChatListAutoHide() {
     let zone = document.getElementById(ID.chatListZone);
     const mode = getChatListAutoHideMode();
-    const supported = mode === 'desktop' || mode === 'phone' || mode === 'tablet-swipe';
+    const supported = mode === 'desktop' || mode === 'phone';
 
     updateChatListAutoHideUi();
 
@@ -8648,15 +8337,6 @@ function markMobileChatListOpenState() {
       cachedChatListToggle = null;
       cachedMobileChatListToggle = null;
       document.documentElement.classList.remove(CLS.chatListMobilePopoverOpen);
-      return;
-    }
-
-    if (mode === 'tablet-swipe') {
-      clearChatListCloseTimer();
-      releaseMobileChatListPopoverForcedStyles();
-      releaseChatListPanelForcedOpen(cachedChatListPanel?.isConnected ? cachedChatListPanel : null);
-      zone?.remove();
-      document.getElementById(ID.chatListHandle)?.remove();
       return;
     }
 
@@ -8784,10 +8464,7 @@ function markMobileChatListOpenState() {
 
       if (chatListAutoHide) {
         markMobileChatListOpenState();
-
-        if (isTabletLikeViewport()) {
-          closeTabletChatListFromOutsideClick(e.target);
-        } else if (isDesktopChatListAutoHideViewport()) {
+        if (isDesktopChatListAutoHideViewport()) {
           const chatListPanel = DOM.chatListPanel();
           const safeChatList = e.target.closest?.(`#${ID.chatListZone}`) || chatListPanel?.contains(e.target);
           if (!safeChatList) scheduleChatListClose(120);
@@ -8798,9 +8475,8 @@ function markMobileChatListOpenState() {
 
       const panel = document.getElementById(ID.panel);
       const gear = e.target.closest(`#${ID.gearDesktop}, #${ID.gearMobile}`);
-      const menuModePopover = e.target.closest?.('[data-crack-ui-menu-mode-popover]');
 
-      if (panel && !panel.contains(e.target) && !gear && !menuModePopover) {
+      if (panel && !panel.contains(e.target) && !gear) {
         closePanel();
       }
     }, true);
@@ -8946,9 +8622,8 @@ function markMobileChatListOpenState() {
         chatListAutoHideMode: getChatListAutoHideMode(),
         chatListAutoHideActive: chatListAutoHide && isChatListAutoHideSupportedViewport(),
         chatListAutoHidePhone: chatListAutoHide && isPhoneLikeViewport(),
-        chatListAutoHideTabletSwipe: chatListAutoHide && isTabletLikeViewport(),
+        chatListAutoHideTabletBlocked: chatListAutoHide && isTabletLikeViewport(),
         chatListMobileProxyOnly: chatListAutoHide && isPhoneLikeViewport(),
-        chatListTabletProxyOnly: chatListAutoHide && isTabletLikeViewport(),
         chatListMobilePopoverOpen: !!DOM.mobileChatListPopover(),
         chatListMobileHeaderGapCompensation: document.documentElement.classList.contains(CLS.chatListMobileHeaderGapCompensated),
         panelOpen,
