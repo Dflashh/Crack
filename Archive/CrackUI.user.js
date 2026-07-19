@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.5.4
+// @version      2.5.5
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.5.4';
+  const CRACK_UI_VERSION = '2.5.5';
 
   function getCrackUiPublicWindow() {
     try {
@@ -9538,6 +9538,13 @@
   function scoreRoomPanel(el) {
     if (!el || el.tagName !== 'DIV') return -1;
 
+    // The UI Plus settings root is a fixed, full-viewport wrapper and contains
+    // the text "채팅방 설정 자동 숨김". Without excluding the wrapper itself,
+    // it scores exactly like Crack's native room panel on mobile and remains
+    // cached as DOM.roomPanel(), which makes boot/auto-close toggle the native
+    // room-settings button in the wrong direction.
+    if (el.closest(`#${ID.panelRoot}, #${ID.panel}, #${ID.bottomModelPopup}`)) return -1;
+
     const r = crackUiEdgeRect(el);
     if (!r) return -1;
 
@@ -9545,8 +9552,6 @@
     if (r.height < 280) return -1;
     if (r.top < -16 || r.top > 120) return -1;
     if (r.right < vw - 12 && r.left < vw - 330) return -1;
-    if (el.closest(`#${ID.panel}, #${ID.bottomModelPopup}`)) return -1;
-
     const cls = String(el.className || '');
     const txt = crackUiEdgeText(el).slice(0, 700);
     const cs = getComputedStyle(el);
