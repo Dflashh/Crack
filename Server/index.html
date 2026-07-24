@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#eef4ff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#090d18" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="크랙에서 사용하는 Claude·Gemini 모델을 공식 API로 즉석 측정하는 BYOK 서버 체크 도구"
+    />
+    <title>CRACK :: Server Check</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a" aria-hidden="true"></div>
+    <div class="ambient ambient-b" aria-hidden="true"></div>
+    <div class="ambient ambient-c" aria-hidden="true"></div>
+
+    <div class="app-shell">
+      <header class="topbar glass-panel">
+        <a class="brand" href="#" aria-label="CRACK Server Check 홈">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M13.2 2 5 13.1h6.1L10.8 22 19 10.9h-6.1L13.2 2Z" />
+            </svg>
+          </span>
+          <span>
+            <strong>CRACK</strong>
+            <small>SERVER CHECK</small>
+          </span>
+        </a>
+
+        <div class="topbar-actions">
+          <button id="openModelPicker" class="icon-text-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M7 12h10M10 17h4" />
+            </svg>
+            <span>모델 선택</span>
+            <span id="selectedCount" class="count-badge">0</span>
+          </button>
+
+          <button id="openSettings" class="icon-button" type="button" aria-label="설정 열기">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.55-1.03H5.3v-3h.15A1.7 1.7 0 0 0 7 9.94a1.7 1.7 0 0 0-.34-1.88L6.6 8l2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7V4.6h3v.1a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.15v3h-.15A1.7 1.7 0 0 0 19.4 15Z" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero glass-panel">
+          <div>
+            <span class="eyebrow">BYOK · 공식 API 직결</span>
+            <h1>누르는 순간의<br /><span>모델 서버 상태</span></h1>
+            <p>
+              선택한 모델에만 테스트 요청을 보냅니다. 자동 갱신과 중앙 서버는 없으며,
+              비용은 사용자가 입력한 API 계정에만 발생합니다.
+            </p>
+          </div>
+
+          <div class="hero-actions">
+            <button id="runAllButton" class="primary-button" type="button">
+              <span class="button-glow" aria-hidden="true"></span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m13 2-8 11h6l-1 9 9-12h-6V2Z" />
+              </svg>
+              <span>선택 모델 전체 조회</span>
+            </button>
+            <span id="keySummary" class="key-summary">API 키를 설정해 주세요</span>
+          </div>
+        </section>
+
+        <section class="section-heading">
+          <div>
+            <h2>선택한 모델</h2>
+            <p>최저 추론 설정 · 1회 또는 3회 중앙값</p>
+          </div>
+          <button id="clearResults" class="ghost-button" type="button">결과 초기화</button>
+        </section>
+
+        <section id="modelGrid" class="model-grid" aria-live="polite"></section>
+
+        <section id="emptyState" class="empty-state glass-panel" hidden>
+          <div class="empty-icon">◇</div>
+          <h2>표시할 모델이 없습니다</h2>
+          <p>상단의 모델 선택에서 하나 이상 골라 주세요.</p>
+          <button class="secondary-button" data-open-model-picker type="button">모델 고르기</button>
+        </section>
+
+        <footer class="footer">
+          <p>
+            이 도구는 크랙 또는 각 모델 제공사와 제휴되지 않은 비공식 측정기입니다.
+            수치는 측정 위치·계정 등급·순간 부하에 따라 달라질 수 있습니다.
+          </p>
+          <p>IGX 점수 규칙 기반 · API 키는 이 브라우저에만 저장</p>
+        </footer>
+      </main>
+    </div>
+
+    <dialog id="settingsDialog" class="sheet-dialog">
+      <form id="settingsForm" class="sheet glass-panel" method="dialog">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <header class="sheet-header">
+          <div>
+            <span class="eyebrow">SETTINGS</span>
+            <h2>API 및 측정 설정</h2>
+          </div>
+          <button class="icon-button close-dialog" type="button" aria-label="설정 닫기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </header>
+
+        <div class="settings-content">
+          <section class="settings-group">
+            <div class="settings-title-row">
+              <div>
+                <h3>API 키</h3>
+                <p>공식 Anthropic·Google API로 직접 요청합니다.</p>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>Anthropic API 키</span>
+              <div class="input-shell">
+                <input id="anthropicKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..." />
+                <button class="reveal-key" type="button" data-target="anthropicKey" aria-label="Anthropic 키 표시 전환">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                    <circle cx="12" cy="12" r="2.5" />
+                  </svg>
+                </button>
+              </div>
+            </label>
+
+            <label class="field">
+              <span>Gemini API 키</span>
+              <div class="input-shell">
+                <input id="geminiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza..." />
+                <button class="reveal-key" type="button" data-target="geminiKey" aria-label="Gemini 키 표시 전환">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                    <circle cx="12" cy="12" r="2.5" />
+                  </svg>
+                </button>
+              </div>
+            </label>
+
+            <label class="toggle-row">
+              <span>
+                <strong>이 브라우저에 키 저장</strong>
+                <small>localStorage에 평문으로 저장됩니다.</small>
+              </span>
+              <input id="persistKeys" type="checkbox" checked />
+              <span class="toggle" aria-hidden="true"></span>
+            </label>
+
+            <div class="security-note">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3.5 6.6v5.3c0 4.4 3.6 7.8 8.5 9.1 4.9-1.3 8.5-4.7 8.5-9.1V6.6L12 3Z" /><path d="M9.5 12 11 13.5l3.5-3.5" /></svg>
+              <p>키는 제작자 서버로 전송되지 않습니다. 공용 PC에서는 저장 옵션을 끄세요.</p>
+            </div>
+          </section>
+
+          <section class="settings-group">
+            <h3>측정 방식</h3>
+            <label class="field">
+              <span>목표 출력 길이</span>
+              <select id="outputTokens">
+                <option value="128">128 토큰 · 저비용</option>
+                <option value="256">256 토큰 · 권장</option>
+                <option value="512">512 토큰 · 안정적</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>측정 횟수</span>
+              <select id="repetitions">
+                <option value="1">1회 · 빠른 조회</option>
+                <option value="3">3회 · 중앙값</option>
+              </select>
+            </label>
+
+            <div class="setting-readonly">
+              <span>추론 설정</span>
+              <strong>모델별 허용 최저값</strong>
+            </div>
+          </section>
+        </div>
+
+        <div class="sheet-actions">
+          <button id="deleteSavedKeys" class="danger-button" type="button">저장된 키 삭제</button>
+          <button id="saveSettings" class="primary-button compact" value="save" type="submit">저장</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="modelPickerDialog" class="sheet-dialog">
+      <section class="sheet glass-panel model-picker-sheet">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <header class="sheet-header">
+          <div>
+            <span class="eyebrow">MODEL PICKER</span>
+            <h2>화면에 표시할 모델</h2>
+          </div>
+          <button class="icon-button close-dialog" type="button" aria-label="모델 선택 닫기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </header>
+
+        <div class="picker-toolbar">
+          <button id="selectAllModels" class="ghost-button" type="button">전체 선택</button>
+          <button id="selectNoModels" class="ghost-button" type="button">전체 해제</button>
+          <button id="invertModels" class="ghost-button" type="button">선택 반전</button>
+        </div>
+
+        <div id="modelPickerList" class="picker-list"></div>
+        <div class="sheet-actions single">
+          <button id="applyModelSelection" class="primary-button compact" type="button">적용</button>
+        </div>
+      </section>
+    </dialog>
+
+    <div id="toast" class="toast glass-panel" role="status" aria-live="polite"></div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
