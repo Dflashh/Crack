@@ -145,6 +145,7 @@ const STORAGE = {
   settings: "crack-server-check.settings.v1",
   selection: "crack-server-check.selection.v1",
   results: "crack-server-check.results.v1",
+  history: "crack-server-check.history.v1",
 };
 
 const DEFAULT_SETTINGS = {
@@ -152,13 +153,13 @@ const DEFAULT_SETTINGS = {
   geminiKey: "",
   persistKeys: true,
   outputTokens: 256,
-  repetitions: 1,
 };
 
 const state = {
   settings: loadJson(STORAGE.settings, DEFAULT_SETTINGS),
   selected: new Set(loadJson(STORAGE.selection, MODELS.map((model) => model.id))),
   results: loadJson(STORAGE.results, {}),
+  history: loadJson(STORAGE.history, []),
   errors: {},
   running: new Set(),
   progress: {},
@@ -167,22 +168,27 @@ const state = {
 };
 
 state.settings = { ...DEFAULT_SETTINGS, ...state.settings };
+delete state.settings.repetitions;
+if (!Array.isArray(state.history)) state.history = [];
 
 const elements = {
   modelGrid: document.querySelector("#modelGrid"),
   emptyState: document.querySelector("#emptyState"),
   selectedCount: document.querySelector("#selectedCount"),
+  historyCount: document.querySelector("#historyCount"),
   keySummary: document.querySelector("#keySummary"),
   runAllButton: document.querySelector("#runAllButton"),
   clearResults: document.querySelector("#clearResults"),
   settingsDialog: document.querySelector("#settingsDialog"),
   modelPickerDialog: document.querySelector("#modelPickerDialog"),
+  historyDialog: document.querySelector("#historyDialog"),
+  historySummary: document.querySelector("#historySummary"),
+  historyList: document.querySelector("#historyList"),
   settingsForm: document.querySelector("#settingsForm"),
   anthropicKey: document.querySelector("#anthropicKey"),
   geminiKey: document.querySelector("#geminiKey"),
   persistKeys: document.querySelector("#persistKeys"),
   outputTokens: document.querySelector("#outputTokens"),
-  repetitions: document.querySelector("#repetitions"),
   modelPickerList: document.querySelector("#modelPickerList"),
   toast: document.querySelector("#toast"),
 };
@@ -199,12 +205,13 @@ function initialize() {
 function bindEvents() {
   document.querySelector("#openSettings").addEventListener("click", openSettings);
   document.querySelector("#openModelPicker").addEventListener("click", openModelPicker);
+  document.querySelector("#openHistory").addEventListener("click", openHistory);
   document.querySelectorAll("[data-open-model-picker]").forEach((button) => button.addEventListener("click", openModelPicker));
   document.querySelectorAll(".close-dialog").forEach((button) => {
     button.addEventListener("click", () => button.closest("dialog").close());
   });
 
-  [elements.settingsDialog, elements.modelPickerDialog].forEach((dialog) => {
+  [elements.settingsDialog, elements.modelPickerDialog, elements.historyDialog].forEach((dialog) => {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
@@ -219,6 +226,7 @@ function bindEvents() {
 
   elements.settingsForm.addEventListener("submit", saveSettingsFromForm);
   document.querySelector("#deleteSavedKeys").addEventListener("click", deleteSavedKeys);
+  document.querySelector("#deleteHistory").addEventListener("click", deleteHistory);
   document.querySelector("#selectAllModels").addEventListener("click", () => updatePickerDraft(MODELS.map((model) => model.id)));
   document.querySelector("#selectNoModels").addEventListener("click", () => updatePickerDraft([]));
   document.querySelector("#invertModels").addEventListener("click", () => {
@@ -229,12 +237,6 @@ function bindEvents() {
   elements.clearResults.addEventListener("click", clearResults);
 
   elements.modelGrid.addEventListener("click", (event) => {
-    const repetitionButton = event.target.closest("[data-set-repetitions]");
-    if (repetitionButton) {
-      setRepetitions(Number(repetitionButton.dataset.setRepetitions));
-      return;
-    }
-
     const button = event.target.closest("[data-measure-model]");
     if (!button) return;
     runModel(button.dataset.measureModel);
@@ -246,7 +248,6 @@ function populateSettingsForm() {
   elements.geminiKey.value = state.settings.geminiKey || "";
   elements.persistKeys.checked = Boolean(state.settings.persistKeys);
   elements.outputTokens.value = String(state.settings.outputTokens);
-  elements.repetitions.value = String(state.settings.repetitions);
 }
 
 function openSettings() {
@@ -267,7 +268,6 @@ function saveSettingsFromForm(event) {
     geminiKey: elements.geminiKey.value.trim(),
     persistKeys: elements.persistKeys.checked,
     outputTokens: Number(elements.outputTokens.value),
-    repetitions: Number(elements.repetitions.value),
   };
 
   state.settings = next;
@@ -283,21 +283,6 @@ function saveSettingsFromForm(event) {
   elements.settingsDialog.close();
   render();
   showToast(next.persistKeys ? "설정을 이 브라우저에 저장했습니다." : "키는 현재 탭의 메모리에만 유지됩니다.");
-}
-
-function setRepetitions(repetitions) {
-  if (![1, 3].includes(repetitions) || state.running.size > 0) return;
-
-  state.settings.repetitions = repetitions;
-  elements.repetitions.value = String(repetitions);
-
-  const storedSettings = state.settings.persistKeys
-    ? state.settings
-    : { ...state.settings, anthropicKey: "", geminiKey: "" };
-  localStorage.setItem(STORAGE.settings, JSON.stringify(storedSettings));
-
-  render();
-  showToast(repetitions === 1 ? "빠른 조회 · 1회 측정" : "정밀 조회 · 3회 중앙값");
 }
 
 function deleteSavedKeys() {
@@ -353,6 +338,7 @@ function applyModelSelection() {
 function render() {
   const visibleModels = MODELS.filter((model) => state.selected.has(model.id));
   elements.selectedCount.textContent = String(visibleModels.length);
+  elements.historyCount.textContent = String(state.history.length);
   elements.emptyState.hidden = visibleModels.length > 0;
   elements.modelGrid.hidden = visibleModels.length === 0;
   elements.modelGrid.innerHTML = visibleModels.map(renderModelCard).join("");
@@ -426,27 +412,9 @@ function renderModelCard(model) {
 
       <div class="card-bottom">
         <span class="thinking-chip">${escapeHtml(model.thinkingLabel)}</span>
-        <div class="measure-controls">
-          <div class="run-count-toggle" role="group" aria-label="측정 횟수">
-            <button
-              type="button"
-              class="${state.settings.repetitions === 1 ? "active" : ""}"
-              data-set-repetitions="1"
-              aria-pressed="${state.settings.repetitions === 1}"
-              ${state.running.size > 0 ? "disabled" : ""}
-            >1회</button>
-            <button
-              type="button"
-              class="${state.settings.repetitions === 3 ? "active" : ""}"
-              data-set-repetitions="3"
-              aria-pressed="${state.settings.repetitions === 3}"
-              ${state.running.size > 0 ? "disabled" : ""}
-            >3회</button>
-          </div>
-          <button class="measure-button" type="button" data-measure-model="${model.id}" ${running ? "disabled" : ""}>
-            ${running ? "측정 중" : "지금 조회"}
-          </button>
-        </div>
+        <button class="measure-button" type="button" data-measure-model="${model.id}" ${running ? "disabled" : ""}>
+          ${running ? "측정 중" : "지금 조회"}
+        </button>
       </div>
     </article>
   `;
@@ -454,6 +422,92 @@ function renderModelCard(model) {
 
 function metric(label, value) {
   return `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function openHistory() {
+  renderHistory();
+  elements.historyDialog.showModal();
+}
+
+function appendHistory(model, result) {
+  state.history.push({
+    modelId: model.id,
+    crackName: model.crackName,
+    actualName: model.actualName,
+    providerLabel: model.providerLabel,
+    color: model.color,
+    measuredAt: result.measuredAt,
+    result: { ...result },
+  });
+  localStorage.setItem(STORAGE.history, JSON.stringify(state.history));
+  elements.historyCount.textContent = String(state.history.length);
+}
+
+function renderHistory() {
+  const entries = [...state.history].reverse();
+  elements.historySummary.textContent = `저장된 측정 ${entries.length.toLocaleString("ko-KR")}건`;
+
+  if (!entries.length) {
+    elements.historyList.innerHTML = `
+      <div class="history-empty">
+        <div class="empty-icon">◇</div>
+        <strong>아직 저장된 측정이 없습니다</strong>
+        <p>모델을 조회하면 이곳에 결과가 계속 쌓입니다.</p>
+      </div>
+    `;
+    return;
+  }
+
+  elements.historyList.innerHTML = entries.map((entry) => {
+    const result = entry.result || {};
+    const score = Number.isFinite(result.score) ? Math.round(result.score) : 0;
+    const status = statusFromScore(score);
+    const color = entry.color || "var(--primary)";
+
+    return `
+      <article class="history-item" style="--history-color:${escapeHtml(color)}">
+        <div class="history-item-top">
+          <div class="history-model">
+            <span class="history-orb" aria-hidden="true"></span>
+            <div>
+              <strong>${escapeHtml(entry.crackName || entry.modelId || "알 수 없는 모델")}</strong>
+              <span>${escapeHtml(entry.actualName || "")} · ${escapeHtml(entry.providerLabel || "")}</span>
+            </div>
+          </div>
+          <div class="history-score" style="--history-score-color:${scoreColor(score)}">
+            <strong>${score}</strong>
+            <span>점</span>
+          </div>
+        </div>
+        <div class="history-meta">
+          <span class="history-status ${status.key}">${escapeHtml(status.label)}</span>
+          <time datetime="${escapeHtml(entry.measuredAt || "")}">${formatHistoryTime(entry.measuredAt)}</time>
+        </div>
+        <div class="history-metrics">
+          ${historyMetric("첫 대사", Number.isFinite(result.latencyMs) ? formatSeconds(result.latencyMs) : "—")}
+          ${historyMetric("생성 속도", Number.isFinite(result.tps) ? `${result.tps.toFixed(1)} T/s` : "—")}
+          ${historyMetric("전체 시간", Number.isFinite(result.totalMs) ? formatSeconds(result.totalMs) : "—")}
+          ${historyMetric("출력 토큰", Number.isFinite(result.outputTokens) ? formatInteger(result.outputTokens) : "—")}
+        </div>
+        ${result.thinkingTokens ? `<p class="history-thinking">추론 토큰 ${formatInteger(result.thinkingTokens)}</p>` : ""}
+      </article>
+    `;
+  }).join("");
+}
+
+function historyMetric(label, value) {
+  return `<div><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function deleteHistory() {
+  if (!state.history.length) return;
+  if (!window.confirm("저장된 모든 측정 내역을 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
+
+  state.history = [];
+  localStorage.removeItem(STORAGE.history);
+  renderHistory();
+  render();
+  showToast("측정 내역을 모두 삭제했습니다.");
 }
 
 async function runSelectedModels() {
@@ -472,7 +526,7 @@ async function runSelectedModels() {
     return;
   }
 
-  const requests = selectedModels.length * state.settings.repetitions;
+  const requests = selectedModels.length;
   const confirmed = window.confirm(
     `${selectedModels.length}개 모델에 총 ${requests}회 API 요청을 순차 실행합니다.\n각 계정에 실제 API 비용이 발생할 수 있습니다. 계속할까요?`,
   );
@@ -501,23 +555,18 @@ async function runModel(modelId, options = {}) {
   render();
 
   try {
-    const runs = [];
-    for (let index = 0; index < state.settings.repetitions; index += 1) {
-      state.progress[model.id] = state.settings.repetitions > 1
-        ? `${index + 1}/${state.settings.repetitions}회 측정 중`
-        : "공식 API 응답 대기 중";
-      render();
-      const result = model.provider === "anthropic"
-        ? await measureAnthropic(model, apiKey)
-        : await measureGemini(model, apiKey);
-      runs.push(result);
-    }
+    state.progress[model.id] = "공식 API 응답 대기 중";
+    render();
 
-    const result = aggregateRuns(runs);
+    const result = model.provider === "anthropic"
+      ? await measureAnthropic(model, apiKey)
+      : await measureGemini(model, apiKey);
+
     result.measuredAt = new Date().toISOString();
-    result.runs = runs.length;
+    result.runs = 1;
     state.results[model.id] = result;
     localStorage.setItem(STORAGE.results, JSON.stringify(state.results));
+    appendHistory(model, result);
     if (!options.quiet) showToast(`${model.crackName} 측정 완료 · ${Math.round(result.score)}점`);
   } catch (error) {
     console.error(error);
@@ -779,31 +828,6 @@ async function apiError(response, provider) {
   return new Error(message);
 }
 
-function aggregateRuns(runs) {
-  if (runs.length === 1) return { ...runs[0] };
-  const keys = [
-    "latencyMs",
-    "generationMs",
-    "totalMs",
-    "outputTokens",
-    "inputTokens",
-    "thinkingTokens",
-    "visibleCharacters",
-    "tps",
-  ];
-  const result = Object.fromEntries(
-    keys.map((key) => [key, median(runs.map((run) => run[key] ?? 0))]),
-  );
-  result.score = igxScore(result.latencyMs, result.tps);
-  return result;
-}
-
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
 function igxScore(latency, tps) {
   const L = { best: 2000, normal: 3500, worst: 7000 };
   const T = { best: 33, normal: 17.5, worst: 10 };
@@ -881,6 +905,19 @@ function formatSeconds(milliseconds) {
 
 function formatInteger(value) {
   return Math.round(value).toLocaleString("ko-KR");
+}
+
+function formatHistoryTime(iso) {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "시간 정보 없음";
+  return date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function formatRelativeTime(iso) {
