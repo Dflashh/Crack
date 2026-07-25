@@ -71,13 +71,17 @@ python -m http.server 8080
 
 ## 추론 최소화 설정
 
-- Fable 5: 적응형 사고를 끌 수 없어 `effort: low`
-- Opus 5 / Sonnet 5: `thinking: disabled`, `effort: low`
-- Opus 4.6~4.8 / Sonnet 4.6: thinking 필드 생략(OFF), `effort: low`
-- Sonnet 4.5: thinking 미사용
+모든 모델은 추론을 끄지 않고, 해당 공식 API가 허용하는 가장 낮은 활성 추론 설정을 사용합니다.
+
+- Fable 5: 적응형 사고 항상 켜짐, `effort: low`
+- Opus 5 / Sonnet 5: `thinking: adaptive`, `effort: low`
+- Opus 4.6~4.8 / Sonnet 4.6: `thinking: adaptive`, `effort: low`
+- Sonnet 4.5: 수동 확장 추론 최소값 `budget_tokens: 1024`
 - Gemini 3.1 Pro: `thinkingLevel: low`
 - Gemini 2.5 Pro: `thinkingBudget: 128`
-- Gemini 2.5 Flash: `thinkingBudget: 0`
+- Gemini 2.5 Flash: `thinkingBudget: 128` (0은 추론 OFF이므로 사용하지 않음)
+
+Anthropic의 TPS는 최종 usage에 포함된 추론 토큰을 분리하고 실제 텍스트 출력 토큰만으로 계산합니다.
 
 ## 모델 추가·수정
 
