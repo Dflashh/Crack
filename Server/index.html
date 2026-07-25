@@ -40,6 +40,16 @@
             <span id="selectedCount" class="count-badge">0</span>
           </button>
 
+          <button id="openHistory" class="icon-text-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 7v5l3 2" />
+              <path d="M4.9 5.3A9 9 0 1 1 3 12" />
+              <path d="M3 5v4h4" />
+            </svg>
+            <span>측정 내역</span>
+            <span id="historyCount" class="count-badge history-count">0</span>
+          </button>
+
           <button id="openSettings" class="icon-button" type="button" aria-label="설정 열기">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
@@ -75,7 +85,7 @@
         <section class="section-heading">
           <div>
             <h2>선택한 모델</h2>
-            <p>최저 추론 설정 · 1회 또는 3회 중앙값</p>
+            <p>최저 추론 설정 · 1회 즉시 측정</p>
           </div>
           <button id="clearResults" class="ghost-button" type="button">결과 초기화</button>
         </section>
@@ -173,13 +183,6 @@
               </select>
             </label>
 
-            <label class="field">
-              <span>측정 횟수</span>
-              <select id="repetitions">
-                <option value="1">1회 · 빠른 조회</option>
-                <option value="3">3회 · 중앙값</option>
-              </select>
-            </label>
 
             <div class="setting-readonly">
               <span>추론 설정</span>
@@ -217,6 +220,29 @@
         <div id="modelPickerList" class="picker-list"></div>
         <div class="sheet-actions single">
           <button id="applyModelSelection" class="primary-button compact" type="button">적용</button>
+        </div>
+      </section>
+    </dialog>
+
+    <dialog id="historyDialog" class="sheet-dialog">
+      <section class="sheet glass-panel history-sheet">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <header class="sheet-header">
+          <div>
+            <span class="eyebrow">HISTORY</span>
+            <h2>내 측정 내역</h2>
+            <p id="historySummary">저장된 측정 0건</p>
+          </div>
+          <button class="icon-button close-dialog" type="button" aria-label="측정 내역 닫기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </header>
+
+        <div id="historyList" class="history-list"></div>
+
+        <div class="sheet-actions history-actions">
+          <p>API 키와 생성된 답변 본문은 저장하지 않습니다.</p>
+          <button id="deleteHistory" class="danger-button" type="button">전체 내역 삭제</button>
         </div>
       </section>
     </dialog>
