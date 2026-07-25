@@ -8,7 +8,7 @@ const MODELS = [
     apiModel: "claude-fable-5",
     color: "#ff8a42",
     glow: "rgba(255, 138, 66, .24)",
-    thinkingLabel: "LOW · 적응형 항상 켜짐",
+    thinkingLabel: "최저 추론 · 적응형 항상 켜짐 · effort LOW",
     anthropicMode: "always-adaptive",
     supportsEffort: true,
   },
@@ -21,8 +21,8 @@ const MODELS = [
     apiModel: "claude-opus-5",
     color: "#32d36b",
     glow: "rgba(50, 211, 107, .22)",
-    thinkingLabel: "추론 OFF · effort LOW",
-    anthropicMode: "disabled",
+    thinkingLabel: "최저 추론 · adaptive · effort LOW",
+    anthropicMode: "adaptive-low",
     supportsEffort: true,
   },
   {
@@ -34,8 +34,8 @@ const MODELS = [
     apiModel: "claude-opus-4-8",
     color: "#24c9db",
     glow: "rgba(36, 201, 219, .22)",
-    thinkingLabel: "추론 OFF · effort LOW",
-    anthropicMode: "omit-off",
+    thinkingLabel: "최저 추론 · adaptive · effort LOW",
+    anthropicMode: "adaptive-low",
     supportsEffort: true,
   },
   {
@@ -47,8 +47,8 @@ const MODELS = [
     apiModel: "claude-opus-4-7",
     color: "#ff665d",
     glow: "rgba(255, 102, 93, .22)",
-    thinkingLabel: "추론 OFF · effort LOW",
-    anthropicMode: "omit-off",
+    thinkingLabel: "최저 추론 · adaptive · effort LOW",
+    anthropicMode: "adaptive-low",
     supportsEffort: true,
   },
   {
@@ -60,8 +60,8 @@ const MODELS = [
     apiModel: "claude-opus-4-6",
     color: "#ff4d56",
     glow: "rgba(255, 77, 86, .22)",
-    thinkingLabel: "추론 OFF · effort LOW",
-    anthropicMode: "omit-off",
+    thinkingLabel: "최저 추론 · adaptive · effort LOW",
+    anthropicMode: "adaptive-low",
     supportsEffort: true,
   },
   {
@@ -73,8 +73,8 @@ const MODELS = [
     apiModel: "claude-sonnet-5",
     color: "#ff8b32",
     glow: "rgba(255, 139, 50, .22)",
-    thinkingLabel: "추론 OFF · effort LOW",
-    anthropicMode: "disabled",
+    thinkingLabel: "최저 추론 · adaptive · effort LOW",
+    anthropicMode: "adaptive-low",
     supportsEffort: true,
   },
   {
@@ -86,8 +86,8 @@ const MODELS = [
     apiModel: "claude-sonnet-4-6",
     color: "#ff4e8a",
     glow: "rgba(255, 78, 138, .22)",
-    thinkingLabel: "추론 OFF · effort LOW",
-    anthropicMode: "omit-off",
+    thinkingLabel: "최저 추론 · adaptive · effort LOW",
+    anthropicMode: "adaptive-low",
     supportsEffort: true,
   },
   {
@@ -99,8 +99,8 @@ const MODELS = [
     apiModel: "claude-sonnet-4-5-20250929",
     color: "#9e5df6",
     glow: "rgba(158, 93, 246, .22)",
-    thinkingLabel: "추론 OFF",
-    anthropicMode: "legacy-off",
+    thinkingLabel: "최저 추론 · budget 1,024",
+    anthropicMode: "manual-min",
     supportsEffort: false,
   },
   {
@@ -112,7 +112,7 @@ const MODELS = [
     apiModel: "gemini-3.1-pro-preview",
     color: "#f4b619",
     glow: "rgba(244, 182, 25, .22)",
-    thinkingLabel: "thinking LOW",
+    thinkingLabel: "최저 추론 · thinking LOW",
     geminiThinking: { thinkingLevel: "low" },
   },
   {
@@ -124,7 +124,7 @@ const MODELS = [
     apiModel: "gemini-2.5-pro",
     color: "#ff7a18",
     glow: "rgba(255, 122, 24, .22)",
-    thinkingLabel: "thinkingBudget 128",
+    thinkingLabel: "최저 추론 · budget 128",
     geminiThinking: { thinkingBudget: 128 },
   },
   {
@@ -136,8 +136,8 @@ const MODELS = [
     apiModel: "gemini-2.5-flash",
     color: "#18c65b",
     glow: "rgba(24, 198, 91, .22)",
-    thinkingLabel: "thinkingBudget 0",
-    geminiThinking: { thinkingBudget: 0 },
+    thinkingLabel: "최저 추론 · budget 128",
+    geminiThinking: { thinkingBudget: 128 },
   },
 ];
 
@@ -493,9 +493,11 @@ async function runModel(modelId, options = {}) {
 
 async function measureAnthropic(model, apiKey) {
   const target = state.settings.outputTokens;
+  const manualThinkingBudget = 1024;
+  const thinkingReserve = model.anthropicMode === "manual-min" ? manualThinkingBudget : 2048;
   const body = {
     model: model.apiModel,
-    max_tokens: model.anthropicMode === "always-adaptive" ? target + 512 : target,
+    max_tokens: target + thinkingReserve,
     stream: true,
     service_tier: "standard_only",
     system: "이 요청은 생성 속도 측정용입니다. 가능한 즉시 답하고, 불필요한 숙고·서문·설명·마크다운을 사용하지 마세요.",
@@ -508,7 +510,12 @@ async function measureAnthropic(model, apiKey) {
   };
 
   if (model.supportsEffort) body.output_config = { effort: "low" };
-  if (model.anthropicMode === "disabled") body.thinking = { type: "disabled" };
+  if (model.anthropicMode === "always-adaptive" || model.anthropicMode === "adaptive-low") {
+    body.thinking = { type: "adaptive", display: "omitted" };
+  }
+  if (model.anthropicMode === "manual-min") {
+    body.thinking = { type: "enabled", budget_tokens: manualThinkingBudget, display: "omitted" };
+  }
 
   const startedAt = performance.now();
   const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -526,13 +533,22 @@ async function measureAnthropic(model, apiKey) {
 
   let firstTextAt = null;
   let outputTokens = 0;
+  let thinkingTokens = null;
   let inputTokens = 0;
   let visibleText = "";
+  let sawThinkingBlock = false;
   let streamError = null;
 
   await consumeSSE(response, (payload) => {
     if (payload.type === "message_start") {
       inputTokens = payload.message?.usage?.input_tokens ?? inputTokens;
+    }
+
+    if (
+      payload.type === "content_block_start"
+      && (payload.content_block?.type === "thinking" || payload.content_block?.type === "redacted_thinking")
+    ) {
+      sawThinkingBlock = true;
     }
 
     if (payload.type === "content_block_delta" && payload.delta?.type === "text_delta") {
@@ -543,6 +559,7 @@ async function measureAnthropic(model, apiKey) {
 
     if (payload.type === "message_delta") {
       outputTokens = payload.usage?.output_tokens ?? outputTokens;
+      thinkingTokens = payload.usage?.output_tokens_details?.thinking_tokens ?? thinkingTokens;
     }
 
     if (payload.type === "error") {
@@ -554,21 +571,27 @@ async function measureAnthropic(model, apiKey) {
   const endedAt = performance.now();
   if (firstTextAt === null) throw new Error("첫 텍스트 토큰을 받지 못했습니다. 출력 한도를 늘려 다시 시도해 주세요.");
   if (!outputTokens) throw new Error("Anthropic 응답에서 출력 토큰 수를 확인하지 못했습니다.");
+  if (sawThinkingBlock && thinkingTokens === null) {
+    throw new Error("Anthropic 응답에서 추론 토큰 수를 확인하지 못해 정확한 TPS를 계산할 수 없습니다.");
+  }
+
+  const visibleOutputTokens = Math.max(0, outputTokens - (thinkingTokens || 0));
+  if (!visibleOutputTokens) throw new Error("Anthropic 응답의 실제 텍스트 출력 토큰이 0개입니다.");
 
   return finalizeMeasurement({
     startedAt,
     firstTextAt,
     endedAt,
-    outputTokens,
+    outputTokens: visibleOutputTokens,
     inputTokens,
-    thinkingTokens: null,
+    thinkingTokens: thinkingTokens || 0,
     visibleCharacters: visibleText.length,
   });
 }
 
 async function measureGemini(model, apiKey) {
   const target = state.settings.outputTokens;
-  const thinkingReserve = model.id === "powerchat" ? 0 : model.id === "prochat-1" ? 128 : 256;
+  const thinkingReserve = model.geminiThinking.thinkingBudget ?? 2048;
   const body = {
     contents: [
       {
