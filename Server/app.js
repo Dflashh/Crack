@@ -229,6 +229,12 @@ function bindEvents() {
   elements.clearResults.addEventListener("click", clearResults);
 
   elements.modelGrid.addEventListener("click", (event) => {
+    const repetitionButton = event.target.closest("[data-set-repetitions]");
+    if (repetitionButton) {
+      setRepetitions(Number(repetitionButton.dataset.setRepetitions));
+      return;
+    }
+
     const button = event.target.closest("[data-measure-model]");
     if (!button) return;
     runModel(button.dataset.measureModel);
@@ -277,6 +283,21 @@ function saveSettingsFromForm(event) {
   elements.settingsDialog.close();
   render();
   showToast(next.persistKeys ? "설정을 이 브라우저에 저장했습니다." : "키는 현재 탭의 메모리에만 유지됩니다.");
+}
+
+function setRepetitions(repetitions) {
+  if (![1, 3].includes(repetitions) || state.running.size > 0) return;
+
+  state.settings.repetitions = repetitions;
+  elements.repetitions.value = String(repetitions);
+
+  const storedSettings = state.settings.persistKeys
+    ? state.settings
+    : { ...state.settings, anthropicKey: "", geminiKey: "" };
+  localStorage.setItem(STORAGE.settings, JSON.stringify(storedSettings));
+
+  render();
+  showToast(repetitions === 1 ? "빠른 조회 · 1회 측정" : "정밀 조회 · 3회 중앙값");
 }
 
 function deleteSavedKeys() {
@@ -405,9 +426,27 @@ function renderModelCard(model) {
 
       <div class="card-bottom">
         <span class="thinking-chip">${escapeHtml(model.thinkingLabel)}</span>
-        <button class="measure-button" type="button" data-measure-model="${model.id}" ${running ? "disabled" : ""}>
-          ${running ? "측정 중" : "지금 조회"}
-        </button>
+        <div class="measure-controls">
+          <div class="run-count-toggle" role="group" aria-label="측정 횟수">
+            <button
+              type="button"
+              class="${state.settings.repetitions === 1 ? "active" : ""}"
+              data-set-repetitions="1"
+              aria-pressed="${state.settings.repetitions === 1}"
+              ${state.running.size > 0 ? "disabled" : ""}
+            >1회</button>
+            <button
+              type="button"
+              class="${state.settings.repetitions === 3 ? "active" : ""}"
+              data-set-repetitions="3"
+              aria-pressed="${state.settings.repetitions === 3}"
+              ${state.running.size > 0 ? "disabled" : ""}
+            >3회</button>
+          </div>
+          <button class="measure-button" type="button" data-measure-model="${model.id}" ${running ? "disabled" : ""}>
+            ${running ? "측정 중" : "지금 조회"}
+          </button>
+        </div>
       </div>
     </article>
   `;
@@ -751,9 +790,12 @@ function aggregateRuns(runs) {
     "thinkingTokens",
     "visibleCharacters",
     "tps",
-    "score",
   ];
-  return Object.fromEntries(keys.map((key) => [key, median(runs.map((run) => run[key] ?? 0))]));
+  const result = Object.fromEntries(
+    keys.map((key) => [key, median(runs.map((run) => run[key] ?? 0))]),
+  );
+  result.score = igxScore(result.latencyMs, result.tps);
+  return result;
 }
 
 function median(values) {
