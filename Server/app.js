@@ -152,7 +152,7 @@ const DEFAULT_SETTINGS = {
   anthropicKey: "",
   geminiKey: "",
   persistKeys: true,
-  outputTokens: 256,
+  outputTokens: 128,
 };
 
 const state = {
