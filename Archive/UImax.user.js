@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.6.64
+// @version      2.6.73
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.6.64';
+  const CRACK_UI_VERSION = '2.6.73';
 
   function getCrackUiPublicWindow() {
     try {
@@ -1664,6 +1664,9 @@
   let episodeUiReloadTimer = null;
   let isChatWidthDragging = false;
   let activePanelRangePreviewInput = null;
+  let activeCrackUiFontRangeScroller = null;
+  let activeCrackUiFontRangeScrollTop = 0;
+  let activeCrackUiFontRangeScrollLeft = 0;
   let panelHoldPreviewActive = false;
   let animatedThumbRafPending = false;
   let animatedThumbUrlMap = null;
@@ -2602,6 +2605,12 @@
         -webkit-appearance: none;
         background: transparent;
         cursor: pointer;
+      }
+
+      #${ID.panel} [data-crack-ui-font-range] {
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
       }
 
       .crack-ui-range::-webkit-slider-runnable-track {
@@ -5040,12 +5049,32 @@
         border: 1px solid rgba(var(--crack-ui-font-code-rgb, 200,166,182), .30) !important;
         border-radius: 14px !important;
         background: rgba(var(--crack-ui-font-code-rgb, 200,166,182), .10) !important;
-        box-shadow: 0 12px 32px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.04) !important;
+        box-shadow: none !important;
       }
 
       html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock > :first-child {
-        border-bottom: 1px solid rgba(var(--crack-ui-font-code-rgb, 200,166,182), .20) !important;
+        border-bottom: 0 !important;
         background: rgba(var(--crack-ui-font-code-rgb, 200,166,182), .16) !important;
+      }
+
+      html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock > :nth-child(2),
+      html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock > :nth-child(2) > pre {
+        border-top: 0 !important;
+        border-block-start: 0 !important;
+        border-top-left-radius: 0 !important;
+        border-top-right-radius: 0 !important;
+        border-start-start-radius: 0 !important;
+        border-start-end-radius: 0 !important;
+        margin-top: 0 !important;
+        outline: 0 !important;
+        box-shadow: none !important;
+      }
+
+      html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock > :nth-child(2) > pre {
+        border-left: 0 !important;
+        border-right: 0 !important;
+        border-bottom: 0 !important;
+        border-radius: 0 !important;
       }
 
       html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock :is(pre, code),
@@ -5658,6 +5687,14 @@
         box-shadow: none !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
+      }
+
+      /* Mobile browsers may interpret a vertical finger drift on a native range as panel
+         scrolling. Lock only the font panel scroller for the duration of that gesture. */
+      #${ID.panel}[data-crack-ui-font-range-touch-lock="1"] .crack-ui-panel-body {
+        overflow-y: hidden !important;
+        overscroll-behavior: none !important;
+        touch-action: none !important;
       }
 
 
@@ -7584,6 +7621,19 @@
 
     row.dataset.crackUiRangePreviewActive = '1';
 
+    if (input.matches?.('[data-crack-ui-font-range]')) {
+      const scroller = panel.querySelector('.crack-ui-panel-body');
+      activeCrackUiFontRangeScroller = scroller || null;
+      activeCrackUiFontRangeScrollTop = scroller?.scrollTop || 0;
+      activeCrackUiFontRangeScrollLeft = scroller?.scrollLeft || 0;
+      panel.dataset.crackUiFontRangeTouchLock = '1';
+    } else {
+      activeCrackUiFontRangeScroller = null;
+      activeCrackUiFontRangeScrollTop = 0;
+      activeCrackUiFontRangeScrollLeft = 0;
+      delete panel.dataset.crackUiFontRangeTouchLock;
+    }
+
     // Original image/chat-width sliders sit directly in the section body, while font ranges
     // are nested in a font card and a two-column grid. Mark the full ancestor path so CSS can
     // hide every sibling but still leave the dragged font slider visible.
@@ -7607,8 +7657,14 @@
       delete element.dataset.crackUiRangePreviewPath;
     });
 
-    if (panel) delete panel.dataset.crackUiRangePreview;
+    if (panel) {
+      delete panel.dataset.crackUiRangePreview;
+      delete panel.dataset.crackUiFontRangeTouchLock;
+    }
     activePanelRangePreviewInput = null;
+    activeCrackUiFontRangeScroller = null;
+    activeCrackUiFontRangeScrollTop = 0;
+    activeCrackUiFontRangeScrollLeft = 0;
     document.documentElement.classList.remove(CLS.rangePreview);
   }
 
@@ -7707,13 +7763,38 @@
     const startFromEvent = (event) => {
       const input = getPanelRangeInput(event.target);
       if (!input) return;
-      if (Number.isInteger(event.pointerId)) input.__crackUiPointerId = event.pointerId;
+      if (Number.isInteger(event.pointerId)) {
+        input.__crackUiPointerId = event.pointerId;
+        try { input.setPointerCapture?.(event.pointerId); } catch {
+        }
+      }
       startPanelRangeDrag(input);
     };
 
     const stopFromEvent = (event) => {
       const input = getPanelRangeInput(event.target);
+      if (input && Number.isInteger(input.__crackUiPointerId)) {
+        try {
+          if (input.hasPointerCapture?.(input.__crackUiPointerId)) {
+            input.releasePointerCapture(input.__crackUiPointerId);
+          }
+        } catch {
+        }
+        delete input.__crackUiPointerId;
+      }
       if (!input || input === activePanelRangePreviewInput) stopPanelRangeDrag();
+    };
+
+    const lockFontRangeScroll = () => {
+      if (!activePanelRangePreviewInput?.matches?.('[data-crack-ui-font-range]')) return;
+      const scroller = activeCrackUiFontRangeScroller;
+      if (!scroller?.isConnected) return;
+      if (scroller.scrollTop !== activeCrackUiFontRangeScrollTop) {
+        scroller.scrollTop = activeCrackUiFontRangeScrollTop;
+      }
+      if (scroller.scrollLeft !== activeCrackUiFontRangeScrollLeft) {
+        scroller.scrollLeft = activeCrackUiFontRangeScrollLeft;
+      }
     };
 
     // Event delegation means newly added range sliders are handled without extra binding code.
@@ -7721,8 +7802,13 @@
     panel.addEventListener('touchstart', startFromEvent, { passive: true });
     panel.addEventListener('mousedown', startFromEvent);
     panel.addEventListener('input', startFromEvent);
+    panel.addEventListener('pointerup', stopFromEvent);
+    panel.addEventListener('pointercancel', stopFromEvent);
+    panel.addEventListener('touchend', stopFromEvent, { passive: true });
+    panel.addEventListener('touchcancel', stopFromEvent, { passive: true });
     panel.addEventListener('change', stopFromEvent);
     panel.addEventListener('blur', stopFromEvent, true);
+    panel.querySelector('.crack-ui-panel-body')?.addEventListener('scroll', lockFontRangeScroll, { passive: true });
   }
 
   function clearMobileHideTimer() {
@@ -12264,6 +12350,9 @@ ${record.css}`)}`
     }
 
     activePanelRangePreviewInput = null;
+    activeCrackUiFontRangeScroller = null;
+    activeCrackUiFontRangeScrollTop = 0;
+    activeCrackUiFontRangeScrollLeft = 0;
     panelHoldPreviewActive = false;
     isChatWidthDragging = false;
 
@@ -12279,6 +12368,7 @@ ${record.css}`)}`
         if (element.id === ID.panelPreviewButton) element.setAttribute('aria-pressed', 'false');
       });
       delete panel.dataset.crackUiRangePreview;
+      delete panel.dataset.crackUiFontRangeTouchLock;
     }
 
     document.documentElement.classList.remove(CLS.rangePreview, CLS.widthDragging);
