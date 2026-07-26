@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Crack UI Plus
+// @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.6.63
+// @version      2.6.64
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.6.63';
+  const CRACK_UI_VERSION = '2.6.64';
 
   function getCrackUiPublicWindow() {
     try {
@@ -1937,7 +1937,7 @@
         opacity: 0 !important;
       }
 
-      /* Mobile chat list popover is native Crack UI. Crack UI Plus only proxies the hidden hamburger button on phones.
+      /* Mobile chat list popover is native Crack UI. Crack UI Max only proxies the hidden hamburger button on phones.
          When the global header is hidden, Crack's popover can keep the native height calc(100dvh - 56px)
          while starting at y=0, which leaves a header-sized blank area at the bottom. Only compensate height. */
       html.${CLS.autoHide}.${CLS.phoneViewport} [data-radix-popper-content-wrapper] [role="dialog"][data-state="open"].md\:hidden:has([role="tablist"]),
@@ -1989,7 +1989,7 @@
       }
 
       /* Crack DOM 2026-06: the app shell now uses pt-[56px] / pt-[120px] to reserve header space.
-         When Crack UI Plus hides the global header, remove that reserved padding too.
+         When Crack UI Max hides the global header, remove that reserved padding too.
          Keep these as attribute selectors only; raw Tailwind bracket class selectors can invalidate a selector list. */
       html.${CLS.autoHide} body [class*="pt-[56px]"],
       html.${CLS.autoHide} body [class*="pt-[120px]"],
@@ -6945,10 +6945,10 @@
     const tokenHint = getCrackAccessToken()
       ? 'access_token 감지됨'
       : 'access_token 쿠키를 못 찾음';
-    const message = `Crack UI Plus: ${label} 저장 실패\n${describeEpisodeUiError(error)}\n${tokenHint}\n\n원본 설정에서는 되는 상태면 이 문구를 그대로 보내줘.`;
+    const message = `Crack UI Max: ${label} 저장 실패\n${describeEpisodeUiError(error)}\n${tokenHint}\n\n원본 설정에서는 되는 상태면 이 문구를 그대로 보내줘.`;
     writeStorage(LS.lastEpisodeUiError, message);
     reportCrackUiError('episode-ui-save', error);
-    console.warn('[Crack UI Plus] episode UI setting save failed', error);
+    console.warn('[Crack UI Max] episode UI setting save failed', error);
     try {
       window.alert(message);
     } catch {
@@ -11750,12 +11750,12 @@ ${record.css}`)}`
     const panel = document.createElement('div');
     panel.id = ID.panel;
     panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', 'Crack UI Plus 설정');
+    panel.setAttribute('aria-label', 'Crack UI Max 설정');
 
     panel.innerHTML = `
       <div class="crack-ui-panel-head">
         <div class="crack-ui-title-wrap">
-          <div class="crack-ui-panel-title">Crack UI Plus</div>
+          <div class="crack-ui-panel-title">Crack UI Max</div>
           <div class="crack-ui-panel-version" aria-label="버전 ${CRACK_UI_VERSION}">v${CRACK_UI_VERSION}</div>
         </div>
         <div class="crack-ui-panel-head-actions">
@@ -13932,7 +13932,7 @@ ${record.css}`)}`
 
     const officialBtn = DOM.modelButton();
     if (!officialBtn) {
-      console.warn('[Crack UI Plus] 공식 모델 버튼을 못 찾음');
+      console.warn('[Crack UI Max] 공식 모델 버튼을 못 찾음');
       return false;
     }
 
@@ -13948,7 +13948,7 @@ ${record.css}`)}`
 
         const modelMenu = await waitForOfficialModelMenu(900);
         if (!modelMenu) {
-          console.warn('[Crack UI Plus] 공식 모델 메뉴를 못 찾음');
+          console.warn('[Crack UI Max] 공식 모델 메뉴를 못 찾음');
           return false;
         }
 
@@ -13959,7 +13959,7 @@ ${record.css}`)}`
           });
 
         if (!targetItem) {
-          console.warn(`[Crack UI Plus] 공식 메뉴에서 ${targetName} 항목을 못 찾음`);
+          console.warn(`[Crack UI Max] 공식 메뉴에서 ${targetName} 항목을 못 찾음`);
           return false;
         }
 
@@ -17958,7 +17958,7 @@ ${record.css}`)}`
     };
 
     try {
-      console.error(`[Crack UI Plus] ${source} failed`, error);
+      console.error(`[Crack UI Max] ${source} failed`, error);
     } catch {
     }
   }
