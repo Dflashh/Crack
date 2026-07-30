@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.00
+// @version      2.7.04
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.00';
+  const CRACK_UI_VERSION = '2.7.04';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2024,6 +2024,14 @@
   let appliedNovelBackdropWeatherLayer = null;
   let chatBackgroundApplyRaf = 0;
   let chatBackgroundCompatibilityObserver = null;
+  let chatBackgroundWeatherRootObserver = null;
+  let observedChatBackgroundWeatherRoot = null;
+  let chatContentRefreshTimer = null;
+  let chatContentRefreshRaf = 0;
+  let chatContentRefreshLastAt = 0;
+  let viewportRefreshRaf = 0;
+  let cachedCrackUiViewportWidth = null;
+  let cachedTouchLikeDevice = null;
   let initScheduled = false;
   let lastInitRun = 0;
   let initThrottleTimer = null;
@@ -2076,6 +2084,8 @@
   let fontQuoteScanRaf = 0;
   let fontQuoteLastScanAt = 0;
   let fontQuoteMutationObserver = null;
+  const fontQuoteDirtyRoots = new Set();
+  let fontQuoteFullScanPending = true;
   let fontQuoteWrapSeq = 0;
   const fontQuoteWraps = new Map();
   let fontResolveSource = '';
@@ -5545,8 +5555,19 @@
         flex-wrap: nowrap;
       }
 
+      /* Background mode blocks manage their own enabled appearance. Keep them
+         independent from the font highlight card's grayscale state so a newly
+         enabled color/image mode immediately shows its real color. */
       #${ID.panel} .crack-ui-background-mode-block[data-feature-enabled="0"] .crack-ui-background-mode-control {
         opacity: .52;
+        filter: grayscale(1) saturate(0);
+        transition: opacity 170ms ease, filter 170ms ease;
+      }
+
+      #${ID.panel} .crack-ui-background-mode-block[data-feature-enabled="1"] .crack-ui-background-mode-control {
+        opacity: 1;
+        filter: none;
+        transition: opacity 170ms ease, filter 170ms ease;
       }
 
       #${ID.panel} .crack-ui-background-mode-block[data-feature-enabled="0"]:not([data-crack-ui-background-mode="image"]) .crack-ui-background-mode-control {
@@ -7220,8 +7241,15 @@
     else requestAnimationFrame(() => ready(fn));
   }
 
+  function invalidateCrackUiViewportMetrics() {
+    cachedCrackUiViewportWidth = null;
+    cachedTouchLikeDevice = null;
+  }
+
   function isTouchLikeDevice() {
-    return window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)').matches;
+    if (cachedTouchLikeDevice != null) return cachedTouchLikeDevice;
+    cachedTouchLikeDevice = window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)').matches;
+    return cachedTouchLikeDevice;
   }
 
   function isAndroidFirefoxBrowser() {
@@ -7240,6 +7268,10 @@
   }
 
   function getCrackUiViewportWidth() {
+    if (Number.isFinite(cachedCrackUiViewportWidth) && cachedCrackUiViewportWidth > 0) {
+      return cachedCrackUiViewportWidth;
+    }
+
     const values = [
       window.innerWidth,
       document.documentElement?.clientWidth,
@@ -7250,7 +7282,8 @@
       .map((value) => Number(value))
       .filter((value) => Number.isFinite(value) && value > 0);
 
-    return values.length ? Math.min(...values) : window.innerWidth;
+    cachedCrackUiViewportWidth = values.length ? Math.min(...values) : window.innerWidth;
+    return cachedCrackUiViewportWidth;
   }
 
   function isPhoneLikeViewport() {
@@ -7263,9 +7296,33 @@
   }
 
   function updateDeviceViewportClasses() {
-    document.documentElement.classList.toggle(CLS.phoneViewport, isPhoneLikeViewport());
-    document.documentElement.classList.toggle(CLS.tabletViewport, isTabletLikeViewport());
-    document.documentElement.classList.toggle(CLS.androidFirefox, isAndroidFirefoxBrowser());
+    const width = getCrackUiViewportWidth();
+    const phone = width <= 767;
+    const tablet = !phone && width <= 1180 && isTouchLikeDevice();
+    const root = document.documentElement;
+    root.classList.toggle(CLS.phoneViewport, phone);
+    root.classList.toggle(CLS.tabletViewport, tablet);
+    root.classList.toggle(CLS.androidFirefox, isAndroidFirefoxBrowser());
+  }
+
+  function runCrackUiViewportRefresh() {
+    viewportRefreshRaf = 0;
+    invalidateCrackUiViewportMetrics();
+    updateDeviceViewportClasses();
+    applyChatWidth();
+    updateChatWidthUi();
+    scheduleMenuSwipeZonePosition();
+    scheduleCrackUiChatBackgroundApply();
+
+    if (isBottomModelPopupOpen()) {
+      positionBottomModelPopup(document.getElementById(ID.bottomModelButton));
+    }
+  }
+
+  function scheduleCrackUiViewportRefresh() {
+    invalidateCrackUiViewportMetrics();
+    if (viewportRefreshRaf) return;
+    viewportRefreshRaf = requestAnimationFrame(runCrackUiViewportRefresh);
   }
 
   updateDeviceViewportClasses();
@@ -8304,7 +8361,7 @@
     if (!input || input.disabled) return;
 
     const panel = input.closest?.(`#${ID.panel}`);
-    const row = input.closest?.('.crack-ui-range-row');
+    const row = input.closest?.('.crack-ui-range-row, [data-crack-ui-range-preview-row="1"]');
     if (!panel || !row) return;
 
     activePanelRangePreviewInput = input;
@@ -8482,7 +8539,7 @@
     };
 
     const lockFontRangeScroll = () => {
-      if (!activePanelRangePreviewInput?.matches?.('[data-crack-ui-font-range]')) return;
+      if (!activePanelRangePreviewInput?.matches?.('[data-crack-ui-font-range], [data-crack-ui-novel-backdrop-opacity]')) return;
       const scroller = activeCrackUiFontRangeScroller;
       if (!scroller?.isConnected) return;
       if (scroller.scrollTop !== activeCrackUiFontRangeScrollTop) {
@@ -10160,12 +10217,14 @@ ${record.css}`)}`
     if (fontQuoteWraps.size || document.querySelector('[data-crack-ui-font-quote]')) restoreCrackUiFontQuoteDecorations();
     if (document.querySelector('[data-crack-ui-font-base="1"]')) restoreCrackUiFontBaseDecorations();
     findCrackUiFontMarkdownRoots().forEach(clearCrackUiFontQuoteRootScanState);
+    fontQuoteDirtyRoots.clear();
+    fontQuoteFullScanPending = true;
   }
 
   function resetCrackUiFontQuoteDecorations() {
     disableCrackUiFontQuoteDecorations();
     if (fontSettings.masterEnabled && isCrackUiFontInlineDecorationEnabled()) {
-      scheduleCrackUiFontQuoteScan({ immediate: true });
+      scheduleCrackUiFontQuoteScan({ immediate: true, full: true });
     }
   }
 
@@ -10235,7 +10294,10 @@ ${record.css}`)}`
       });
 
       if (!changedRoots.size) return;
-      changedRoots.forEach(clearCrackUiFontQuoteRootScanState);
+      changedRoots.forEach((markdown) => {
+        clearCrackUiFontQuoteRootScanState(markdown);
+        fontQuoteDirtyRoots.add(markdown);
+      });
       scheduleCrackUiFontQuoteScan();
     });
 
@@ -10244,7 +10306,7 @@ ${record.css}`)}`
       subtree: true,
       characterData: true,
     });
-    scheduleCrackUiFontQuoteScan({ immediate: true });
+    scheduleCrackUiFontQuoteScan({ immediate: true, full: true });
   }
 
   function scanCrackUiFontQuotes() {
@@ -10254,15 +10316,20 @@ ${record.css}`)}`
     const observer = fontQuoteMutationObserver;
     observer?.disconnect();
     try {
-      const roots = findCrackUiFontMarkdownRoots();
-      const recentFrom = Math.max(0, roots.length - 12);
+      const fullScan = fontQuoteFullScanPending || fontQuoteDirtyRoots.size === 0;
+      fontQuoteFullScanPending = false;
+      const roots = fullScan
+        ? findCrackUiFontMarkdownRoots()
+        : [...fontQuoteDirtyRoots].filter((markdown) => markdown instanceof HTMLElement && markdown.isConnected);
+      fontQuoteDirtyRoots.clear();
+      const recentFrom = fullScan ? Math.max(0, roots.length - 12) : 0;
       const now = Date.now();
       const dialogueMatcher = fontSettings.dialogueBgEnabled ? getCrackUiDialogueQuoteMatcher() : null;
       let needsFollowUp = false;
 
       roots.forEach((markdown, index) => {
         if (!(markdown instanceof HTMLElement) || markdown.closest('.not-wrtn-markdown')) return;
-        const recent = index >= recentFrom;
+        const recent = !fullScan || index >= recentFrom;
         let renderedQuote;
         let renderedBase;
         const hasRenderedQuote = () => {
@@ -10294,6 +10361,7 @@ ${record.css}`)}`
           delete markdown.dataset.crackUiFontQuotedKey;
           delete markdown.dataset.crackUiFontHadQuote;
           delete markdown.dataset.crackUiFontHadBase;
+          fontQuoteDirtyRoots.add(markdown);
           needsFollowUp = true;
           return;
         }
@@ -10305,6 +10373,7 @@ ${record.css}`)}`
         }
 
         if (now - Number(markdown.dataset.crackUiFontLenAt || now) < 180) {
+          fontQuoteDirtyRoots.add(markdown);
           needsFollowUp = true;
           return;
         }
@@ -10351,6 +10420,9 @@ ${record.css}`)}`
 
   function scheduleCrackUiFontQuoteScan(options = {}) {
     if (!fontSettings.masterEnabled || !isCrackUiFontInlineDecorationEnabled()) return;
+    if (options.full === true || (options.immediate === true && options.full !== false)) {
+      fontQuoteFullScanPending = true;
+    }
     if (fontQuoteScanTimer || fontQuoteScanRaf) return;
 
     const elapsed = Date.now() - fontQuoteLastScanAt;
@@ -10864,7 +10936,7 @@ ${record.css}`)}`
       <div class="crack-ui-section" data-crack-ui-section="background">
         <div class="crack-ui-section-body crack-ui-background-section-body" data-crack-ui-section-body="background">
           <div class="crack-ui-font-highlight-grid crack-ui-background-feature-grid">
-            <div class="crack-ui-font-card crack-ui-font-highlight-card crack-ui-background-feature-card crack-ui-background-color-card">
+            <div class="crack-ui-font-card crack-ui-font-highlight-card crack-ui-background-feature-card crack-ui-background-color-card" data-feature-enabled="1">
               <div class="crack-ui-row crack-ui-font-toggle-row crack-ui-background-title-row">
                 <span class="crack-ui-row-text">
                   <span class="crack-ui-row-name">배경 설정</span>
@@ -10966,7 +11038,7 @@ ${record.css}`)}`
                     >
                   </span>
                 </div>
-                <div class="crack-ui-font-color-row crack-ui-background-opacity-control">
+                <div class="crack-ui-font-color-row crack-ui-background-opacity-control" data-crack-ui-range-preview-row="1">
                   <div class="crack-ui-background-opacity-head">
                     <span class="crack-ui-font-control-label">투명도</span>
                     <span class="crack-ui-font-range-actions">
@@ -11789,7 +11861,7 @@ ${record.css}`)}`
       button.disabled = !masterEnabled || !Object.keys(FONT_SETTING_RANGE).some((key) => isCrackUiFontSettingCustom(key));
     });
 
-    panel.querySelectorAll('.crack-ui-font-highlight-card').forEach((card) => {
+    panel.querySelectorAll('.crack-ui-font-highlight-card:not(.crack-ui-background-feature-card)').forEach((card) => {
       const parentToggle = card.querySelector('[data-crack-ui-font-toggle]');
       const parentKey = parentToggle?.dataset.crackUiFontToggle || '';
       const featureEnabled = masterEnabled && parentKey && fontSettings[parentKey] === true;
@@ -13327,8 +13399,8 @@ ${record.css}`)}`
           chatBackgroundSettings.enabled = false;
         }
         persistCrackUiChatBackgroundSettings();
-        applyCrackUiChatBackground();
         syncCrackUiChatBackgroundUi(panel);
+        applyCrackUiChatBackground();
       }
     );
 
@@ -13370,8 +13442,8 @@ ${record.css}`)}`
           chatBackgroundSettings.imageEnabled = false;
         }
         persistCrackUiChatBackgroundSettings();
-        applyCrackUiChatBackground();
         syncCrackUiChatBackgroundUi(panel);
+        applyCrackUiChatBackground();
       }
     );
     chatBackgroundImageButton?.addEventListener('click', (event) => {
@@ -13637,7 +13709,7 @@ ${error?.message || error}`);
     // CAWF root is an isolated, clipped stacking context already sized to the chat main.
     // Mounting the solid color inside that root keeps it below every weather/time effect,
     // while still above Crack's opaque native frame that otherwise shows through the fade.
-    if (layer.parentElement !== weather.root) {
+    if (layer.parentElement !== weather.root || weather.root.firstElementChild !== layer) {
       weather.root.insertBefore(layer, weather.root.firstChild);
     }
     layer.style.setProperty('inset', '0', 'important');
@@ -13755,34 +13827,52 @@ ${error?.message || error}`);
     });
   }
 
-  function observeCrackUiChatBackgroundCompatibility() {
-    if (chatBackgroundCompatibilityObserver || !document.body) return;
-    chatBackgroundCompatibilityObserver = new MutationObserver((mutations) => {
+  function isCrackUiWeatherLayerStructureNode(node) {
+    if (!(node instanceof Element)) return false;
+    if (node.id === 'cawf-root' || node.id === 'cawf-time-layer') return true;
+    return !!node.querySelector?.('#cawf-root, #cawf-time-layer');
+  }
+
+  function refreshCrackUiWeatherRootObserver() {
+    const nextRoot = document.getElementById('cawf-root');
+    if (observedChatBackgroundWeatherRoot === nextRoot && nextRoot?.isConnected) return nextRoot;
+
+    chatBackgroundWeatherRootObserver?.disconnect();
+    chatBackgroundWeatherRootObserver = null;
+    observedChatBackgroundWeatherRoot = nextRoot instanceof HTMLElement ? nextRoot : null;
+
+    if (!observedChatBackgroundWeatherRoot) return null;
+
+    chatBackgroundWeatherRootObserver = new MutationObserver((mutations) => {
       const relevant = mutations.some((mutation) => {
-        if (mutation.type !== 'attributes') return false;
-        if (mutation.target === document.documentElement) {
-          return mutation.attributeName === 'data-cawf-layer-active' || mutation.attributeName === 'class';
+        if (mutation.type === 'attributes') {
+          return mutation.target === observedChatBackgroundWeatherRoot;
         }
-        return mutation.target instanceof HTMLElement
-          && mutation.target.id === 'cawf-root'
-          && (
-            mutation.attributeName === 'data-cawf-visible'
-            || mutation.attributeName === 'data-cawf-host-found'
-            || mutation.attributeName === 'style'
-          );
+        if (mutation.type !== 'childList') return false;
+        return [...mutation.addedNodes, ...mutation.removedNodes]
+          .some(isCrackUiWeatherLayerStructureNode);
       });
       if (relevant) scheduleCrackUiChatBackgroundApply();
     });
+    chatBackgroundWeatherRootObserver.observe(observedChatBackgroundWeatherRoot, {
+      attributes: true,
+      attributeFilter: ['data-cawf-visible', 'data-cawf-host-found'],
+      childList: true,
+    });
+    return observedChatBackgroundWeatherRoot;
+  }
 
+  function observeCrackUiChatBackgroundCompatibility() {
+    if (chatBackgroundCompatibilityObserver) return;
+    chatBackgroundCompatibilityObserver = new MutationObserver(() => {
+      refreshCrackUiWeatherRootObserver();
+      scheduleCrackUiChatBackgroundApply();
+    });
     chatBackgroundCompatibilityObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['data-cawf-layer-active', 'class'],
+      attributeFilter: ['data-cawf-layer-active'],
     });
-    chatBackgroundCompatibilityObserver.observe(document.body, {
-      attributes: true,
-      subtree: true,
-      attributeFilter: ['data-cawf-visible', 'data-cawf-host-found', 'style'],
-    });
+    refreshCrackUiWeatherRootObserver();
   }
 
   function applyState() {
@@ -18815,6 +18905,9 @@ ${error?.message || error}`);
     cachedRoomPanelToggle = null;
     cachedRoomTopBar = null;
     cachedRoomStatBar = null;
+    if (observedChatBackgroundWeatherRoot && !observedChatBackgroundWeatherRoot.isConnected) {
+      refreshCrackUiWeatherRootObserver();
+    }
   }
 
   function isCrackUiWidthControlledChatListPanel(panel) {
@@ -19431,22 +19524,11 @@ ${error?.message || error}`);
     });
     document.addEventListener('fullscreenchange', updateFullscreenButtonUi);
     document.addEventListener('webkitfullscreenchange', updateFullscreenButtonUi);
-    window.addEventListener('resize', () => {
-      updateDeviceViewportClasses();
-      applyChatWidth();
-      updateChatWidthUi();
-      scheduleMenuSwipeZonePosition();
+    window.addEventListener('resize', scheduleCrackUiViewportRefresh, { passive: true });
+    window.visualViewport?.addEventListener?.('resize', scheduleCrackUiViewportRefresh, { passive: true });
 
-      if (isBottomModelPopupOpen()) {
-        positionBottomModelPopup(document.getElementById(ID.bottomModelButton));
-      }
-
-    });
-
-    window.visualViewport?.addEventListener?.('resize', () => {
-      updateDeviceViewportClasses();
-      scheduleMenuSwipeZonePosition();
-    }, { passive: true });
+    const touchViewportMedia = window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)');
+    touchViewportMedia.addEventListener?.('change', scheduleCrackUiViewportRefresh);
     window.addEventListener('pointerup', stopPanelRangeDrag);
     window.addEventListener('pointercancel', stopPanelRangeDrag);
     window.addEventListener('mouseup', stopPanelRangeDrag);
@@ -19464,6 +19546,12 @@ ${error?.message || error}`);
       persistCrackUiFontSettings();
       flushNovelModelCatalogSave();
       if (novelModelIndicator) saveNovelModelMessageCache();
+      chatBackgroundWeatherRootObserver?.disconnect();
+      chatBackgroundCompatibilityObserver?.disconnect();
+      if (chatContentRefreshTimer) clearTimeout(chatContentRefreshTimer);
+      if (chatContentRefreshRaf) cancelAnimationFrame(chatContentRefreshRaf);
+      if (viewportRefreshRaf) cancelAnimationFrame(viewportRefreshRaf);
+      setCrackUiChatBackgroundImageObjectUrl('');
     });
   }
 
@@ -19812,6 +19900,61 @@ ${error?.message || error}`);
     });
   }
 
+  const CHAT_CONTENT_REFRESH_THROTTLE_MS = 180;
+
+  function getCrackUiMutationElement(node) {
+    if (node instanceof Element) return node;
+    return node?.parentElement instanceof Element ? node.parentElement : null;
+  }
+
+  function isCrackUiOwnMutationNode(node) {
+    const element = getCrackUiMutationElement(node);
+    if (!element) return false;
+    return !!element.closest(
+      `#${ID.panelRoot}, #${ID.panel}, #${ID.panelBackdrop}, #${ID.bottomModelPopup}, ` +
+      `#${ID.chatBackgroundLayer}, #${ID.novelBackdropWeatherLayer}`
+    );
+  }
+
+  function isCrackUiChatContentMutation(mutation) {
+    if (mutation.type !== 'childList') return false;
+    if (isCrackUiOwnMutationNode(mutation.target)) return false;
+
+    const target = getCrackUiMutationElement(mutation.target);
+    if (target?.closest('main [data-message-group-id], main .wrtn-markdown')) return true;
+
+    return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
+      const element = getCrackUiMutationElement(node);
+      if (!element || isCrackUiOwnMutationNode(element)) return false;
+      return element.matches?.('[data-message-group-id], .wrtn-markdown')
+        || !!element.querySelector?.('[data-message-group-id], .wrtn-markdown');
+    });
+  }
+
+  function mutationTouchesCrackUiWeatherRoot(mutation) {
+    if (mutation.type !== 'childList') return false;
+    return [...mutation.addedNodes, ...mutation.removedNodes]
+      .some(isCrackUiWeatherLayerStructureNode);
+  }
+
+  function runCrackUiChatContentRefresh() {
+    chatContentRefreshRaf = 0;
+    chatContentRefreshLastAt = performance.now();
+    if (hideSituationImage) scheduleSituationImageButtonMark();
+    if (pauseAnimatedThumbs || hasRestorableAnimatedThumbs()) scheduleAnimatedThumbState();
+    if (novelModelIndicator) scheduleNovelModelIndicatorScan();
+  }
+
+  function scheduleCrackUiChatContentRefresh() {
+    if (chatContentRefreshTimer || chatContentRefreshRaf) return;
+    const elapsed = performance.now() - chatContentRefreshLastAt;
+    const delay = Math.max(0, CHAT_CONTENT_REFRESH_THROTTLE_MS - elapsed);
+    chatContentRefreshTimer = setTimeout(() => {
+      chatContentRefreshTimer = null;
+      chatContentRefreshRaf = requestAnimationFrame(runCrackUiChatContentRefresh);
+    }, delay);
+  }
+
   function observe() {
     const mo = new MutationObserver((mutations) => {
       const onlyImageSrcChanges =
@@ -19827,6 +19970,16 @@ ${error?.message || error}`);
         return;
       }
 
+      const weatherStructureChanged = mutations.some(mutationTouchesCrackUiWeatherRoot);
+      if (weatherStructureChanged) {
+        refreshCrackUiWeatherRootObserver();
+        scheduleCrackUiChatBackgroundApply();
+        const onlyWeatherStructureChanges = mutations.every((mutation) =>
+          mutationTouchesCrackUiWeatherRoot(mutation) || isCrackUiOwnMutationNode(mutation.target)
+        );
+        if (onlyWeatherStructureChanges) return;
+      }
+
       const composer = cachedComposerEditable?.isConnected ? cachedComposerEditable : null;
       const onlyComposerChildChanges =
         !!composer &&
@@ -19838,6 +19991,24 @@ ${error?.message || error}`);
 
       if (onlyComposerChildChanges) {
         if (emptySendGuard) scheduleEmptySendGuardUiUpdate();
+        return;
+      }
+
+      const onlyOwnUiChanges = mutations.length > 0 && mutations.every((mutation) => {
+        if (isCrackUiOwnMutationNode(mutation.target)) return true;
+        if (mutation.type !== 'childList') return false;
+        const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+        return changedNodes.length > 0 && changedNodes.every(isCrackUiOwnMutationNode);
+      });
+      if (onlyOwnUiChanges) return;
+
+      const chatViewportReady = cachedChatBackgroundViewport?.isConnected === true;
+      const onlyChatContentChanges = chatViewportReady
+        && mutations.length > 0
+        && mutations.every((mutation) => isCrackUiChatContentMutation(mutation));
+
+      if (onlyChatContentChanges) {
+        scheduleCrackUiChatContentRefresh();
         return;
       }
 
