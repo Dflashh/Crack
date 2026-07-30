@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.6.73
+// @version      2.6.80
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.6.73';
+  const CRACK_UI_VERSION = '2.6.80';
 
   function getCrackUiPublicWindow() {
     try {
@@ -96,6 +96,7 @@
     toggleFontDialogue: 'crack-ui-toggle-font-dialogue',
     toggleFontThought: 'crack-ui-toggle-font-thought',
     toggleFontItalic: 'crack-ui-toggle-font-italic',
+    toggleFontItalicStyle: 'crack-ui-toggle-font-italic-style',
     toggleFontStrong: 'crack-ui-toggle-font-strong',
     toggleFontCodeBlock: 'crack-ui-toggle-font-code-block',
     fontSourceInput: 'crack-ui-font-source-input',
@@ -248,6 +249,7 @@
     dialogueBgEnabled: false,
     thoughtBgEnabled: false,
     italicBgEnabled: false,
+    italicStyleEnabled: false,
     strongBgEnabled: false,
     codeBlockBgEnabled: false,
 
@@ -265,8 +267,8 @@
 
     // These values are only editor fallbacks. Reset buttons disable the corresponding
     // override, so Crack's own computed style remains the actual source of truth.
-    baseTextColor: '#1a1918',
-    codeTextColor: '#1a1918',
+    baseTextColor: '#09090b',
+    codeTextColor: '#e1e4e8',
 
     // Web/file font library. File binaries live in IndexedDB; this settings object stores
     // only metadata and the independent bodyFontId / codeFontId / titleFontId assignments.
@@ -299,46 +301,46 @@
 
     baseBg: '#e8e0e4',
     dialogueBg: '#b29aa6',
-    dialogueTextColor: '#fdfbfc',
+    dialogueTextColor: '#09090b',
     thoughtBg: '#a89aa6',
-    thoughtTextColor: '#f4eef1',
+    thoughtTextColor: '#09090b',
     italicBg: '#e8e0e4',
-    italicTextColor: '#d4cbd2',
+    italicTextColor: '#85837d',
     strongBg: '#f0e0e8',
-    strongBgTextColor: '#ffffff',
+    strongBgTextColor: '#09090b',
     codeAccent: '#c8a6b6',
   });
 
-  // User-supplied Crack native colors for every theme / episode UI combination.
+  // Crack native colors measured from the rendered UI for every theme / episode UI combination.
   // These values intentionally drive auto text colors directly instead of measuring a DOM
   // that may still be rendering the previous theme for a few frames.
   const FONT_KNOWN_NATIVE_COLORS = Object.freeze({
     novel: Object.freeze({
       light: Object.freeze({
-        textColor: '#1a1918',
-        emColor: '#c7c5bd',
-        strongColor: '#1a1918',
-        codeTextColor: '#1a1918',
+        textColor: '#09090b',
+        emColor: '#85837d',
+        strongColor: '#09090b',
+        codeTextColor: '#e1e4e8',
       }),
       dark: Object.freeze({
-        textColor: '#f0efeb',
-        emColor: '#c7c5bd',
-        strongColor: '#f0efeb',
-        codeTextColor: '#f0efeb',
+        textColor: '#fafafa',
+        emColor: '#85837d',
+        strongColor: '#fafafa',
+        codeTextColor: '#e1e4e8',
       }),
     }),
     chat: Object.freeze({
       light: Object.freeze({
-        textColor: '#ffffff',
-        emColor: '#c7c5bd',
-        strongColor: '#ffffff',
-        codeTextColor: '#ffffff',
+        textColor: '#09090b',
+        emColor: '#85837d',
+        strongColor: '#09090b',
+        codeTextColor: '#e1e4e8',
       }),
       dark: Object.freeze({
-        textColor: '#ffffff',
-        emColor: '#c7c5bd',
-        strongColor: '#ffffff',
-        codeTextColor: '#ffffff',
+        textColor: '#fafafa',
+        emColor: '#85837d',
+        strongColor: '#fafafa',
+        codeTextColor: '#e1e4e8',
       }),
     }),
   });
@@ -368,6 +370,7 @@
     'dialogueBgEnabled',
     'thoughtBgEnabled',
     'italicBgEnabled',
+    'italicStyleEnabled',
     'strongBgEnabled',
     'codeBlockBgEnabled',
   ]);
@@ -447,6 +450,8 @@
     'data-crack-ui-font-thought',
     'data-crack-ui-font-thought-accent',
     'data-crack-ui-font-italic',
+    'data-crack-ui-font-italic-text-color',
+    'data-crack-ui-font-italic-style',
     'data-crack-ui-font-italic-accent',
     'data-crack-ui-font-strong-bg',
     'data-crack-ui-font-strong-accent',
@@ -572,7 +577,7 @@
     ].join(',');
   }
 
-  function crackUiFontComputedColorToHex(value, fallback = '#1a1918') {
+  function crackUiFontComputedColorToHex(value, fallback = '#09090b') {
     const normalized = normalizeCrackUiFontHex(value, null);
     if (normalized) return normalized;
     const match = String(value || '').match(/rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i);
@@ -1098,7 +1103,7 @@
     return {
       ...colors,
       textPx: 16,
-      codePx: 13,
+      codePx: 14,
       fontWeight: 400,
       lineHeight: 1.5,
       letterSpacing: 0,
@@ -1351,7 +1356,7 @@
     measureCrackUiFontBaseSizes();
     const basePx = key === 'textScale' ? crackUiFontBaseTextPx : crackUiFontBaseCodePx;
     const point = Number(basePx) * 0.75;
-    return Number.isFinite(point) && point > 0 ? point : (key === 'textScale' ? 12 : 9.75);
+    return Number.isFinite(point) && point > 0 ? point : (key === 'textScale' ? 12 : 10.5);
   }
 
   function getCrackUiFontRangeInputConfig(key, value = getCrackUiFontEffectiveSettingValue(key)) {
@@ -4318,6 +4323,56 @@
         grid-column: span 5;
       }
 
+      #${ID.panel} .crack-ui-font-italic-card {
+        position: relative;
+      }
+
+      #${ID.panel} .crack-ui-font-italic-card > .crack-ui-font-toggle-row > .crack-ui-row-text {
+        box-sizing: border-box;
+        padding-right: 82px;
+      }
+
+      #${ID.panel} .crack-ui-font-italic-style-control {
+        position: absolute;
+        z-index: 4;
+        top: 17px;
+        right: 58px;
+        display: inline-flex;
+        min-height: 24px;
+        align-items: center;
+        gap: 6px;
+        color: rgba(255, 255, 255, .72);
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition: opacity 140ms ease, color 140ms ease;
+      }
+
+      #${ID.panel} .crack-ui-font-italic-style-control input {
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        accent-color: #fe4532;
+        cursor: pointer;
+      }
+
+      #${ID.panel} .crack-ui-font-italic-style-control[data-disabled="1"] {
+        opacity: .42;
+        cursor: default;
+      }
+
+      #${ID.panel} .crack-ui-font-italic-style-control[data-disabled="1"] input {
+        cursor: default;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-italic-style-control,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-italic-style-control {
+        color: rgba(17, 24, 39, .68);
+      }
+
       /* Dialogue quote pairs are edited only when requested. Keeping this editor in an
          overlay prevents the taller dialogue card from stretching the shorter base card. */
       #${ID.panel} .crack-ui-font-dialogue-card {
@@ -4953,7 +5008,7 @@
 
       html[data-crack-ui-font-code-size="on"] body main .wrtn-codeblock,
       html[data-crack-ui-font-code-size="on"] body main .wrtn-markdown pre {
-        --crack-ui-font-code-size: calc(13px * var(--crack-ui-font-code-scale));
+        --crack-ui-font-code-size: calc(14px * var(--crack-ui-font-code-scale));
       }
 
       html[data-crack-ui-font-code-size="on"] body main .wrtn-codeblock :is(pre, code, span, div),
@@ -4979,19 +5034,27 @@
       }
 
       html[data-crack-ui-font-dialogue="on"] body main [data-crack-ui-font-quote="double"] {
-        color: var(--crack-ui-font-dialogue-text, #fdfbfc) !important;
+        color: var(--crack-ui-font-dialogue-text, inherit) !important;
       }
 
       html[data-crack-ui-font-thought="on"] body main [data-crack-ui-font-quote="single"] {
-        color: var(--crack-ui-font-thought-text, #f4eef1) !important;
+        color: var(--crack-ui-font-thought-text, inherit) !important;
       }
 
       html[data-crack-ui-font-italic="on"] body main .wrtn-markdown em {
-        color: var(--crack-ui-font-italic-text, #d4cbd2) !important;
+        font-style: normal !important;
+      }
+
+      html[data-crack-ui-font-italic="on"][data-crack-ui-font-italic-text-color="on"] body main .wrtn-markdown em {
+        color: var(--crack-ui-font-italic-text, #85837d) !important;
+      }
+
+      html[data-crack-ui-font-italic="on"][data-crack-ui-font-italic-style="on"] body main .wrtn-markdown em {
+        font-style: italic !important;
       }
 
       html[data-crack-ui-font-strong-bg="on"] body main .wrtn-markdown strong {
-        color: var(--crack-ui-font-strong-highlight-text, #ffffff) !important;
+        color: var(--crack-ui-font-strong-highlight-text, inherit) !important;
       }
 
       html[data-crack-ui-font-base="on"][data-crack-ui-font-base-accent="on"] body main [data-crack-ui-font-base="1"],
@@ -9118,6 +9181,14 @@ ${record.css}`)}`
     );
     setCrackUiFontDataAttribute('data-crack-ui-font-italic', settings.italicBgEnabled);
     setCrackUiFontDataAttribute(
+      'data-crack-ui-font-italic-text-color',
+      settings.italicBgEnabled
+    );
+    setCrackUiFontDataAttribute(
+      'data-crack-ui-font-italic-style',
+      settings.italicBgEnabled && settings.italicStyleEnabled
+    );
+    setCrackUiFontDataAttribute(
       'data-crack-ui-font-italic-accent',
       settings.italicBgEnabled && settings.italicAccentEnabled
     );
@@ -9928,10 +9999,24 @@ ${record.css}`)}`
       </div>`;
   }
 
+  function renderCrackUiFontItalicStyleControl() {
+    return `
+      <label class="crack-ui-font-italic-style-control" data-crack-ui-font-italic-style-control="1" data-disabled="1">
+        <input
+          id="${ID.toggleFontItalicStyle}"
+          type="checkbox"
+          data-crack-ui-font-italic-style-toggle="1"
+          aria-label="묘사 기울임"
+        >
+        <span>기울임</span>
+      </label>`;
+  }
+
   function renderCrackUiFontHighlightCard(key, label, description, colorRows = [], options = {}) {
     const layoutClass = options.half ? ' crack-ui-font-highlight-card-half' : '';
     const dialogueClass = options.dialogue ? ' crack-ui-font-dialogue-card' : '';
-    const extraClass = `${layoutClass}${dialogueClass}`;
+    const italicClass = options.italic ? ' crack-ui-font-italic-card' : '';
+    const extraClass = `${layoutClass}${dialogueClass}${italicClass}`;
     return `
       <div class="crack-ui-font-card crack-ui-font-highlight-card${extraClass}">
         ${renderCrackUiFontToggleRow(key, label, description)}
@@ -10024,10 +10109,10 @@ ${record.css}`)}`
               ['thoughtBg', '배경색'],
               ['thoughtTextColor', '글자색'],
             ], { half: true })}
-            ${renderCrackUiFontHighlightCard('italicBgEnabled', '묘사', '*이탤릭*으로 렌더된 부분', [
+            ${renderCrackUiFontHighlightCard('italicBgEnabled', '묘사', '*묘사*로 렌더된 부분', [
               ['italicBg', '배경색'],
               ['italicTextColor', '글자색'],
-            ], { half: true })}
+            ], { half: true, italic: true, extraHtml: renderCrackUiFontItalicStyleControl() })}
             ${renderCrackUiFontHighlightCard('strongBgEnabled', '굵게', '**굵게**로 렌더된 부분', [
               ['strongBg', '배경색'],
               ['strongBgTextColor', '글자색'],
@@ -10788,6 +10873,15 @@ ${record.css}`)}`
       card.dataset.featureEnabled = featureEnabled ? '1' : '0';
     });
 
+    const italicStyleInput = panel.querySelector('[data-crack-ui-font-italic-style-toggle]');
+    const italicStyleControl = panel.querySelector('[data-crack-ui-font-italic-style-control]');
+    const italicStyleAvailable = masterEnabled && fontSettings.italicBgEnabled === true;
+    if (italicStyleInput) {
+      italicStyleInput.checked = fontSettings.italicStyleEnabled === true;
+      italicStyleInput.disabled = !italicStyleAvailable;
+    }
+    if (italicStyleControl) italicStyleControl.dataset.disabled = italicStyleAvailable ? '0' : '1';
+
     syncCrackUiDialogueQuoteEditor(panel);
 
     panel.querySelectorAll('[data-crack-ui-font-color-reset]').forEach((button) => {
@@ -11164,6 +11258,10 @@ ${record.css}`)}`
         return;
       }
       if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+      if (target.matches('[data-crack-ui-font-italic-style-toggle]')) {
+        updateCrackUiFontSetting('italicStyleEnabled', target.checked, { flush: true });
+        return;
+      }
       if (target.matches('[data-crack-ui-font-range]')) {
         updateCrackUiFontSetting(target.dataset.crackUiFontRange, target.value, { flush: true });
         return;
