@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.6.80
+// @version      2.7.00
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.6.80';
+  const CRACK_UI_VERSION = '2.7.00';
 
   function getCrackUiPublicWindow() {
     try {
@@ -99,6 +99,14 @@
     toggleFontItalicStyle: 'crack-ui-toggle-font-italic-style',
     toggleFontStrong: 'crack-ui-toggle-font-strong',
     toggleFontCodeBlock: 'crack-ui-toggle-font-code-block',
+    toggleChatBackground: 'crack-ui-toggle-chat-background',
+    toggleChatBackgroundImage: 'crack-ui-toggle-chat-background-image',
+    toggleNovelBackdrop: 'crack-ui-toggle-novel-backdrop',
+    chatBackgroundLayer: 'crack-ui-chat-background-layer',
+    novelBackdropWeatherLayer: 'crack-ui-novel-backdrop-weather-layer',
+    chatBackgroundImageButton: 'crack-ui-chat-background-image-button',
+    chatBackgroundImageInput: 'crack-ui-chat-background-image-input',
+    chatBackgroundImageRemove: 'crack-ui-chat-background-image-remove',
     fontSourceInput: 'crack-ui-font-source-input',
     fontBodySelect: 'crack-ui-font-body-select',
     fontCodeSelect: 'crack-ui-font-code-select',
@@ -161,6 +169,7 @@
     fontSettings: 'crack_ui_font_settings_v2',
     fontPresets: 'crack_ui_font_presets_v1',
     fontRecentColors: 'crack_ui_font_recent_colors_v1',
+    chatBackgroundSettings: 'crack_ui_chat_background_settings_v1',
   };
 
   const CLS = {
@@ -237,6 +246,10 @@
   const FONT_FILE_DB_VERSION = 1;
   const FONT_FILE_DB_STORE = 'files';
   const FONT_FILE_MAX_BYTES = 40 * 1024 * 1024;
+  const CHAT_BACKGROUND_IMAGE_DB_NAME = 'crack-ui-plus-background-images';
+  const CHAT_BACKGROUND_IMAGE_DB_VERSION = 1;
+  const CHAT_BACKGROUND_IMAGE_DB_STORE = 'images';
+  const CHAT_BACKGROUND_IMAGE_MAX_BYTES = 24 * 1024 * 1024;
   const FONT_LIBRARY_MAX_RECORDS = 24;
   const FONT_PRESET_NAME_MAX_LENGTH = 24;
 
@@ -407,6 +420,17 @@
     'strongBgTextColor',
     'codeAccent',
   ]);
+
+  const CHAT_BACKGROUND_COLOR_PICKER_KEY = 'chatBackground';
+  const NOVEL_BACKDROP_COLOR_PICKER_KEY = 'novelBackdrop';
+
+  function isCrackUiBackgroundColorPickerKey(key) {
+    return key === CHAT_BACKGROUND_COLOR_PICKER_KEY || key === NOVEL_BACKDROP_COLOR_PICKER_KEY;
+  }
+
+  function isCrackUiColorPickerKey(key) {
+    return FONT_COLOR_KEYS.includes(key) || isCrackUiBackgroundColorPickerKey(key);
+  }
 
   const FONT_NATIVE_OVERRIDE_FLAG = Object.freeze({
     baseTextColor: 'baseTextColorCustom',
@@ -650,6 +674,318 @@
     if (!normalized) return;
     fontRecentColors = [normalized, ...fontRecentColors.filter((item) => item !== normalized)].slice(0, 8);
     persistCrackUiFontRecentColors();
+  }
+
+  const CHAT_BACKGROUND_SETTINGS_DEFAULT = Object.freeze({
+    enabled: false,
+    color: '#ffffff',
+    imageEnabled: false,
+    imageFileKey: '',
+    imageFilename: '',
+    imageMime: '',
+    imageSize: 0,
+    novelBackdropEnabled: false,
+    novelBackdropColor: '#ffffff',
+    novelBackdropOpacity: 34,
+  });
+
+  function normalizeCrackUiChatBackgroundSettings(raw) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    const imageFileKeyRaw = String(source.imageFileKey || '').trim();
+    const imageFileKey = /^[a-z0-9][a-z0-9._-]{0,95}$/i.test(imageFileKeyRaw) ? imageFileKeyRaw : '';
+    const imageFilename = String(source.imageFilename || '')
+      .replace(/[\u0000-\u001f\u007f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 160);
+    const imageMime = String(source.imageMime || '').trim().slice(0, 80);
+    const imageSize = Math.max(0, Math.round(Number(source.imageSize) || 0));
+    return {
+      enabled: source.enabled === true,
+      color: normalizeCrackUiFontHex(source.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color),
+      imageEnabled: source.imageEnabled === true
+        || (source.imageEnabled == null && !!imageFileKey && source.enabled === true),
+      imageFileKey,
+      imageFilename,
+      imageMime,
+      imageSize,
+      novelBackdropEnabled: source.novelBackdropEnabled === true,
+      novelBackdropColor: normalizeCrackUiFontHex(
+        source.novelBackdropColor,
+        CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+      ),
+      novelBackdropOpacity: Math.max(5, Math.min(100, Math.round(
+        Number.isFinite(Number(source.novelBackdropOpacity))
+          ? Number(source.novelBackdropOpacity)
+          : CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
+      ))),
+    };
+  }
+
+  function loadCrackUiChatBackgroundSettings() {
+    try {
+      const raw = readStorage(LS.chatBackgroundSettings);
+      return normalizeCrackUiChatBackgroundSettings(raw ? JSON.parse(raw) : {});
+    } catch {
+      return normalizeCrackUiChatBackgroundSettings({});
+    }
+  }
+
+  function persistCrackUiChatBackgroundSettings() {
+    writeJsonStorage(LS.chatBackgroundSettings, normalizeCrackUiChatBackgroundSettings(chatBackgroundSettings));
+  }
+
+  function normalizeCrackUiChatBackgroundImageFileKey(value) {
+    const normalized = String(value || '').trim();
+    return /^[a-z0-9][a-z0-9._-]{0,95}$/i.test(normalized) ? normalized : '';
+  }
+
+  function normalizeCrackUiChatBackgroundImageFilename(value) {
+    return String(value || '')
+      .replace(/[\u0000-\u001f\u007f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 160);
+  }
+
+  function crackUiChatBackgroundFormatBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (!bytes) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    const precision = size >= 100 || unitIndex === 0 ? 0 : (size >= 10 ? 1 : 2);
+    return `${size.toFixed(precision)}${units[unitIndex]}`;
+  }
+
+  function getCrackUiChatBackgroundImageMetaText(settings = chatBackgroundSettings) {
+    const name = normalizeCrackUiChatBackgroundImageFilename(settings?.imageFilename);
+    if (!name) return '저장된 이미지 없음';
+    const sizeText = crackUiChatBackgroundFormatBytes(settings?.imageSize);
+    return sizeText ? `${name} · ${sizeText}` : name;
+  }
+
+  function crackUiChatBackgroundIsSupportedImageFile(file) {
+    if (!file || typeof file.arrayBuffer !== 'function') return false;
+    if (String(file.type || '').startsWith('image/')) return true;
+    return /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(String(file.name || ''));
+  }
+
+  function crackUiChatBackgroundCreateImageFileKey(file) {
+    const label = String(file?.name || 'background')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 24) || 'background';
+    return `bg-${Date.now().toString(36)}-${label}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function crackUiChatBackgroundEscapeCssUrl(value) {
+    const source = String(value || '').replace(/["\\\n\r\f]/g, '\\$&');
+    return source ? `url("${source}")` : 'none';
+  }
+
+  function setCrackUiChatBackgroundImageObjectUrl(nextUrl) {
+    const normalized = String(nextUrl || '');
+    if (chatBackgroundImageObjectUrl && chatBackgroundImageObjectUrl !== normalized) {
+      try {
+        URL.revokeObjectURL(chatBackgroundImageObjectUrl);
+      } catch {
+      }
+    }
+    chatBackgroundImageObjectUrl = normalized;
+  }
+
+  function crackUiChatBackgroundOpenImageDb() {
+    if (chatBackgroundImageDbPromise) return chatBackgroundImageDbPromise;
+    chatBackgroundImageDbPromise = new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) {
+        reject(new Error('이 브라우저는 배경 이미지 저장을 지원하지 않습니다'));
+        return;
+      }
+      const request = indexedDB.open(CHAT_BACKGROUND_IMAGE_DB_NAME, CHAT_BACKGROUND_IMAGE_DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(CHAT_BACKGROUND_IMAGE_DB_STORE)) {
+          db.createObjectStore(CHAT_BACKGROUND_IMAGE_DB_STORE, { keyPath: 'key' });
+        }
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+          chatBackgroundImageDbPromise = null;
+        };
+        resolve(db);
+      };
+      request.onerror = () => {
+        chatBackgroundImageDbPromise = null;
+        reject(request.error || new Error('배경 이미지 저장소를 열지 못했습니다'));
+      };
+      request.onblocked = () => {
+        chatBackgroundImageDbPromise = null;
+        reject(new Error('다른 탭에서 배경 이미지 저장소를 사용 중입니다'));
+      };
+    });
+    return chatBackgroundImageDbPromise;
+  }
+
+  async function crackUiChatBackgroundPutImageData(record, file) {
+    const db = await crackUiChatBackgroundOpenImageDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(CHAT_BACKGROUND_IMAGE_DB_STORE, 'readwrite');
+      transaction.objectStore(CHAT_BACKGROUND_IMAGE_DB_STORE).put({
+        key: record.key,
+        blob: file,
+        filename: record.filename,
+        mime: record.mime,
+        size: record.size,
+        savedAt: Date.now(),
+      });
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error('배경 이미지를 저장하지 못했습니다'));
+      transaction.onabort = () => reject(transaction.error || new Error('배경 이미지 저장이 취소되었습니다'));
+    });
+  }
+
+  async function crackUiChatBackgroundGetImageData(fileKey) {
+    const db = await crackUiChatBackgroundOpenImageDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(CHAT_BACKGROUND_IMAGE_DB_STORE, 'readonly');
+      const request = transaction.objectStore(CHAT_BACKGROUND_IMAGE_DB_STORE).get(String(fileKey || ''));
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error('배경 이미지를 읽지 못했습니다'));
+    });
+  }
+
+  async function crackUiChatBackgroundDeleteImageData(fileKey) {
+    if (!fileKey) return false;
+    const db = await crackUiChatBackgroundOpenImageDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(CHAT_BACKGROUND_IMAGE_DB_STORE, 'readwrite');
+      transaction.objectStore(CHAT_BACKGROUND_IMAGE_DB_STORE).delete(String(fileKey || ''));
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error('배경 이미지를 삭제하지 못했습니다'));
+      transaction.onabort = () => reject(transaction.error || new Error('배경 이미지 삭제가 취소되었습니다'));
+    });
+  }
+
+  async function hydrateCrackUiChatBackgroundImage() {
+    const sequence = ++chatBackgroundImageHydrationSeq;
+    const fileKey = normalizeCrackUiChatBackgroundImageFileKey(chatBackgroundSettings.imageFileKey);
+    if (!fileKey) {
+      setCrackUiChatBackgroundImageObjectUrl('');
+      applyCrackUiChatBackground();
+      syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+      return false;
+    }
+
+    try {
+      const record = await crackUiChatBackgroundGetImageData(fileKey);
+      if (sequence !== chatBackgroundImageHydrationSeq) return false;
+      if (!record?.blob) {
+        chatBackgroundSettings.enabled = false;
+        chatBackgroundSettings.imageEnabled = false;
+        chatBackgroundSettings.imageFileKey = '';
+        chatBackgroundSettings.imageFilename = '';
+        chatBackgroundSettings.imageMime = '';
+        chatBackgroundSettings.imageSize = 0;
+        setCrackUiChatBackgroundImageObjectUrl('');
+        persistCrackUiChatBackgroundSettings();
+        applyCrackUiChatBackground();
+        syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+        return false;
+      }
+
+      if (!chatBackgroundSettings.imageFilename && record.filename) {
+        chatBackgroundSettings.imageFilename = normalizeCrackUiChatBackgroundImageFilename(record.filename);
+      }
+      if (!chatBackgroundSettings.imageMime && record.mime) {
+        chatBackgroundSettings.imageMime = String(record.mime || '').trim().slice(0, 80);
+      }
+      if (!chatBackgroundSettings.imageSize && record.size) {
+        chatBackgroundSettings.imageSize = Math.max(0, Math.round(Number(record.size) || 0));
+      }
+
+      setCrackUiChatBackgroundImageObjectUrl(URL.createObjectURL(record.blob));
+      persistCrackUiChatBackgroundSettings();
+      applyCrackUiChatBackground();
+      syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+      return true;
+    } catch (error) {
+      console.warn('[Crack UI Max] background image hydration failed', error);
+      setCrackUiChatBackgroundImageObjectUrl('');
+      applyCrackUiChatBackground();
+      syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+      return false;
+    }
+  }
+
+  async function updateCrackUiChatBackgroundImageFromFile(file) {
+    if (!crackUiChatBackgroundIsSupportedImageFile(file)) {
+      throw new Error('이미지 파일만 배경으로 넣을 수 있습니다');
+    }
+    if (file.size > CHAT_BACKGROUND_IMAGE_MAX_BYTES) {
+      throw new Error('배경 이미지는 24MB 이하만 저장할 수 있습니다');
+    }
+
+    const previousKey = normalizeCrackUiChatBackgroundImageFileKey(chatBackgroundSettings.imageFileKey);
+    const nextKey = crackUiChatBackgroundCreateImageFileKey(file);
+    const nextFilename = normalizeCrackUiChatBackgroundImageFilename(file.name || 'background-image');
+    const nextMime = String(file.type || '').trim().slice(0, 80);
+    const nextSize = Math.max(0, Math.round(Number(file.size) || 0));
+
+    await crackUiChatBackgroundPutImageData({
+      key: nextKey,
+      filename: nextFilename,
+      mime: nextMime,
+      size: nextSize,
+    }, file);
+
+    chatBackgroundSettings.enabled = true;
+    chatBackgroundSettings.imageEnabled = true;
+    chatBackgroundSettings.imageFileKey = nextKey;
+    chatBackgroundSettings.imageFilename = nextFilename;
+    chatBackgroundSettings.imageMime = nextMime;
+    chatBackgroundSettings.imageSize = nextSize;
+
+    setCrackUiChatBackgroundImageObjectUrl(URL.createObjectURL(file));
+    persistCrackUiChatBackgroundSettings();
+    applyCrackUiChatBackground();
+    syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+
+    if (previousKey && previousKey !== nextKey) {
+      crackUiChatBackgroundDeleteImageData(previousKey).catch((error) => {
+        console.warn('[Crack UI Max] failed to delete previous background image', error);
+      });
+    }
+    return true;
+  }
+
+  async function clearCrackUiChatBackgroundImage() {
+    const previousKey = normalizeCrackUiChatBackgroundImageFileKey(chatBackgroundSettings.imageFileKey);
+    if (chatBackgroundSettings.imageEnabled === true) chatBackgroundSettings.enabled = false;
+    chatBackgroundSettings.imageEnabled = false;
+    chatBackgroundSettings.imageFileKey = '';
+    chatBackgroundSettings.imageFilename = '';
+    chatBackgroundSettings.imageMime = '';
+    chatBackgroundSettings.imageSize = 0;
+    setCrackUiChatBackgroundImageObjectUrl('');
+    persistCrackUiChatBackgroundSettings();
+    applyCrackUiChatBackground();
+    syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+    if (previousKey) {
+      try {
+        await crackUiChatBackgroundDeleteImageData(previousKey);
+      } catch (error) {
+        console.warn('[Crack UI Max] failed to delete background image', error);
+      }
+    }
+    return true;
   }
 
   function isCrackUiFontSettingCustom(key, settings = fontSettings) {
@@ -1620,6 +1956,7 @@
   let fontPresetMenuOpen = false;
   let fontDialogueQuoteMenuOpen = false;
   let fontRecentColors = loadCrackUiFontRecentColors();
+  let chatBackgroundSettings = loadCrackUiChatBackgroundSettings();
   let fontColorPickerOpen = false;
   let fontColorPickerKey = '';
   let fontColorPickerTrigger = null;
@@ -1642,7 +1979,7 @@
   let chatWidthPercent = loadChatWidthPercent();
   let themeMode = loadThemeMode();
   let episodeUiMode = loadEpisodeUiMode();
-  let activePanelSection = ['display', 'chat', 'font'].includes(readStorage(LS.panelActiveSection))
+  let activePanelSection = ['display', 'chat', 'font', 'background'].includes(readStorage(LS.panelActiveSection))
     ? readStorage(LS.panelActiveSection)
     : 'chat';
 
@@ -1678,6 +2015,15 @@
   let animatedThumbStillUrlStatus = new Map();
   let animatedThumbStillCandidateCache = new Map();
   let cachedHeader = null;
+  let cachedChatBackgroundViewport = null;
+  let cachedChatBackgroundComposerShell = null;
+  let appliedChatBackgroundTarget = null;
+  let appliedNovelBackdropTarget = null;
+  let appliedChatBackgroundComposerShell = null;
+  let appliedChatBackgroundWeatherLayer = null;
+  let appliedNovelBackdropWeatherLayer = null;
+  let chatBackgroundApplyRaf = 0;
+  let chatBackgroundCompatibilityObserver = null;
   let initScheduled = false;
   let lastInitRun = 0;
   let initThrottleTimer = null;
@@ -1741,6 +2087,9 @@
   let fontSaveOperationSeq = 0;
   let fontFileOperationActive = false;
   let fontFileDbPromise = null;
+  let chatBackgroundImageDbPromise = null;
+  let chatBackgroundImageObjectUrl = '';
+  let chatBackgroundImageHydrationSeq = 0;
   const fontLocalFaceState = new Map();
   const fontSavedHydrationPending = new Set();
   const fontSavedHydrationAttempted = new Set();
@@ -1803,6 +2152,7 @@
         --crack-ui-z-panel: 2147482999;
         --crack-ui-img-size: ${imageSize}%;
         --crack-ui-chat-width: ${getCssWidthFromPercent(chatWidthPercent)};
+        --crack-ui-chat-half-width: ${getCssHalfWidthFromPercent(chatWidthPercent)};
         --crack-ui-scroll-button-offset: ${getCssScrollButtonOffsetFromPercent(chatWidthPercent)};
         --crack-ui-font-code-text: ${fontSettings.codeTextColor};
       }
@@ -2612,7 +2962,8 @@
         cursor: pointer;
       }
 
-      #${ID.panel} [data-crack-ui-font-range] {
+      #${ID.panel} [data-crack-ui-font-range],
+      #${ID.panel} [data-crack-ui-novel-backdrop-opacity] {
         touch-action: none;
         -webkit-user-select: none;
         user-select: none;
@@ -4924,6 +5275,286 @@
           left: 0;
           width: auto;
         }
+      }
+
+      html[data-crack-ui-chat-background="viewport"] body [data-crack-ui-chat-background-target="1"] {
+        background-color: var(--crack-ui-chat-background-color, #ffffff) !important;
+        background-image: var(--crack-ui-chat-background-image, none) !important;
+        background-position: center center !important;
+        background-repeat: no-repeat !important;
+        background-size: cover !important;
+      }
+
+      /* The bottom composer shell has its own bg-bg_screen paint. Make only that
+         outer shell transparent so the selected color/weather underlay continues
+         behind it; the bordered input card keeps its native background. */
+      html[data-crack-ui-chat-background="viewport"] body [data-crack-ui-chat-background-composer-shell="1"],
+      html[data-crack-ui-chat-background="weather-underlay"] body [data-crack-ui-chat-background-composer-shell="1"],
+      html[data-crack-ui-novel-backdrop="on"] body [data-crack-ui-chat-background-composer-shell="1"] {
+        background-color: transparent !important;
+      }
+
+      /* Weather FX masks/fades its time layer toward the bottom. Keep the Max color
+         inside CAWF's isolated root at z-index:-1, so transparent weather pixels reveal
+         the selected color instead of Crack's native white/dark frame. */
+      #${ID.chatBackgroundLayer} {
+        position: absolute !important;
+        inset: 0 !important;
+        z-index: -1 !important;
+        display: block !important;
+        pointer-events: none !important;
+        background-color: var(--crack-ui-chat-background-color, #ffffff) !important;
+        background-image: var(--crack-ui-chat-background-image, none) !important;
+        background-position: center center !important;
+        background-repeat: no-repeat !important;
+        background-size: cover !important;
+      }
+
+      /* Novel layout only: keep the tint solid from top to bottom and fade only
+         across the left/right edges. The tint itself stays transparent so an active
+         CAWF weather/time layer remains visible underneath. */
+      html[data-crack-ui-novel-backdrop="on"] body [data-crack-ui-novel-backdrop-target="1"],
+      #${ID.novelBackdropWeatherLayer} {
+        --crack-ui-novel-backdrop-edge: clamp(32px, 4vw, 64px);
+        --crack-ui-novel-backdrop-guard: clamp(9px, 1vw, 15px);
+        --crack-ui-novel-backdrop-half: min(
+          calc(var(--crack-ui-chat-half-width, 384px) + var(--crack-ui-novel-backdrop-guard)),
+          calc(50% - var(--crack-ui-novel-backdrop-edge) - 8px)
+        );
+        --crack-ui-novel-backdrop-gradient: linear-gradient(90deg,
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), 0) 0%,
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), 0)
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge)),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .028))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .90),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .104))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .80),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .216))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .70),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .352))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .60),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .50))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .50),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .648))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .40),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .784))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .30),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .896))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .20),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .972))
+            calc(50% - var(--crack-ui-novel-backdrop-half) - var(--crack-ui-novel-backdrop-edge) * .10),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), var(--crack-ui-novel-backdrop-alpha, .34))
+            calc(50% - var(--crack-ui-novel-backdrop-half)),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), var(--crack-ui-novel-backdrop-alpha, .34))
+            calc(50% + var(--crack-ui-novel-backdrop-half)),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .972))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .10),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .896))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .20),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .784))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .30),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .648))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .40),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .50))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .50),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .352))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .60),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .216))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .70),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .104))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .80),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), calc(var(--crack-ui-novel-backdrop-alpha, .34) * .028))
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge) * .90),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), 0)
+            calc(50% + var(--crack-ui-novel-backdrop-half) + var(--crack-ui-novel-backdrop-edge)),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), 0) 100%);
+        background-color: transparent !important;
+        background-image: var(--crack-ui-novel-backdrop-gradient) !important;
+        background-repeat: no-repeat !important;
+        background-position: center center !important;
+        background-size: 100% 100% !important;
+      }
+
+      /* Without CAWF, combine the novel tint with Max's selected color/image. */
+      html[data-crack-ui-chat-background="viewport"][data-crack-ui-novel-backdrop="on"] body [data-crack-ui-novel-backdrop-target="1"] {
+        background-color: var(--crack-ui-chat-background-color, #ffffff) !important;
+        background-image:
+          var(--crack-ui-novel-backdrop-gradient),
+          var(--crack-ui-chat-background-image, none) !important;
+        background-repeat: no-repeat, no-repeat !important;
+        background-position: center center, center center !important;
+        background-size: 100% 100%, cover !important;
+      }
+
+      /* With CAWF, the novel tint lives inside the Weather root between its time
+         background and its screen-effect layers. The viewport itself stays clear. */
+      html[data-crack-ui-chat-background="weather-underlay"] body [data-crack-ui-novel-backdrop-target="1"] {
+        background-color: transparent !important;
+        background-image: none !important;
+      }
+
+      #${ID.novelBackdropWeatherLayer} {
+        position: absolute !important;
+        inset: 0 !important;
+        z-index: 1 !important;
+        display: block !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+      }
+
+      /* CAWF child order is time layer -> rain/ambient/underwater/particles. Pin the
+         time palette below the novel tint and only the actual screen effects above it. */
+      html[data-crack-ui-novel-backdrop-weather="on"] #cawf-root #cawf-time-layer {
+        z-index: 0 !important;
+      }
+
+      html[data-crack-ui-novel-backdrop-weather="on"] #cawf-root::before,
+      html[data-crack-ui-novel-backdrop-weather="on"] #cawf-root #cawf-rain-canvas,
+      html[data-crack-ui-novel-backdrop-weather="on"] #cawf-root #cawf-ambient-layer,
+      html[data-crack-ui-novel-backdrop-weather="on"] #cawf-root #cawf-underwater-layer,
+      html[data-crack-ui-novel-backdrop-weather="on"] #cawf-root #cawf-particles {
+        z-index: 2 !important;
+      }
+
+      #${ID.panel} .crack-ui-background-feature-grid {
+        align-items: start;
+      }
+
+      #${ID.panel} .crack-ui-background-feature-card {
+        grid-column: 1 / -1;
+      }
+
+      #${ID.panel} .crack-ui-background-feature-card .crack-ui-font-color-grid {
+        align-items: stretch;
+      }
+
+      #${ID.panel} .crack-ui-background-color-row-wide {
+        grid-column: 1 / -1;
+      }
+
+      #${ID.panel} .crack-ui-background-color-inputs {
+        grid-template-columns: 32px minmax(0, 1fr);
+      }
+
+      #${ID.panel} .crack-ui-background-opacity-control {
+        justify-content: space-between;
+      }
+
+      #${ID.panel} .crack-ui-background-opacity-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 30px;
+      }
+
+      #${ID.panel} .crack-ui-background-opacity-control > .crack-ui-range {
+        width: 100%;
+        margin: 2px 0 0;
+      }
+
+      #${ID.panel} .crack-ui-background-image-row {
+        grid-column: 1 / -1;
+        align-items: start;
+      }
+
+      #${ID.panel} .crack-ui-background-image-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      #${ID.panel} .crack-ui-background-image-input {
+        display: none;
+      }
+
+      #${ID.panel} .crack-ui-background-image-meta {
+        grid-column: 1 / -1;
+        margin-top: -2px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: inherit;
+        opacity: .72;
+        word-break: break-all;
+      }
+
+      #${ID.panel} .crack-ui-background-image-remove {
+        min-width: auto;
+      }
+
+      #${ID.panel} .crack-ui-background-title-row {
+        min-height: 54px;
+        padding: 11px 14px;
+      }
+
+      /* Use the same inner two-cell layout as the novel backdrop card. */
+      #${ID.panel} .crack-ui-background-mode-grid {
+        align-items: stretch;
+      }
+
+      #${ID.panel} .crack-ui-background-mode-block {
+        gap: 8px;
+      }
+
+      #${ID.panel} .crack-ui-background-mode-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 28px;
+      }
+
+      #${ID.panel} .crack-ui-background-mode-control {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        min-height: 38px;
+      }
+
+      #${ID.panel} .crack-ui-background-mode-control .crack-ui-background-color-inputs {
+        width: 100%;
+      }
+
+      #${ID.panel} .crack-ui-background-image-inline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+        min-width: 0;
+      }
+
+      #${ID.panel} .crack-ui-background-image-inline .crack-ui-background-image-meta {
+        flex: 1 1 auto;
+        min-width: 0;
+        margin: 0;
+        padding: 0 2px;
+        overflow: hidden;
+        font-size: 12px;
+        line-height: 1.45;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        word-break: normal;
+      }
+
+      #${ID.panel} .crack-ui-background-image-inline .crack-ui-background-image-actions {
+        flex: 0 0 auto;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+      }
+
+      #${ID.panel} .crack-ui-background-mode-block[data-feature-enabled="0"] .crack-ui-background-mode-control {
+        opacity: .52;
+      }
+
+      #${ID.panel} .crack-ui-background-mode-block[data-feature-enabled="0"]:not([data-crack-ui-background-mode="image"]) .crack-ui-background-mode-control {
+        pointer-events: none;
+      }
+
+      #${ID.panel} .crack-ui-novel-backdrop-controls[data-feature-enabled="0"] .crack-ui-font-color-grid {
+        pointer-events: none;
       }
 
       /* Code text color belongs to the code-block highlight feature. Resetting it
@@ -7505,6 +8136,7 @@
     }
 
     document.documentElement.style.setProperty('--crack-ui-chat-width', getCssWidthFromPercent(chatWidthPercent));
+    document.documentElement.style.setProperty('--crack-ui-chat-half-width', getCssHalfWidthFromPercent(chatWidthPercent));
     document.documentElement.style.setProperty('--crack-ui-scroll-button-offset', getCssScrollButtonOffsetFromPercent(chatWidthPercent));
   }
 
@@ -7653,6 +8285,7 @@
     writeStorage(LS.pendingEpisodeUiMode, episodeUiMode);
     updateThemeUi();
     refreshCrackUiFontThemeDefaults({ force: true });
+    applyCrackUiChatBackground();
 
     applyOriginalSettingChoice(episodeUiMode, EPISODE_UI_MODE_LABEL, LS.pendingEpisodeUiMode);
     saveEpisodeUiModeToCrack(episodeUiMode, { reload: true }).catch((error) => {
@@ -7684,7 +8317,7 @@
 
     row.dataset.crackUiRangePreviewActive = '1';
 
-    if (input.matches?.('[data-crack-ui-font-range]')) {
+    if (input.matches?.('[data-crack-ui-font-range], [data-crack-ui-novel-backdrop-opacity]')) {
       const scroller = panel.querySelector('.crack-ui-panel-body');
       activeCrackUiFontRangeScroller = scroller || null;
       activeCrackUiFontRangeScrollTop = scroller?.scrollTop || 0;
@@ -10217,6 +10850,244 @@ ${record.css}`)}`
       </div>`;
   }
 
+  function renderCrackUiBackgroundSectionHtml() {
+    const value = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
+    const colorEnabled = chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled !== true;
+    const imageEnabled = chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled === true;
+    const novelValue = normalizeCrackUiFontHex(
+      chatBackgroundSettings.novelBackdropColor,
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+    );
+    const novelOpacity = Math.max(5, Math.min(100, Math.round(Number(chatBackgroundSettings.novelBackdropOpacity) || 34)));
+    const backgroundImageMeta = getCrackUiChatBackgroundImageMetaText();
+    return `
+      <div class="crack-ui-section" data-crack-ui-section="background">
+        <div class="crack-ui-section-body crack-ui-background-section-body" data-crack-ui-section-body="background">
+          <div class="crack-ui-font-highlight-grid crack-ui-background-feature-grid">
+            <div class="crack-ui-font-card crack-ui-font-highlight-card crack-ui-background-feature-card crack-ui-background-color-card">
+              <div class="crack-ui-row crack-ui-font-toggle-row crack-ui-background-title-row">
+                <span class="crack-ui-row-text">
+                  <span class="crack-ui-row-name">배경 설정</span>
+                  <span class="crack-ui-row-desc">배경색과 배경 이미지 중 하나만 활성화할 수 있습니다</span>
+                </span>
+              </div>
+
+              <div class="crack-ui-font-color-grid crack-ui-background-mode-grid">
+                <div class="crack-ui-font-color-row crack-ui-background-mode-block" data-crack-ui-background-mode="color" data-feature-enabled="${colorEnabled ? '1' : '0'}">
+                  <label class="crack-ui-background-mode-head">
+                    <span class="crack-ui-font-control-label">배경색</span>
+                    <span>
+                      <input id="${ID.toggleChatBackground}" class="crack-ui-toggle" type="checkbox">
+                      <span class="crack-ui-switch" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                  <div class="crack-ui-background-mode-control">
+                    <span class="crack-ui-font-color-inputs crack-ui-background-color-inputs">
+                      <button
+                        type="button"
+                        class="crack-ui-font-color-swatch"
+                        data-crack-ui-font-color-picker="${CHAT_BACKGROUND_COLOR_PICKER_KEY}"
+                        aria-label="배경색 색상 선택"
+                        aria-haspopup="dialog"
+                        aria-expanded="false"
+                        style="--crack-ui-font-swatch:${crackUiFontEscapeHtml(value)}"
+                      ></button>
+                      <input
+                        type="text"
+                        value="${crackUiFontEscapeHtml(value)}"
+                        spellcheck="false"
+                        maxlength="7"
+                        data-crack-ui-chat-background-color-code="1"
+                        aria-label="배경색 코드"
+                      >
+                    </span>
+                  </div>
+                </div>
+
+                <div class="crack-ui-font-color-row crack-ui-background-mode-block" data-crack-ui-background-mode="image" data-feature-enabled="${imageEnabled ? '1' : '0'}">
+                  <label class="crack-ui-background-mode-head">
+                    <span class="crack-ui-font-control-label">배경 이미지</span>
+                    <span>
+                      <input id="${ID.toggleChatBackgroundImage}" class="crack-ui-toggle" type="checkbox">
+                      <span class="crack-ui-switch" aria-hidden="true"></span>
+                    </span>
+                  </label>
+                  <div class="crack-ui-background-mode-control">
+                    <div class="crack-ui-background-image-inline">
+                      <div
+                        class="crack-ui-background-image-meta"
+                        data-crack-ui-chat-background-image-meta="1"
+                        title="${crackUiFontEscapeHtml(backgroundImageMeta)}"
+                      >${crackUiFontEscapeHtml(backgroundImageMeta)}</div>
+                      <span class="crack-ui-background-image-actions">
+                        <button id="${ID.chatBackgroundImageButton}" type="button" class="crack-ui-font-action-button">이미지 선택</button>
+                        <button id="${ID.chatBackgroundImageRemove}" type="button" class="crack-ui-font-action-button crack-ui-background-image-remove">삭제</button>
+                        <input id="${ID.chatBackgroundImageInput}" class="crack-ui-background-image-input" type="file" accept="image/*">
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              class="crack-ui-font-card crack-ui-font-highlight-card crack-ui-background-feature-card crack-ui-novel-backdrop-controls"
+              data-feature-enabled="${chatBackgroundSettings.novelBackdropEnabled ? '1' : '0'}"
+            >
+              <label class="crack-ui-row crack-ui-font-toggle-row">
+                <span class="crack-ui-row-text">
+                  <span class="crack-ui-row-name">소설 본문 배경</span>
+                </span>
+                <span>
+                  <input id="${ID.toggleNovelBackdrop}" class="crack-ui-toggle" type="checkbox">
+                  <span class="crack-ui-switch" aria-hidden="true"></span>
+                </span>
+              </label>
+              <div class="crack-ui-font-color-grid">
+                <div class="crack-ui-font-color-row">
+                  <span class="crack-ui-font-control-label">본문 배경색</span>
+                  <span class="crack-ui-font-color-inputs crack-ui-background-color-inputs">
+                    <button
+                      type="button"
+                      class="crack-ui-font-color-swatch"
+                      data-crack-ui-font-color-picker="${NOVEL_BACKDROP_COLOR_PICKER_KEY}"
+                      aria-label="소설 본문 배경색 색상 선택"
+                      aria-haspopup="dialog"
+                      aria-expanded="false"
+                      style="--crack-ui-font-swatch:${crackUiFontEscapeHtml(novelValue)}"
+                    ></button>
+                    <input
+                      type="text"
+                      value="${crackUiFontEscapeHtml(novelValue)}"
+                      spellcheck="false"
+                      maxlength="7"
+                      data-crack-ui-novel-backdrop-color-code="1"
+                      aria-label="소설 본문 배경색 코드"
+                    >
+                  </span>
+                </div>
+                <div class="crack-ui-font-color-row crack-ui-background-opacity-control">
+                  <div class="crack-ui-background-opacity-head">
+                    <span class="crack-ui-font-control-label">투명도</span>
+                    <span class="crack-ui-font-range-actions">
+                      <span class="crack-ui-range-value" data-crack-ui-novel-backdrop-opacity-value="1">${novelOpacity}%</span>
+                    </span>
+                  </div>
+                  <input
+                    class="crack-ui-range"
+                    type="range"
+                    min="5"
+                    max="100"
+                    step="1"
+                    value="${novelOpacity}"
+                    data-crack-ui-novel-backdrop-opacity="1"
+                    aria-label="소설 본문 배경 투명도"
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function syncCrackUiChatBackgroundUi(panel = document.getElementById(ID.panel)) {
+    if (!panel) return;
+    const enabled = chatBackgroundSettings.enabled === true;
+    const colorEnabled = enabled && chatBackgroundSettings.imageEnabled !== true;
+    const imageEnabled = enabled && chatBackgroundSettings.imageEnabled === true;
+    const hasImage = !!normalizeCrackUiChatBackgroundImageFileKey(chatBackgroundSettings.imageFileKey);
+    const value = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
+    const novelEnabled = chatBackgroundSettings.novelBackdropEnabled === true;
+    const novelValue = normalizeCrackUiFontHex(
+      chatBackgroundSettings.novelBackdropColor,
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+    );
+    const novelOpacity = Math.max(5, Math.min(100, Math.round(Number(chatBackgroundSettings.novelBackdropOpacity) || 34)));
+
+    const colorToggle = panel.querySelector(`#${ID.toggleChatBackground}`);
+    if (colorToggle) colorToggle.checked = colorEnabled;
+    const imageToggle = panel.querySelector(`#${ID.toggleChatBackgroundImage}`);
+    if (imageToggle) imageToggle.checked = imageEnabled;
+
+    const colorBlock = panel.querySelector('[data-crack-ui-background-mode="color"]');
+    if (colorBlock) colorBlock.dataset.featureEnabled = colorEnabled ? '1' : '0';
+    const imageBlock = panel.querySelector('[data-crack-ui-background-mode="image"]');
+    if (imageBlock) imageBlock.dataset.featureEnabled = imageEnabled ? '1' : '0';
+
+    const trigger = panel.querySelector(`[data-crack-ui-font-color-picker="${CHAT_BACKGROUND_COLOR_PICKER_KEY}"]`);
+    if (trigger) {
+      trigger.style.setProperty('--crack-ui-font-swatch', value);
+      trigger.disabled = !colorEnabled;
+      if (trigger.disabled && fontColorPickerOpen && fontColorPickerTrigger === trigger) {
+        closeCrackUiFontColorPicker({ commit: false, sync: false });
+      }
+    }
+    const input = panel.querySelector('[data-crack-ui-chat-background-color-code]');
+    if (input) {
+      if (document.activeElement !== input) input.value = value;
+      input.disabled = !colorEnabled;
+    }
+    const imageButton = panel.querySelector(`#${ID.chatBackgroundImageButton}`);
+    if (imageButton) imageButton.disabled = false;
+    const imageRemove = panel.querySelector(`#${ID.chatBackgroundImageRemove}`);
+    if (imageRemove) imageRemove.disabled = !hasImage;
+    const imageMeta = panel.querySelector('[data-crack-ui-chat-background-image-meta]');
+    if (imageMeta) imageMeta.textContent = getCrackUiChatBackgroundImageMetaText();
+
+    const novelToggle = panel.querySelector(`#${ID.toggleNovelBackdrop}`);
+    if (novelToggle) novelToggle.checked = novelEnabled;
+    const novelControls = panel.querySelector('.crack-ui-novel-backdrop-controls');
+    if (novelControls) novelControls.dataset.featureEnabled = novelEnabled ? '1' : '0';
+    const novelTrigger = panel.querySelector(`[data-crack-ui-font-color-picker="${NOVEL_BACKDROP_COLOR_PICKER_KEY}"]`);
+    if (novelTrigger) {
+      novelTrigger.style.setProperty('--crack-ui-font-swatch', novelValue);
+      novelTrigger.disabled = !novelEnabled;
+      if (novelTrigger.disabled && fontColorPickerOpen && fontColorPickerTrigger === novelTrigger) {
+        closeCrackUiFontColorPicker({ commit: false, sync: false });
+      }
+    }
+    const novelInput = panel.querySelector('[data-crack-ui-novel-backdrop-color-code]');
+    if (novelInput) {
+      if (document.activeElement !== novelInput) novelInput.value = novelValue;
+      novelInput.disabled = !novelEnabled;
+    }
+    const novelOpacityInput = panel.querySelector('[data-crack-ui-novel-backdrop-opacity]');
+    if (novelOpacityInput) {
+      if (document.activeElement !== novelOpacityInput) novelOpacityInput.value = String(novelOpacity);
+      novelOpacityInput.disabled = !novelEnabled;
+    }
+    const novelOpacityValue = panel.querySelector('[data-crack-ui-novel-backdrop-opacity-value]');
+    if (novelOpacityValue) novelOpacityValue.textContent = `${novelOpacity}%`;
+  }
+
+  function updateCrackUiChatBackgroundColor(value, options = {}) {
+    const normalized = normalizeCrackUiFontHex(value, chatBackgroundSettings.color || CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
+    chatBackgroundSettings.color = normalized;
+    applyCrackUiChatBackground();
+    if (options.persist !== false) persistCrackUiChatBackgroundSettings();
+    if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+  }
+
+  function updateCrackUiNovelBackdropColor(value, options = {}) {
+    const normalized = normalizeCrackUiFontHex(
+      value,
+      chatBackgroundSettings.novelBackdropColor || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+    );
+    chatBackgroundSettings.novelBackdropColor = normalized;
+    applyCrackUiChatBackground();
+    if (options.persist !== false) persistCrackUiChatBackgroundSettings();
+    if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+  }
+
+  function updateCrackUiNovelBackdropOpacity(value, options = {}) {
+    const normalized = Math.max(5, Math.min(100, Math.round(Number(value) || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity)));
+    chatBackgroundSettings.novelBackdropOpacity = normalized;
+    applyCrackUiChatBackground();
+    if (options.persist !== false) persistCrackUiChatBackgroundSettings();
+    if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+  }
+
   function resetCrackUiPanelOuterScroll(panel = document.getElementById(ID.panel)) {
     if (!panel || !panelOpen || panel.dataset.open !== '1') return;
     if (panel.scrollTop !== 0) panel.scrollTop = 0;
@@ -10409,7 +11280,26 @@ ${record.css}`)}`
   }
 
   function applyCrackUiFontColorPreview(key, value, panel = document.getElementById(ID.panel)) {
-    if (!FONT_COLOR_KEYS.includes(key)) return;
+    if (!isCrackUiColorPickerKey(key)) return;
+    if (isCrackUiBackgroundColorPickerKey(key)) {
+      const isNovelBackdrop = key === NOVEL_BACKDROP_COLOR_PICKER_KEY;
+      const current = isNovelBackdrop ? chatBackgroundSettings.novelBackdropColor : chatBackgroundSettings.color;
+      const fallback = isNovelBackdrop
+        ? CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+        : CHAT_BACKGROUND_SETTINGS_DEFAULT.color;
+      const normalized = normalizeCrackUiFontHex(value, current || fallback);
+      if (isNovelBackdrop) chatBackgroundSettings.novelBackdropColor = normalized;
+      else chatBackgroundSettings.color = normalized;
+      applyCrackUiChatBackground();
+      const trigger = panel?.querySelector?.(`[data-crack-ui-font-color-picker="${key}"]`);
+      if (trigger) trigger.style.setProperty('--crack-ui-font-swatch', normalized);
+      const code = panel?.querySelector?.(isNovelBackdrop
+        ? '[data-crack-ui-novel-backdrop-color-code]'
+        : '[data-crack-ui-chat-background-color-code]');
+      if (code && document.activeElement !== code) code.value = normalized;
+      return;
+    }
+
     const normalized = normalizeCrackUiFontHex(value, fontSettings[key] || '#000000');
     fontSettings[key] = normalized;
     const customFlag = FONT_NATIVE_OVERRIDE_FLAG[key];
@@ -10508,24 +11398,36 @@ ${record.css}`)}`
 
   function openCrackUiFontColorPicker(trigger, panel = document.getElementById(ID.panel)) {
     const key = trigger?.dataset?.crackUiFontColorPicker || '';
-    if (!FONT_COLOR_KEYS.includes(key) || trigger.disabled) return;
+    if (!isCrackUiColorPickerKey(key) || trigger.disabled) return;
     closeCrackUiFontColorPicker({ commit: true });
     setCrackUiFontPresetMenuOpen(false, panel);
     setCrackUiDialogueQuoteMenuOpen(false, panel);
 
-    const value = normalizeCrackUiFontHex(getCrackUiFontEffectiveSettingValue(key), fontSettings[key] || '#000000');
+    const value = key === CHAT_BACKGROUND_COLOR_PICKER_KEY
+      ? normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color)
+      : (key === NOVEL_BACKDROP_COLOR_PICKER_KEY
+        ? normalizeCrackUiFontHex(chatBackgroundSettings.novelBackdropColor, CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor)
+        : normalizeCrackUiFontHex(getCrackUiFontEffectiveSettingValue(key), fontSettings[key] || '#000000'));
     const hsv = crackUiFontHexToHsv(value);
     fontColorPickerOpen = true;
     fontColorPickerKey = key;
     fontColorPickerTrigger = trigger;
     fontColorPickerPrevious = value;
     const customFlag = FONT_NATIVE_OVERRIDE_FLAG[key] || '';
-    fontColorPickerSnapshot = {
-      key,
-      storedValue: fontSettings[key],
-      customFlag,
-      customEnabled: customFlag ? fontSettings[customFlag] === true : null,
-    };
+    fontColorPickerSnapshot = isCrackUiBackgroundColorPickerKey(key)
+      ? {
+        key,
+        storedValue: key === NOVEL_BACKDROP_COLOR_PICKER_KEY
+          ? chatBackgroundSettings.novelBackdropColor
+          : chatBackgroundSettings.color,
+        background: true,
+      }
+      : {
+        key,
+        storedValue: fontSettings[key],
+        customFlag,
+        customEnabled: customFlag ? fontSettings[customFlag] === true : null,
+      };
     fontColorPickerHue = hsv.h;
     fontColorPickerSaturation = hsv.s;
     fontColorPickerValue = hsv.v;
@@ -10550,20 +11452,38 @@ ${record.css}`)}`
     const snapshot = fontColorPickerSnapshot;
     if (wasOpen) flushCrackUiFontColorPreview();
 
-    if (wasOpen && options.commit === false && snapshot?.key === key && FONT_COLOR_KEYS.includes(key)) {
-      fontSettings[key] = snapshot.storedValue;
-      if (snapshot.customFlag) fontSettings[snapshot.customFlag] = snapshot.customEnabled === true;
-      applyCrackUiFontColorRuntimeValue(key, getCrackUiFontEffectiveSettingValue(key));
-      // A cancelled picker must also repair storage in case another font action persisted
-      // while the live preview was visible.
-      persistCrackUiFontSettings();
+    if (wasOpen && options.commit === false && snapshot?.key === key && isCrackUiColorPickerKey(key)) {
+      if (snapshot.background === true) {
+        if (key === NOVEL_BACKDROP_COLOR_PICKER_KEY) {
+          chatBackgroundSettings.novelBackdropColor = normalizeCrackUiFontHex(
+            snapshot.storedValue,
+            CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+          );
+        } else {
+          chatBackgroundSettings.color = normalizeCrackUiFontHex(snapshot.storedValue, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
+        }
+        applyCrackUiChatBackground();
+        persistCrackUiChatBackgroundSettings();
+      } else {
+        fontSettings[key] = snapshot.storedValue;
+        if (snapshot.customFlag) fontSettings[snapshot.customFlag] = snapshot.customEnabled === true;
+        applyCrackUiFontColorRuntimeValue(key, getCrackUiFontEffectiveSettingValue(key));
+        // A cancelled picker must also repair storage in case another font action persisted
+        // while the live preview was visible.
+        persistCrackUiFontSettings();
+      }
     } else {
-      const finalValue = key && FONT_COLOR_KEYS.includes(key)
-        ? normalizeCrackUiFontHex(fontSettings[key], null)
-        : null;
+      const finalValue = key === CHAT_BACKGROUND_COLOR_PICKER_KEY
+        ? normalizeCrackUiFontHex(chatBackgroundSettings.color, null)
+        : (key === NOVEL_BACKDROP_COLOR_PICKER_KEY
+          ? normalizeCrackUiFontHex(chatBackgroundSettings.novelBackdropColor, null)
+          : (key && FONT_COLOR_KEYS.includes(key)
+            ? normalizeCrackUiFontHex(fontSettings[key], null)
+            : null));
       if (wasOpen && finalValue) {
         rememberCrackUiFontRecentColor(finalValue);
-        persistCrackUiFontSettings();
+        if (isCrackUiBackgroundColorPickerKey(key)) persistCrackUiChatBackgroundSettings();
+        else persistCrackUiFontSettings();
         syncCrackUiFontColorPickerRecentUi();
       }
     }
@@ -10579,7 +11499,10 @@ ${record.css}`)}`
     fontColorPickerTrigger = null;
     fontColorPickerSnapshot = null;
     fontColorPickerPendingHex = '';
-    if (wasOpen && options.sync !== false) syncCrackUiFontSettingsUi(document.getElementById(ID.panel));
+    if (wasOpen && options.sync !== false) {
+      if (isCrackUiBackgroundColorPickerKey(key)) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+      else syncCrackUiFontSettingsUi(document.getElementById(ID.panel));
+    }
   }
 
   function updateCrackUiFontColorPickerFromAreaPointer(event, area) {
@@ -10912,7 +11835,7 @@ ${record.css}`)}`
       }
     });
 
-    panel.querySelectorAll('[data-crack-ui-font-color-picker]').forEach((button) => {
+    sectionBody?.querySelectorAll('[data-crack-ui-font-color-picker]').forEach((button) => {
       const key = button.dataset.crackUiFontColorPicker;
       const card = button.closest('.crack-ui-font-highlight-card');
       const parentKey = card?.querySelector('[data-crack-ui-font-toggle]')?.dataset.crackUiFontToggle || '';
@@ -10922,7 +11845,7 @@ ${record.css}`)}`
       button.disabled = !masterEnabled || !parentEnabled;
       if (button.disabled && fontColorPickerOpen && fontColorPickerTrigger === button) closeCrackUiFontColorPicker({ commit: false });
     });
-    panel.querySelectorAll('[data-crack-ui-font-color-code]').forEach((input) => {
+    sectionBody?.querySelectorAll('[data-crack-ui-font-color-code]').forEach((input) => {
       const key = input.dataset.crackUiFontColorCode;
       const card = input.closest('.crack-ui-font-highlight-card');
       const parentKey = card?.querySelector('[data-crack-ui-font-toggle]')?.dataset.crackUiFontToggle || '';
@@ -11492,6 +12415,7 @@ ${record.css}`)}`
     chat: '채팅',
     display: '화면',
     font: '폰트',
+    background: '배경',
   });
 
   function setActivePanelSection(sectionName, options = {}) {
@@ -11521,9 +12445,17 @@ ${record.css}`)}`
     if (activePanelSection !== 'font') {
       setCrackUiFontPresetMenuOpen(false, panel);
       setCrackUiDialogueQuoteMenuOpen(false, panel);
-      closeCrackUiFontColorPicker({ commit: true });
-    } else if (options.syncFont !== false && panelOpen && panel.dataset.open === '1') {
+    }
+    if (fontColorPickerOpen) {
+      const pickerIsBackground = isCrackUiBackgroundColorPickerKey(fontColorPickerKey);
+      if ((activePanelSection === 'background') !== pickerIsBackground) {
+        closeCrackUiFontColorPicker({ commit: true, sync: false });
+      }
+    }
+    if (activePanelSection === 'font' && options.syncFont !== false && panelOpen && panel.dataset.open === '1') {
       syncCrackUiFontSettingsUi(panel);
+    } else if (activePanelSection === 'background' && panelOpen && panel.dataset.open === '1') {
+      syncCrackUiChatBackgroundUi(panel);
     }
 
     if (options.resetScroll !== false) {
@@ -11995,6 +12927,7 @@ ${record.css}`)}`
             <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="chat" data-active="${activePanelSection === 'chat' ? '1' : '0'}" aria-selected="${activePanelSection === 'chat' ? 'true' : 'false'}">채팅</button>
             <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="display" data-active="${activePanelSection === 'display' ? '1' : '0'}" aria-selected="${activePanelSection === 'display' ? 'true' : 'false'}">화면</button>
             <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="font" data-active="${activePanelSection === 'font' ? '1' : '0'}" aria-selected="${activePanelSection === 'font' ? 'true' : 'false'}">폰트</button>
+            <button type="button" class="crack-ui-panel-nav-button" role="tab" data-crack-ui-section-nav="background" data-active="${activePanelSection === 'background' ? '1' : '0'}" aria-selected="${activePanelSection === 'background' ? 'true' : 'false'}">배경</button>
           </nav>
 
           <div class="crack-ui-panel-content">
@@ -12214,6 +13147,7 @@ ${record.css}`)}`
         </div>
 
         ${renderCrackUiFontSectionHtml()}
+        ${renderCrackUiBackgroundSectionHtml()}
             </div>
           </div>
         </div>
@@ -12284,6 +13218,7 @@ ${record.css}`)}`
     updateThemeUi();
     updateChatListAutoHideUi();
     syncCrackUiFontSettingsUi(panel);
+    syncCrackUiChatBackgroundUi(panel);
 
     bindCheckbox(panel, ID.toggleHeader, autoHideHeader, (checked) => {
       autoHideHeader = checked;
@@ -12380,6 +13315,131 @@ ${record.css}`)}`
     bindRangeInput(panel, ID.imageSlider, setImageSize, flushImageSizeSave);
     bindRangeInput(panel, ID.chatWidthSlider, setChatWidthPercent);
 
+    bindCheckbox(
+      panel,
+      ID.toggleChatBackground,
+      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled !== true,
+      (checked) => {
+        if (checked) {
+          chatBackgroundSettings.enabled = true;
+          chatBackgroundSettings.imageEnabled = false;
+        } else if (chatBackgroundSettings.imageEnabled !== true) {
+          chatBackgroundSettings.enabled = false;
+        }
+        persistCrackUiChatBackgroundSettings();
+        applyCrackUiChatBackground();
+        syncCrackUiChatBackgroundUi(panel);
+      }
+    );
+
+    const chatBackgroundColorInput = panel.querySelector('[data-crack-ui-chat-background-color-code]');
+    const commitChatBackgroundColorInput = () => {
+      if (!chatBackgroundColorInput) return;
+      const normalized = normalizeCrackUiFontHex(chatBackgroundColorInput.value, null);
+      if (!normalized) {
+        chatBackgroundColorInput.value = chatBackgroundSettings.color;
+        return;
+      }
+      updateCrackUiChatBackgroundColor(normalized);
+    };
+    chatBackgroundColorInput?.addEventListener('input', () => {
+      if (/^#[0-9a-fA-F]{6}$/.test(chatBackgroundColorInput.value.trim())) {
+        updateCrackUiChatBackgroundColor(chatBackgroundColorInput.value, { persist: false, sync: false });
+      }
+    });
+    chatBackgroundColorInput?.addEventListener('change', commitChatBackgroundColorInput);
+    chatBackgroundColorInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      commitChatBackgroundColorInput();
+    });
+
+    const chatBackgroundImageButton = panel.querySelector(`#${ID.chatBackgroundImageButton}`);
+    const chatBackgroundImageInput = panel.querySelector(`#${ID.chatBackgroundImageInput}`);
+    const chatBackgroundImageRemove = panel.querySelector(`#${ID.chatBackgroundImageRemove}`);
+    bindCheckbox(
+      panel,
+      ID.toggleChatBackgroundImage,
+      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled === true,
+      (checked) => {
+        if (checked) {
+          chatBackgroundSettings.enabled = true;
+          chatBackgroundSettings.imageEnabled = true;
+        } else if (chatBackgroundSettings.imageEnabled === true) {
+          chatBackgroundSettings.enabled = false;
+          chatBackgroundSettings.imageEnabled = false;
+        }
+        persistCrackUiChatBackgroundSettings();
+        applyCrackUiChatBackground();
+        syncCrackUiChatBackgroundUi(panel);
+      }
+    );
+    chatBackgroundImageButton?.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (chatBackgroundImageButton.disabled) return;
+      chatBackgroundImageInput?.click();
+    });
+    chatBackgroundImageInput?.addEventListener('change', async () => {
+      const file = chatBackgroundImageInput.files?.[0] || null;
+      chatBackgroundImageInput.value = '';
+      if (!file) return;
+      try {
+        await updateCrackUiChatBackgroundImageFromFile(file);
+      } catch (error) {
+        console.warn('[Crack UI Max] background image save failed', error);
+        try {
+          window.alert(`Crack UI Max: 배경 이미지 저장 실패
+${error?.message || error}`);
+        } catch {
+        }
+      }
+    });
+    chatBackgroundImageRemove?.addEventListener('click', async (event) => {
+      event.preventDefault();
+      if (chatBackgroundImageRemove.disabled) return;
+      try {
+        await clearCrackUiChatBackgroundImage();
+      } catch (error) {
+        console.warn('[Crack UI Max] background image remove failed', error);
+      }
+    });
+
+    bindCheckbox(panel, ID.toggleNovelBackdrop, chatBackgroundSettings.novelBackdropEnabled, (checked) => {
+      chatBackgroundSettings.novelBackdropEnabled = checked === true;
+      persistCrackUiChatBackgroundSettings();
+      applyCrackUiChatBackground();
+      syncCrackUiChatBackgroundUi(panel);
+    });
+
+    const novelBackdropColorInput = panel.querySelector('[data-crack-ui-novel-backdrop-color-code]');
+    const commitNovelBackdropColorInput = () => {
+      if (!novelBackdropColorInput) return;
+      const normalized = normalizeCrackUiFontHex(novelBackdropColorInput.value, null);
+      if (!normalized) {
+        novelBackdropColorInput.value = chatBackgroundSettings.novelBackdropColor;
+        return;
+      }
+      updateCrackUiNovelBackdropColor(normalized);
+    };
+    novelBackdropColorInput?.addEventListener('input', () => {
+      if (/^#[0-9a-fA-F]{6}$/.test(novelBackdropColorInput.value.trim())) {
+        updateCrackUiNovelBackdropColor(novelBackdropColorInput.value, { persist: false, sync: false });
+      }
+    });
+    novelBackdropColorInput?.addEventListener('change', commitNovelBackdropColorInput);
+    novelBackdropColorInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      commitNovelBackdropColorInput();
+    });
+
+    const novelBackdropOpacityInput = panel.querySelector('[data-crack-ui-novel-backdrop-opacity]');
+    novelBackdropOpacityInput?.addEventListener('input', () => {
+      updateCrackUiNovelBackdropOpacity(novelBackdropOpacityInput.value, { persist: false, sync: true });
+    });
+    novelBackdropOpacityInput?.addEventListener('change', () => {
+      updateCrackUiNovelBackdropOpacity(novelBackdropOpacityInput.value);
+    });
     bindCrackUiFontSettingsControls(panel);
 
     // One delegated handler covers every current and future range slider in the panel.
@@ -12409,6 +13469,15 @@ ${record.css}`)}`
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
     syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
+    syncCheckbox(
+      ID.toggleChatBackground,
+      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled !== true
+    );
+    syncCheckbox(
+      ID.toggleChatBackgroundImage,
+      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled === true
+    );
+    syncCheckbox(ID.toggleNovelBackdrop, chatBackgroundSettings.novelBackdropEnabled);
     closeMenuAssistModePanels(panel);
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
@@ -12422,6 +13491,8 @@ ${record.css}`)}`
     if (activePanelSection === 'font') {
       measureCrackUiFontNativeSnapshot({ force: true });
       syncCrackUiFontSettingsUi(panel);
+    } else if (activePanelSection === 'background') {
+      syncCrackUiChatBackgroundUi(panel);
     }
     applyState();
   }
@@ -12527,6 +13598,193 @@ ${record.css}`)}`
     document.documentElement.classList.toggle(CLS.panelOpen, panelOpen);
   }
 
+  function findCrackUiActiveWeatherLayer() {
+    const root = document.getElementById('cawf-root');
+    if (!(root instanceof HTMLElement) || !root.isConnected) return null;
+    const host = root.parentElement;
+    if (!(host instanceof HTMLElement) || host === document.body) return null;
+
+    const visible = root.getAttribute('data-cawf-visible') === 'true';
+    const hostFound = root.getAttribute('data-cawf-host-found') === 'true';
+    if (!(visible && hostFound)) return null;
+    if (host.id !== 'cawf-mount-box' && host.id !== 'sgb-bg-root') return null;
+    return { root, host };
+  }
+
+  function removeCrackUiChatBackgroundWeatherLayer() {
+    if (appliedChatBackgroundWeatherLayer?.isConnected) {
+      appliedChatBackgroundWeatherLayer.remove();
+    }
+    appliedChatBackgroundWeatherLayer = null;
+  }
+
+  function removeCrackUiNovelBackdropWeatherLayer() {
+    if (appliedNovelBackdropWeatherLayer?.isConnected) {
+      appliedNovelBackdropWeatherLayer.remove();
+    }
+    appliedNovelBackdropWeatherLayer = null;
+  }
+
+  function ensureCrackUiChatBackgroundWeatherLayer(weather) {
+    if (!weather?.root?.isConnected) return null;
+    let layer = document.getElementById(ID.chatBackgroundLayer);
+    if (!(layer instanceof HTMLElement)) {
+      layer = document.createElement('div');
+      layer.id = ID.chatBackgroundLayer;
+      layer.setAttribute('aria-hidden', 'true');
+    }
+
+    // CAWF root is an isolated, clipped stacking context already sized to the chat main.
+    // Mounting the solid color inside that root keeps it below every weather/time effect,
+    // while still above Crack's opaque native frame that otherwise shows through the fade.
+    if (layer.parentElement !== weather.root) {
+      weather.root.insertBefore(layer, weather.root.firstChild);
+    }
+    layer.style.setProperty('inset', '0', 'important');
+    layer.style.removeProperty('left');
+    layer.style.removeProperty('top');
+    layer.style.removeProperty('width');
+    layer.style.removeProperty('height');
+
+    appliedChatBackgroundWeatherLayer = layer;
+    return layer;
+  }
+
+  function ensureCrackUiNovelBackdropWeatherLayer(weather) {
+    if (!weather?.root?.isConnected) return null;
+    let layer = document.getElementById(ID.novelBackdropWeatherLayer);
+    if (!(layer instanceof HTMLElement)) {
+      layer = document.createElement('div');
+      layer.id = ID.novelBackdropWeatherLayer;
+      layer.setAttribute('aria-hidden', 'true');
+    }
+
+    const timeLayer = weather.root.querySelector('#cawf-time-layer');
+    const insertionPoint = timeLayer instanceof HTMLElement ? timeLayer.nextSibling : null;
+    if (layer.parentElement !== weather.root || layer.previousElementSibling !== timeLayer) {
+      weather.root.insertBefore(layer, insertionPoint);
+    }
+
+    appliedNovelBackdropWeatherLayer = layer;
+    return layer;
+  }
+
+  function isCrackUiNovelBackdropLayout(viewport) {
+    if (!(viewport instanceof HTMLElement)) return false;
+    if (viewport.querySelector('[data-message-group-id] .rounded-none.bg-transparent .wrtn-markdown')) return true;
+    return normalizeEpisodeUiMode(episodeUiMode) === 'novel';
+  }
+
+  function applyCrackUiChatBackground() {
+    const root = document.documentElement;
+    const routeEnabled = crackUiIsChatRoute();
+    const enabled = chatBackgroundSettings.enabled === true && routeEnabled;
+    const color = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
+    root.style.setProperty('--crack-ui-chat-background-color', color);
+    root.style.setProperty(
+      '--crack-ui-chat-background-image',
+      enabled && chatBackgroundSettings.imageEnabled === true && chatBackgroundImageObjectUrl
+        ? crackUiChatBackgroundEscapeCssUrl(chatBackgroundImageObjectUrl)
+        : 'none'
+    );
+
+    const viewport = routeEnabled ? DOM.chatBackgroundViewport() : null;
+    const novelColor = normalizeCrackUiFontHex(
+      chatBackgroundSettings.novelBackdropColor,
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+    );
+    const novelOpacityPercent = Math.max(5, Math.min(100, Math.round(
+      Number(chatBackgroundSettings.novelBackdropOpacity) || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
+    )));
+    const novelOpacity = novelOpacityPercent / 100;
+    const novelEnabled = chatBackgroundSettings.novelBackdropEnabled === true
+      && routeEnabled
+      && isCrackUiNovelBackdropLayout(viewport);
+    const weather = routeEnabled && (enabled || novelEnabled) ? findCrackUiActiveWeatherLayer() : null;
+    const nextTarget = enabled && !weather ? viewport : null;
+    const nextNovelTarget = novelEnabled && !weather ? viewport : null;
+    const nextComposerShell = (enabled || novelEnabled) ? DOM.chatBackgroundComposerShell() : null;
+
+    root.style.setProperty('--crack-ui-novel-backdrop-rgb', crackUiFontHexToRgb(novelColor));
+    root.style.setProperty('--crack-ui-novel-backdrop-alpha', novelOpacity.toFixed(3));
+    root.style.setProperty('--crack-ui-novel-backdrop-soft-alpha', Math.max(0, novelOpacity * 0.36).toFixed(3));
+
+    if (appliedChatBackgroundTarget && appliedChatBackgroundTarget !== nextTarget) {
+      appliedChatBackgroundTarget.removeAttribute('data-crack-ui-chat-background-target');
+    }
+    appliedChatBackgroundTarget = nextTarget;
+
+    if (appliedNovelBackdropTarget && appliedNovelBackdropTarget !== nextNovelTarget) {
+      appliedNovelBackdropTarget.removeAttribute('data-crack-ui-novel-backdrop-target');
+    }
+    appliedNovelBackdropTarget = nextNovelTarget;
+
+    if (appliedChatBackgroundComposerShell && appliedChatBackgroundComposerShell !== nextComposerShell) {
+      appliedChatBackgroundComposerShell.removeAttribute('data-crack-ui-chat-background-composer-shell');
+    }
+    appliedChatBackgroundComposerShell = nextComposerShell;
+
+    let weatherNovelLayer = null;
+    if (weather && enabled) {
+      ensureCrackUiChatBackgroundWeatherLayer(weather);
+    } else {
+      removeCrackUiChatBackgroundWeatherLayer();
+    }
+    if (weather && novelEnabled) {
+      weatherNovelLayer = ensureCrackUiNovelBackdropWeatherLayer(weather);
+    } else {
+      removeCrackUiNovelBackdropWeatherLayer();
+    }
+
+    if (nextTarget) nextTarget.setAttribute('data-crack-ui-chat-background-target', '1');
+    if (nextNovelTarget) nextNovelTarget.setAttribute('data-crack-ui-novel-backdrop-target', '1');
+    if (nextComposerShell) nextComposerShell.setAttribute('data-crack-ui-chat-background-composer-shell', '1');
+    root.setAttribute('data-crack-ui-novel-backdrop', nextNovelTarget || weatherNovelLayer ? 'on' : 'off');
+    root.setAttribute('data-crack-ui-novel-backdrop-weather', weatherNovelLayer ? 'on' : 'off');
+    root.setAttribute(
+      'data-crack-ui-chat-background',
+      weather ? 'weather-underlay' : (nextTarget ? 'viewport' : 'off')
+    );
+  }
+
+  function scheduleCrackUiChatBackgroundApply() {
+    if (chatBackgroundApplyRaf) return;
+    chatBackgroundApplyRaf = requestAnimationFrame(() => {
+      chatBackgroundApplyRaf = 0;
+      applyCrackUiChatBackground();
+    });
+  }
+
+  function observeCrackUiChatBackgroundCompatibility() {
+    if (chatBackgroundCompatibilityObserver || !document.body) return;
+    chatBackgroundCompatibilityObserver = new MutationObserver((mutations) => {
+      const relevant = mutations.some((mutation) => {
+        if (mutation.type !== 'attributes') return false;
+        if (mutation.target === document.documentElement) {
+          return mutation.attributeName === 'data-cawf-layer-active' || mutation.attributeName === 'class';
+        }
+        return mutation.target instanceof HTMLElement
+          && mutation.target.id === 'cawf-root'
+          && (
+            mutation.attributeName === 'data-cawf-visible'
+            || mutation.attributeName === 'data-cawf-host-found'
+            || mutation.attributeName === 'style'
+          );
+      });
+      if (relevant) scheduleCrackUiChatBackgroundApply();
+    });
+
+    chatBackgroundCompatibilityObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-cawf-layer-active', 'class'],
+    });
+    chatBackgroundCompatibilityObserver.observe(document.body, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ['data-cawf-visible', 'data-cawf-host-found', 'style'],
+    });
+  }
+
   function applyState() {
     updateDeviceViewportClasses();
     if (hideStatBar) markStatBars();
@@ -12550,6 +13808,7 @@ ${record.css}`)}`
     applyEmptySendGuardState();
     applyThemeModeHint();
     applyChatWidth();
+    applyCrackUiChatBackground();
     ensureCrackUiFontFeature();
     updateReveal();
   }
@@ -17381,6 +18640,72 @@ ${record.css}`)}`
     updateFullscreenButtonUi();
   }
 
+  function findCrackUiChatBackgroundComposerShell() {
+    if (cachedChatBackgroundComposerShell?.isConnected) return cachedChatBackgroundComposerShell;
+    cachedChatBackgroundComposerShell = null;
+
+    const editable = findChatComposerEditable();
+    let current = editable instanceof HTMLElement ? editable.parentElement : null;
+    while (current instanceof HTMLElement && current !== document.body) {
+      if (
+        current.classList.contains('bg-bg_screen')
+        && current.classList.contains('pointer-events-auto')
+        && current.querySelector('.__chat_input_textarea, [contenteditable="true"]')
+        && !current.closest(`#${ID.panelRoot}, #${ID.panel}`)
+      ) {
+        cachedChatBackgroundComposerShell = current;
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    const candidates = [...document.querySelectorAll('.bg-bg_screen.pointer-events-auto')].filter((element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      if (element.closest(`#${ID.panelRoot}, #${ID.panel}, #${ID.chatBackgroundLayer}`)) return false;
+      if (!element.querySelector('.__chat_input_textarea, [contenteditable="true"]')) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width >= 240 && rect.height >= 40 && rect.bottom >= window.innerHeight * 0.55;
+    });
+
+    cachedChatBackgroundComposerShell = candidates
+      .sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom)[0] || null;
+    return cachedChatBackgroundComposerShell;
+  }
+
+  function findCrackUiChatBackgroundViewport() {
+    if (cachedChatBackgroundViewport?.isConnected) return cachedChatBackgroundViewport;
+    cachedChatBackgroundViewport = null;
+
+    const candidates = [...document.querySelectorAll('.stick-to-bottom')].filter((element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      if (element.closest(
+        `#${ID.panelRoot}, #${ID.panel}, #${ID.chatBackgroundLayer}, #cawf-root, #cawf-mount-box, #sgb-bg-root, ` +
+        '[data-crack-ui-room-panel="1"], [data-crack-ui-chat-list-panel="1"]'
+      )) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width >= 240 && rect.height >= 240;
+    });
+
+    let best = null;
+    let bestScore = -Infinity;
+    candidates.forEach((element) => {
+      const cls = String(element.className || '');
+      const rect = element.getBoundingClientRect();
+      let score = 0;
+      if (element.querySelector('[data-message-group-id]')) score += 20;
+      if (cls.includes('overflow-y-scroll')) score += 4;
+      if (String(element.style.height || '').includes('100%')) score += 3;
+      score += Math.min(8, Math.round((rect.width * rect.height) / 180000));
+      if (score > bestScore) {
+        best = element;
+        bestScore = score;
+      }
+    });
+
+    cachedChatBackgroundViewport = best;
+    return best;
+  }
+
   // =====================================================
   // DOM: locator facade / debug snapshot / cache reset
   // =====================================================
@@ -17414,6 +18739,8 @@ ${record.css}`)}`
     fullscreenButton: () => document.getElementById(ID.fullscreenButton),
     fontMarkdownRoots: () => findCrackUiFontMarkdownRoots(),
     fontCodeBlocks: () => findCrackUiFontCodeBlocks(),
+    chatBackgroundViewport: () => findCrackUiChatBackgroundViewport(),
+    chatBackgroundComposerShell: () => findCrackUiChatBackgroundComposerShell(),
   };
 
   const DOM_LOCATORS = {
@@ -17440,6 +18767,8 @@ ${record.css}`)}`
     fullscreenButton: DOM.fullscreenButton,
     fontMarkdownRoots: DOM.fontMarkdownRoots,
     fontCodeBlocks: DOM.fontCodeBlocks,
+    chatBackgroundViewport: DOM.chatBackgroundViewport,
+    chatBackgroundComposerShell: DOM.chatBackgroundComposerShell,
   };
 
   function getDomLocatorDebugSnapshot() {
@@ -17473,6 +18802,8 @@ ${record.css}`)}`
 
   function resetDomLocatorCache() {
     cachedHeader = null;
+    cachedChatBackgroundViewport = null;
+    cachedChatBackgroundComposerShell = null;
     cachedBottomSendButton = null;
     cachedComposerEditable = null;
     cachedOriginalModelButton = null;
@@ -18172,6 +19503,7 @@ ${record.css}`)}`
         hideSituationImage,
         novelModelIndicator,
         fontSettings: { ...fontSettings },
+        chatBackgroundSettings: { ...chatBackgroundSettings },
         fontNativeSnapshot: { ...crackUiFontNativeSnapshot },
         fontFeatureActive: fontSettings.masterEnabled === true,
         panelOpen,
@@ -18523,9 +19855,13 @@ ${record.css}`)}`
 
   ready(() => {
     installCrackUiDebugApi();
+    hydrateCrackUiChatBackgroundImage().catch((error) => {
+      console.warn('[Crack UI Max] background image init failed', error);
+    });
     runInit();
     observeThemeDomGuard();
     observeCrackUiFontQuoteMutations();
+    observeCrackUiChatBackgroundCompatibility();
     observe();
   });
 })();
