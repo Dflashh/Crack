@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.04
+// @version      2.7.06
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.04';
+  const CRACK_UI_VERSION = '2.7.06';
 
   function getCrackUiPublicWindow() {
     try {
@@ -5426,6 +5426,17 @@
         z-index: 2 !important;
       }
 
+      /* Phone only: the narrow portrait canvas does not need the desktop/tablet
+         side fade. Fill the complete chat/weather viewport with one uniform tint;
+         the existing opacity slider still controls the alpha. */
+      html.${CLS.phoneViewport}[data-crack-ui-novel-backdrop="on"] body [data-crack-ui-novel-backdrop-target="1"],
+      html.${CLS.phoneViewport} #${ID.novelBackdropWeatherLayer} {
+        --crack-ui-novel-backdrop-gradient: linear-gradient(
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), var(--crack-ui-novel-backdrop-alpha, .34)),
+          rgba(var(--crack-ui-novel-backdrop-rgb, 255, 255, 255), var(--crack-ui-novel-backdrop-alpha, .34))
+        );
+      }
+
       #${ID.panel} .crack-ui-background-feature-grid {
         align-items: start;
       }
@@ -5575,6 +5586,18 @@
       }
 
       #${ID.panel} .crack-ui-novel-backdrop-controls[data-feature-enabled="0"] .crack-ui-font-color-grid {
+        pointer-events: none;
+      }
+
+      #${ID.panel} .crack-ui-novel-backdrop-controls[data-crack-ui-novel-layout-enabled="0"] > .crack-ui-row {
+        opacity: .52;
+        filter: grayscale(1) saturate(0);
+        cursor: default;
+      }
+
+      #${ID.panel} .crack-ui-novel-backdrop-controls[data-crack-ui-novel-layout-enabled="0"] .crack-ui-font-color-grid {
+        opacity: .48;
+        filter: grayscale(1) saturate(0);
         pointer-events: none;
       }
 
@@ -7780,6 +7803,7 @@
     writeStorage(LS.episodeUiMode, nextMode);
     episodeUiMode = nextMode;
     updateThemeUi();
+    applyCrackUiChatBackground();
     refreshCrackUiFontThemeDefaults({ force: true });
 
     window.dispatchEvent(new CustomEvent('crack-ui-episode-ui-mode-change', {
@@ -8306,6 +8330,7 @@
       button.setAttribute('aria-checked', selected ? 'true' : 'false');
     });
 
+    syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
 
   function setImageSize(nextValue) {
@@ -10926,6 +10951,8 @@ ${record.css}`)}`
     const value = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
     const colorEnabled = chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled !== true;
     const imageEnabled = chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled === true;
+    const novelAvailable = normalizeEpisodeUiMode(episodeUiMode) === 'novel';
+    const novelEnabled = novelAvailable && chatBackgroundSettings.novelBackdropEnabled === true;
     const novelValue = normalizeCrackUiFontHex(
       chatBackgroundSettings.novelBackdropColor,
       CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
@@ -11004,14 +11031,15 @@ ${record.css}`)}`
 
             <div
               class="crack-ui-font-card crack-ui-font-highlight-card crack-ui-background-feature-card crack-ui-novel-backdrop-controls"
-              data-feature-enabled="${chatBackgroundSettings.novelBackdropEnabled ? '1' : '0'}"
+              data-feature-enabled="${novelEnabled ? '1' : '0'}"
+              data-crack-ui-novel-layout-enabled="${novelAvailable ? '1' : '0'}"
             >
-              <label class="crack-ui-row crack-ui-font-toggle-row">
+              <label class="crack-ui-row crack-ui-font-toggle-row" data-disabled="${novelAvailable ? '0' : '1'}">
                 <span class="crack-ui-row-text">
-                  <span class="crack-ui-row-name">소설 본문 배경</span>
+                  <span class="crack-ui-row-name">소설형 본문 배경</span>
                 </span>
                 <span>
-                  <input id="${ID.toggleNovelBackdrop}" class="crack-ui-toggle" type="checkbox">
+                  <input id="${ID.toggleNovelBackdrop}" class="crack-ui-toggle" type="checkbox" ${novelAvailable ? '' : 'disabled'}>
                   <span class="crack-ui-switch" aria-hidden="true"></span>
                 </span>
               </label>
@@ -11023,7 +11051,7 @@ ${record.css}`)}`
                       type="button"
                       class="crack-ui-font-color-swatch"
                       data-crack-ui-font-color-picker="${NOVEL_BACKDROP_COLOR_PICKER_KEY}"
-                      aria-label="소설 본문 배경색 색상 선택"
+                      aria-label="소설형 본문 배경색 색상 선택"
                       aria-haspopup="dialog"
                       aria-expanded="false"
                       style="--crack-ui-font-swatch:${crackUiFontEscapeHtml(novelValue)}"
@@ -11034,7 +11062,7 @@ ${record.css}`)}`
                       spellcheck="false"
                       maxlength="7"
                       data-crack-ui-novel-backdrop-color-code="1"
-                      aria-label="소설 본문 배경색 코드"
+                      aria-label="소설형 본문 배경색 코드"
                     >
                   </span>
                 </div>
@@ -11053,7 +11081,7 @@ ${record.css}`)}`
                     step="1"
                     value="${novelOpacity}"
                     data-crack-ui-novel-backdrop-opacity="1"
-                    aria-label="소설 본문 배경 투명도"
+                    aria-label="소설형 본문 배경 투명도"
                   >
                 </div>
               </div>
@@ -11070,7 +11098,9 @@ ${record.css}`)}`
     const imageEnabled = enabled && chatBackgroundSettings.imageEnabled === true;
     const hasImage = !!normalizeCrackUiChatBackgroundImageFileKey(chatBackgroundSettings.imageFileKey);
     const value = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
-    const novelEnabled = chatBackgroundSettings.novelBackdropEnabled === true;
+    const novelAvailable = normalizeEpisodeUiMode(episodeUiMode) === 'novel';
+    const novelConfigured = chatBackgroundSettings.novelBackdropEnabled === true;
+    const novelEnabled = novelAvailable && novelConfigured;
     const novelValue = normalizeCrackUiFontHex(
       chatBackgroundSettings.novelBackdropColor,
       CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
@@ -11108,9 +11138,17 @@ ${record.css}`)}`
     if (imageMeta) imageMeta.textContent = getCrackUiChatBackgroundImageMetaText();
 
     const novelToggle = panel.querySelector(`#${ID.toggleNovelBackdrop}`);
-    if (novelToggle) novelToggle.checked = novelEnabled;
+    if (novelToggle) {
+      novelToggle.checked = novelEnabled;
+      novelToggle.disabled = !novelAvailable;
+    }
     const novelControls = panel.querySelector('.crack-ui-novel-backdrop-controls');
-    if (novelControls) novelControls.dataset.featureEnabled = novelEnabled ? '1' : '0';
+    if (novelControls) {
+      novelControls.dataset.featureEnabled = novelEnabled ? '1' : '0';
+      novelControls.dataset.crackUiNovelLayoutEnabled = novelAvailable ? '1' : '0';
+      const novelToggleRow = novelControls.querySelector('.crack-ui-font-toggle-row');
+      if (novelToggleRow) novelToggleRow.dataset.disabled = novelAvailable ? '0' : '1';
+    }
     const novelTrigger = panel.querySelector(`[data-crack-ui-font-color-picker="${NOVEL_BACKDROP_COLOR_PICKER_KEY}"]`);
     if (novelTrigger) {
       novelTrigger.style.setProperty('--crack-ui-font-swatch', novelValue);
@@ -13477,6 +13515,10 @@ ${error?.message || error}`);
     });
 
     bindCheckbox(panel, ID.toggleNovelBackdrop, chatBackgroundSettings.novelBackdropEnabled, (checked) => {
+      if (normalizeEpisodeUiMode(episodeUiMode) !== 'novel') {
+        syncCrackUiChatBackgroundUi(panel);
+        return;
+      }
       chatBackgroundSettings.novelBackdropEnabled = checked === true;
       persistCrackUiChatBackgroundSettings();
       applyCrackUiChatBackground();
@@ -13742,9 +13784,10 @@ ${error?.message || error}`);
   }
 
   function isCrackUiNovelBackdropLayout(viewport) {
+    if (normalizeEpisodeUiMode(episodeUiMode) !== 'novel') return false;
     if (!(viewport instanceof HTMLElement)) return false;
     if (viewport.querySelector('[data-message-group-id] .rounded-none.bg-transparent .wrtn-markdown')) return true;
-    return normalizeEpisodeUiMode(episodeUiMode) === 'novel';
+    return true;
   }
 
   function applyCrackUiChatBackground() {
@@ -19540,18 +19583,44 @@ ${error?.message || error}`);
     window.addEventListener('mouseup', stopPanelHoldPreview);
     window.addEventListener('touchend', stopPanelHoldPreview, { passive: true });
     window.addEventListener('touchcancel', stopPanelHoldPreview, { passive: true });
-    window.addEventListener('pagehide', () => {
+    const restoreCrackUiChatBackgroundAfterResume = () => {
+      if (document.visibilityState === 'hidden') return;
+      const fileKey = normalizeCrackUiChatBackgroundImageFileKey(chatBackgroundSettings.imageFileKey);
+      const needsImage = chatBackgroundSettings.enabled === true
+        && chatBackgroundSettings.imageEnabled === true
+        && !!fileKey;
+
+      if (needsImage && !chatBackgroundImageObjectUrl) {
+        hydrateCrackUiChatBackgroundImage().catch((error) => {
+          console.warn('[Crack UI Max] background image resume failed', error);
+        });
+        return;
+      }
+      scheduleCrackUiChatBackgroundApply();
+    };
+
+    window.addEventListener('pageshow', restoreCrackUiChatBackgroundAfterResume, { passive: true });
+    document.addEventListener('visibilitychange', restoreCrackUiChatBackgroundAfterResume, { passive: true });
+
+    window.addEventListener('pagehide', (event) => {
       flushImageSizeSave();
       flushChatWidthSave();
       persistCrackUiFontSettings();
       flushNovelModelCatalogSave();
       if (novelModelIndicator) saveNovelModelMessageCache();
+
+      // Mobile file pickers and BFCache can temporarily hide the page. Keep the
+      // Blob URL and observers alive in that case; otherwise the selected image
+      // disappears when the user returns from the picker.
+      if (event.persisted) return;
+
       chatBackgroundWeatherRootObserver?.disconnect();
       chatBackgroundCompatibilityObserver?.disconnect();
       if (chatContentRefreshTimer) clearTimeout(chatContentRefreshTimer);
       if (chatContentRefreshRaf) cancelAnimationFrame(chatContentRefreshRaf);
       if (viewportRefreshRaf) cancelAnimationFrame(viewportRefreshRaf);
-      setCrackUiChatBackgroundImageObjectUrl('');
+      // Object URLs are released automatically with the document. Do not revoke
+      // here because some mobile browsers emit pagehide during native file picking.
     });
   }
 
