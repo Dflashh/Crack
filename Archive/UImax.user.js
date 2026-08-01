@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.06
+// @version      2.7.08
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.06';
+  const CRACK_UI_VERSION = '2.7.08';
 
   function getCrackUiPublicWindow() {
     try {
@@ -791,13 +791,59 @@
 
   function setCrackUiChatBackgroundImageObjectUrl(nextUrl) {
     const normalized = String(nextUrl || '');
-    if (chatBackgroundImageObjectUrl && chatBackgroundImageObjectUrl !== normalized) {
+    if (
+      chatBackgroundImageObjectUrl
+      && chatBackgroundImageObjectUrl !== normalized
+      && chatBackgroundImageObjectUrl.startsWith('blob:')
+    ) {
       try {
         URL.revokeObjectURL(chatBackgroundImageObjectUrl);
       } catch {
       }
     }
     chatBackgroundImageObjectUrl = normalized;
+  }
+
+  function crackUiChatBackgroundRecordToBlob(record) {
+    if (!record || typeof record !== 'object') return null;
+    if (record.blob instanceof Blob) return record.blob;
+
+    const bytes = record.bytes;
+    if (bytes instanceof ArrayBuffer) {
+      return new Blob([bytes], { type: String(record.mime || 'application/octet-stream') });
+    }
+    if (ArrayBuffer.isView(bytes)) {
+      const copied = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      return new Blob([copied], { type: String(record.mime || 'application/octet-stream') });
+    }
+    return null;
+  }
+
+  function crackUiChatBackgroundBlobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('배경 이미지 데이터를 읽지 못했습니다'));
+      reader.onabort = () => reject(new Error('배경 이미지 읽기가 취소되었습니다'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function crackUiChatBackgroundCreateDisplayUrl(blob) {
+    if (!(blob instanceof Blob)) return '';
+
+    // Some mobile userscript engines create blob: URLs in an isolated realm that
+    // page CSS cannot resolve reliably after returning from the native file picker.
+    // A data URL avoids that realm/lifecycle mismatch on phones. Tablet/desktop
+    // retain the lighter blob URL path.
+    if (isPhoneLikeViewport()) {
+      try {
+        return await crackUiChatBackgroundBlobToDataUrl(blob);
+      } catch (error) {
+        console.warn('[Crack UI Max] mobile background data URL fallback failed', error);
+      }
+    }
+    return URL.createObjectURL(blob);
   }
 
   function crackUiChatBackgroundOpenImageDb() {
@@ -835,14 +881,17 @@
   }
 
   async function crackUiChatBackgroundPutImageData(record, file) {
+    const bytes = await file.arrayBuffer();
+    const mime = String(record.mime || file.type || 'application/octet-stream');
+    const storedBlob = new Blob([bytes], { type: mime });
     const db = await crackUiChatBackgroundOpenImageDb();
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       const transaction = db.transaction(CHAT_BACKGROUND_IMAGE_DB_STORE, 'readwrite');
       transaction.objectStore(CHAT_BACKGROUND_IMAGE_DB_STORE).put({
         key: record.key,
-        blob: file,
+        bytes,
         filename: record.filename,
-        mime: record.mime,
+        mime,
         size: record.size,
         savedAt: Date.now(),
       });
@@ -850,6 +899,7 @@
       transaction.onerror = () => reject(transaction.error || new Error('배경 이미지를 저장하지 못했습니다'));
       transaction.onabort = () => reject(transaction.error || new Error('배경 이미지 저장이 취소되었습니다'));
     });
+    return storedBlob;
   }
 
   async function crackUiChatBackgroundGetImageData(fileKey) {
@@ -887,7 +937,8 @@
     try {
       const record = await crackUiChatBackgroundGetImageData(fileKey);
       if (sequence !== chatBackgroundImageHydrationSeq) return false;
-      if (!record?.blob) {
+      const storedBlob = crackUiChatBackgroundRecordToBlob(record);
+      if (!storedBlob) {
         chatBackgroundSettings.enabled = false;
         chatBackgroundSettings.imageEnabled = false;
         chatBackgroundSettings.imageFileKey = '';
@@ -911,7 +962,17 @@
         chatBackgroundSettings.imageSize = Math.max(0, Math.round(Number(record.size) || 0));
       }
 
-      setCrackUiChatBackgroundImageObjectUrl(URL.createObjectURL(record.blob));
+      const displayUrl = await crackUiChatBackgroundCreateDisplayUrl(storedBlob);
+      if (sequence !== chatBackgroundImageHydrationSeq) {
+        if (displayUrl.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(displayUrl);
+          } catch {
+          }
+        }
+        return false;
+      }
+      setCrackUiChatBackgroundImageObjectUrl(displayUrl);
       persistCrackUiChatBackgroundSettings();
       applyCrackUiChatBackground();
       syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
@@ -939,13 +1000,17 @@
     const nextMime = String(file.type || '').trim().slice(0, 80);
     const nextSize = Math.max(0, Math.round(Number(file.size) || 0));
 
-    await crackUiChatBackgroundPutImageData({
+    const storedBlob = await crackUiChatBackgroundPutImageData({
       key: nextKey,
       filename: nextFilename,
       mime: nextMime,
       size: nextSize,
     }, file);
+    const displayUrl = await crackUiChatBackgroundCreateDisplayUrl(storedBlob);
 
+    // Invalidate any resume-time hydration that may still be reading the previous
+    // image while the native mobile picker is closing.
+    chatBackgroundImageHydrationSeq += 1;
     chatBackgroundSettings.enabled = true;
     chatBackgroundSettings.imageEnabled = true;
     chatBackgroundSettings.imageFileKey = nextKey;
@@ -953,7 +1018,7 @@
     chatBackgroundSettings.imageMime = nextMime;
     chatBackgroundSettings.imageSize = nextSize;
 
-    setCrackUiChatBackgroundImageObjectUrl(URL.createObjectURL(file));
+    setCrackUiChatBackgroundImageObjectUrl(displayUrl);
     persistCrackUiChatBackgroundSettings();
     applyCrackUiChatBackground();
     syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
@@ -967,6 +1032,7 @@
   }
 
   async function clearCrackUiChatBackgroundImage() {
+    chatBackgroundImageHydrationSeq += 1;
     const previousKey = normalizeCrackUiChatBackgroundImageFileKey(chatBackgroundSettings.imageFileKey);
     if (chatBackgroundSettings.imageEnabled === true) chatBackgroundSettings.enabled = false;
     chatBackgroundSettings.imageEnabled = false;
@@ -10488,11 +10554,40 @@ ${record.css}`)}`
     return JSON.stringify([...select.options].map((option) => [option.value, option.textContent || '']));
   }
 
+  const CRACK_UI_FONT_PICKER_TOUCH_HOLD_MS = 15000;
+
+  function markCrackUiFontAssignmentPickerActive(select, { touchLike = false } = {}) {
+    if (!(select instanceof HTMLSelectElement)) return;
+    select.dataset.crackUiFontPickerActive = '1';
+    if (touchLike) {
+      select.dataset.crackUiFontPickerTouch = '1';
+      select.dataset.crackUiFontPickerActiveUntil = String(Date.now() + CRACK_UI_FONT_PICKER_TOUCH_HOLD_MS);
+    }
+  }
+
+  function releaseCrackUiFontAssignmentPickerActive(select, { delay = 0, force = false } = {}) {
+    if (!(select instanceof HTMLSelectElement)) return;
+    const release = () => {
+      if (!select.isConnected) return;
+      const activeUntil = Number(select.dataset.crackUiFontPickerActiveUntil || 0);
+      if (!force && select.dataset.crackUiFontPickerTouch === '1' && activeUntil > Date.now()) return;
+      delete select.dataset.crackUiFontPickerActive;
+      delete select.dataset.crackUiFontPickerTouch;
+      delete select.dataset.crackUiFontPickerActiveUntil;
+      const panel = select.closest(`#${ID.panel}`);
+      if (panel) syncCrackUiFontSettingsUi(panel);
+    };
+    if (delay > 0) setTimeout(release, delay);
+    else release();
+  }
+
   function isCrackUiFontAssignmentPickerActive(select) {
-    return !!select && (
-      select.dataset.crackUiFontPickerActive === '1' ||
-      document.activeElement === select
-    );
+    if (!(select instanceof HTMLSelectElement)) return false;
+    const touchHoldActive = select.dataset.crackUiFontPickerTouch === '1'
+      && Number(select.dataset.crackUiFontPickerActiveUntil || 0) > Date.now();
+    return select.dataset.crackUiFontPickerActive === '1'
+      || touchHoldActive
+      || document.activeElement === select;
   }
 
   function syncCrackUiFontAssignmentSelect(select, settingKey, masterEnabled, entries = getCrackUiFontSelectOptionEntries()) {
@@ -10518,7 +10613,9 @@ ${record.css}`)}`
     }
 
     if (!pickerActive && select.value !== selectedId) select.value = selectedId;
-    select.disabled = !masterEnabled;
+    // Some Android WebViews close and reopen the native picker when even a same-value
+    // property write lands while the sheet is opening. Leave the live select untouched.
+    if (!pickerActive) select.disabled = !masterEnabled;
   }
 
   function renderCrackUiFontSelectOptions(selectedId = '') {
@@ -12138,27 +12235,30 @@ ${record.css}`)}`
     // #panel has overflow clipping, but browsers may still try to scroll an overflow-hidden
     // ancestor when a deep checkbox receives focus. Keep the outer panel pinned at zero.
     panel.addEventListener('scroll', () => resetCrackUiPanelOuterScroll(panel), { passive: true });
-    panel.addEventListener('pointerdown', (event) => {
+    const markFontAssignmentPickerFromEvent = (event) => {
       const select = event.target instanceof HTMLSelectElement &&
         event.target.matches('[data-crack-ui-font-assignment]')
         ? event.target
         : null;
-      if (select) select.dataset.crackUiFontPickerActive = '1';
-    }, true);
-    panel.addEventListener('touchstart', (event) => {
-      const select = event.target instanceof HTMLSelectElement &&
-        event.target.matches('[data-crack-ui-font-assignment]')
-        ? event.target
-        : null;
-      if (select) select.dataset.crackUiFontPickerActive = '1';
-    }, { capture: true, passive: true });
+      if (!select) return;
+      const touchLike = event.type === 'touchstart'
+        || (event instanceof PointerEvent && event.pointerType !== 'mouse');
+      markCrackUiFontAssignmentPickerActive(select, { touchLike });
+    };
+    if ('PointerEvent' in window) {
+      panel.addEventListener('pointerdown', markFontAssignmentPickerFromEvent, true);
+    } else {
+      panel.addEventListener('touchstart', markFontAssignmentPickerFromEvent, { capture: true, passive: true });
+    }
     panel.addEventListener('focusin', (event) => {
       const select = event.target instanceof HTMLSelectElement &&
         event.target.matches('[data-crack-ui-font-assignment]')
         ? event.target
         : null;
       if (select) {
-        select.dataset.crackUiFontPickerActive = '1';
+        markCrackUiFontAssignmentPickerActive(select, {
+          touchLike: select.dataset.crackUiFontPickerTouch === '1',
+        });
         return;
       }
       resetCrackUiPanelOuterScroll(panel);
@@ -12170,12 +12270,19 @@ ${record.css}`)}`
         ? event.target
         : null;
       if (!select) return;
-      requestAnimationFrame(() => {
-        if (!select.isConnected) return;
-        delete select.dataset.crackUiFontPickerActive;
-        syncCrackUiFontSettingsUi(panel);
-      });
+      // Android may blur the <select> while its native sheet is still opening. Mouse
+      // pickers can release immediately; touch pickers stay locked until change/cancel.
+      if (select.dataset.crackUiFontPickerTouch === '1') return;
+      requestAnimationFrame(() => releaseCrackUiFontAssignmentPickerActive(select, { force: true }));
     });
+
+    panel.addEventListener('pointerdown', (event) => {
+      const touchedSelect = event.target instanceof HTMLSelectElement
+        && event.target.matches('[data-crack-ui-font-assignment]');
+      if (touchedSelect) return;
+      panel.querySelectorAll('select[data-crack-ui-font-assignment][data-crack-ui-font-picker-touch="1"]')
+        .forEach((select) => releaseCrackUiFontAssignmentPickerActive(select, { force: true }));
+    }, true);
 
     // Font toggles are handled manually. Preventing the label's native default click avoids
     // Chromium scrolling the outer settings panel to the focused hidden checkbox.
@@ -12288,6 +12395,8 @@ ${record.css}`)}`
       const target = event.target;
       if (target instanceof HTMLSelectElement && target.matches('[data-crack-ui-font-assignment]')) {
         updateCrackUiFontSetting(target.dataset.crackUiFontAssignment, target.value, { flush: true });
+        // Let the native sheet finish closing before normal select synchronization resumes.
+        releaseCrackUiFontAssignmentPickerActive(target, { delay: 250, force: true });
         return;
       }
       if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
@@ -13795,12 +13904,15 @@ ${error?.message || error}`);
     const routeEnabled = crackUiIsChatRoute();
     const enabled = chatBackgroundSettings.enabled === true && routeEnabled;
     const color = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
-    root.style.setProperty('--crack-ui-chat-background-color', color);
+    const imageMode = enabled && chatBackgroundSettings.imageEnabled === true;
+    const imageReady = imageMode && !!chatBackgroundImageObjectUrl;
+
+    // Color and image are exclusive modes. Do not keep the previously selected
+    // color (for example black) painted underneath image mode on mobile.
+    root.style.setProperty('--crack-ui-chat-background-color', imageMode ? 'transparent' : color);
     root.style.setProperty(
       '--crack-ui-chat-background-image',
-      enabled && chatBackgroundSettings.imageEnabled === true && chatBackgroundImageObjectUrl
-        ? crackUiChatBackgroundEscapeCssUrl(chatBackgroundImageObjectUrl)
-        : 'none'
+      imageReady ? crackUiChatBackgroundEscapeCssUrl(chatBackgroundImageObjectUrl) : 'none'
     );
 
     const viewport = routeEnabled ? DOM.chatBackgroundViewport() : null;
