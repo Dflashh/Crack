@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.22
+// @version      2.7.23
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.22';
+  const CRACK_UI_VERSION = '2.7.23';
 
   function getCrackUiPublicWindow() {
     try {
@@ -13009,10 +13009,16 @@ ${record.css}`)}`
 
   function bindPanelThemeStripScroll(panel) {
     const scroller = panel.querySelector('.crack-ui-panel-body');
+    const themeStrip = panel.querySelector('.crack-ui-panel-theme-strip');
     if (!scroller || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
 
     scroller.dataset.crackUiThemeStripScrollBound = '1';
     let restoreCleanupRaf = 0;
+    let expandedThemeStripHeight = 0;
+    let lastScrollTop = Math.max(0, scroller.scrollTop);
+    let collapseGuardUntil = 0;
+    let restoreArmed = true;
+    let lastTouchY = null;
 
     const clearRestoreMode = () => {
       if (restoreCleanupRaf) cancelAnimationFrame(restoreCleanupRaf);
@@ -13024,28 +13030,89 @@ ${record.css}`)}`
       });
     };
 
+    const measureExpandedThemeStripHeight = () => {
+      if (themeStrip && panel.dataset.crackUiThemeStripHidden !== '1') {
+        expandedThemeStripHeight = Math.max(
+          expandedThemeStripHeight,
+          Math.ceil(themeStrip.getBoundingClientRect().height)
+        );
+      }
+      return expandedThemeStripHeight;
+    };
+
+    const armRestoreFromUpwardIntent = () => {
+      if (panel.dataset.crackUiThemeStripHidden === '1') restoreArmed = true;
+    };
+
     const updateThemeStripVisibility = () => {
       const scrollTop = Math.max(0, scroller.scrollTop);
       const hidden = panel.dataset.crackUiThemeStripHidden === '1';
+      const now = performance.now();
 
-      // Hysteresis prevents rapid hide/show changes around the boundary.
-      if (!hidden && scrollTop > 12) {
-        delete panel.dataset.crackUiThemeStripRestoring;
-        panel.dataset.crackUiThemeStripHidden = '1';
-        return;
+      // A scrollbar drag can express upward intent without wheel/touch events. Ignore the
+      // synthetic decrease caused by the strip's own collapse animation, then accept real
+      // upward movement after that brief guard window.
+      if (hidden && now >= collapseGuardUntil && scrollTop < lastScrollTop - 0.5) {
+        restoreArmed = true;
       }
 
-      // Restore only after the scroller has actually reached the top.
-      // Height/padding return immediately, avoiding the upward "thud" effect.
-      if (hidden && scrollTop <= 1) {
+      if (!hidden) {
+        const stripHeight = measureExpandedThemeStripHeight();
+        // The previous fixed 12px threshold was smaller than the strip itself. Collapsing the
+        // strip could therefore clamp scrollTop back to zero and immediately reopen it.
+        const hideThreshold = Math.max(32, stripHeight + 12);
+        if (scrollTop > hideThreshold) {
+          delete panel.dataset.crackUiThemeStripRestoring;
+          restoreArmed = false;
+          collapseGuardUntil = now + 240;
+          panel.dataset.crackUiThemeStripHidden = '1';
+          lastScrollTop = scrollTop;
+          return;
+        }
+      }
+
+      // Restore only at the real top after the user has expressed upward intent. Layout-driven
+      // scrollTop corrections during collapse are deliberately ignored.
+      if (hidden && restoreArmed && scrollTop <= 1) {
         panel.dataset.crackUiThemeStripRestoring = '1';
         panel.dataset.crackUiThemeStripHidden = '0';
+        restoreArmed = true;
         clearRestoreMode();
       }
+
+      lastScrollTop = scrollTop;
     };
 
+    scroller.addEventListener('wheel', (event) => {
+      if (event.deltaY < 0) armRestoreFromUpwardIntent();
+    }, { passive: true });
+
+    scroller.addEventListener('touchstart', (event) => {
+      lastTouchY = event.touches?.[0]?.clientY ?? null;
+    }, { passive: true });
+
+    scroller.addEventListener('touchmove', (event) => {
+      const currentY = event.touches?.[0]?.clientY;
+      if (currentY == null || lastTouchY == null) return;
+      if (currentY > lastTouchY + 2) armRestoreFromUpwardIntent();
+      lastTouchY = currentY;
+    }, { passive: true });
+
+    scroller.addEventListener('touchend', () => {
+      lastTouchY = null;
+    }, { passive: true });
+
+    scroller.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
+        armRestoreFromUpwardIntent();
+      }
+    });
+
     scroller.addEventListener('scroll', updateThemeStripVisibility, { passive: true });
-    updateThemeStripVisibility();
+    requestAnimationFrame(() => {
+      measureExpandedThemeStripHeight();
+      updateThemeStripVisibility();
+    });
   }
 
   function bindCheckbox(panel, id, checked, onChange) {
