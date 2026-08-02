@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.5.4.1
+// @version      2.5.6
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.5.4.1';
+  const CRACK_UI_VERSION = '2.5.6';
 
   function getCrackUiPublicWindow() {
     try {
@@ -59,6 +59,7 @@
     gearMobile: 'crack-ui-gear-mobile',
     toggleHeader: 'crack-ui-toggle-header',
     toggleLineBreak: 'crack-ui-toggle-line-break',
+    toggleAntiScrollJacking: 'crack-ui-toggle-anti-scroll-jacking',
     toggleAnimatedThumbs: 'crack-ui-toggle-animated-thumbs',
     toggleStatBar: 'crack-ui-toggle-stat-bar',
     toggleBottomModelPicker: 'crack-ui-toggle-bottom-model-picker',
@@ -93,6 +94,7 @@
     autoHideHeader: 'crack_ui_auto_hide_header',
     imageConfig: 'wrtn_img_resizer_config',
     lineBreakOptimize: 'crack_ui_line_break_optimize',
+    antiScrollJacking: 'crack_ui_anti_scroll_jacking',
     pauseAnimatedThumbs: 'crack_ui_pause_animated_thumbs',
     hideStatBar: 'crack_ui_hide_stat_bar',
     chatWidthPercent: 'crack_ui_chat_width_percent_v2',
@@ -124,6 +126,7 @@
     reveal: 'crack-ui-header-reveal',
     panelOpen: 'crack-ui-panel-open',
     lineBreak: 'crack-ui-line-break-optimize',
+    antiScrollJacking: 'crack-ui-anti-scroll-jacking',
     pauseAnimatedThumbs: 'crack-ui-pause-animated-thumbs',
     hideStatBar: 'crack-ui-hide-stat-bar',
     hideSituationImage: 'crack-ui-hide-situation-image',
@@ -308,6 +311,12 @@
     return raw === '1';
   }
 
+  function loadAntiScrollJacking() {
+    const raw = readStorage(LS.antiScrollJacking);
+    if (raw == null) return false;
+    return raw === '1';
+  }
+
   function loadPauseAnimatedThumbs() {
     const raw = readStorage(LS.pauseAnimatedThumbs);
     if (raw == null) return false;
@@ -369,6 +378,7 @@
   let autoHideHeader = readStorage(LS.autoHideHeader) === '1';
   let imageSize = loadImageSize();
   let lineBreakOptimize = loadLineBreakOptimize();
+  let antiScrollJacking = loadAntiScrollJacking();
   let pauseAnimatedThumbs = loadPauseAnimatedThumbs();
   let hideStatBar = loadHideStatBar();
   let bottomModelPicker = loadBottomModelPicker();
@@ -425,6 +435,11 @@
   let pendingThemeApplied = false;
   let cachedBottomSendButton = null;
   let cachedComposerEditable = null;
+  let cachedAntiScrollScroller = null;
+  let cachedAntiScrollHref = '';
+  let antiScrollGuardInstalled = false;
+  let antiScrollGuardBlockedCount = 0;
+  let antiScrollGuardLastBlockedAt = 0;
   let emptySendGuardUiRaf = 0;
   let cachedOriginalModelButton = null;
   let cachedRoomMenuButton = null;
@@ -473,6 +488,10 @@
 
   if (lineBreakOptimize) {
     document.documentElement.classList.add(CLS.lineBreak);
+  }
+
+  if (antiScrollJacking && crackUiIsConversationRoute()) {
+    document.documentElement.classList.add(CLS.antiScrollJacking);
   }
 
   if (pauseAnimatedThumbs) {
@@ -782,6 +801,19 @@
         word-break: keep-all !important;
         overflow-wrap: break-word !important;
         white-space: pre-wrap !important;
+      }
+
+      /* Keep Markdown source-formatting whitespace from stretching blockquote borders.
+         Descendant text still uses the line-break optimization rules above. */
+      html.${CLS.lineBreak} .wrtn-markdown blockquote,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] blockquote {
+        white-space: normal !important;
+      }
+
+      html.${CLS.antiScrollJacking} body main,
+      html.${CLS.antiScrollJacking} body main * {
+        scroll-behavior: auto !important;
+        overflow-anchor: none !important;
       }
 
       @media (min-width: 768px) {
@@ -2905,13 +2937,14 @@
         gap: 10px;
       }
 
-      /* Keep the final three chat rows in a fixed, user-requested order on all layouts. */
+      /* Keep the ordered chat rows grouped by description height on all layouts. */
       #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="1"] { order: 10; }
       #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="2"] { order: 11; }
       #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="3"] { order: 12; }
       #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="4"] { order: 13; }
       #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="5"] { order: 14; }
       #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="6"] { order: 15; }
+      #${ID.panel} .crack-ui-chat-layout-grid > [data-crack-ui-chat-order="7"] { order: 16; }
 
       /* Chat page uses the wide workspace only on tablet/desktop.
          Phone layout intentionally remains the existing single column. */
@@ -4661,13 +4694,24 @@
 
   function bindPanelThemeStripScroll(panel) {
     const scroller = panel.querySelector('.crack-ui-panel-body');
-    if (!scroller || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
+    const themeStrip = panel.querySelector('.crack-ui-panel-theme-strip');
+
+    if (!scroller || !themeStrip || scroller.dataset.crackUiThemeStripScrollBound === '1') {
+      return;
+    }
 
     scroller.dataset.crackUiThemeStripScrollBound = '1';
+
     let restoreCleanupRaf = 0;
+    let expandedThemeStripHeight = 0;
+    let lastScrollTop = Math.max(0, scroller.scrollTop);
+    let collapseGuardUntil = 0;
+    let restoreArmed = true;
+    let lastTouchY = null;
 
     const clearRestoreMode = () => {
       if (restoreCleanupRaf) cancelAnimationFrame(restoreCleanupRaf);
+
       restoreCleanupRaf = requestAnimationFrame(() => {
         restoreCleanupRaf = requestAnimationFrame(() => {
           delete panel.dataset.crackUiThemeStripRestoring;
@@ -4676,28 +4720,101 @@
       });
     };
 
-    const updateThemeStripVisibility = () => {
-      const scrollTop = Math.max(0, scroller.scrollTop);
-      const hidden = panel.dataset.crackUiThemeStripHidden === '1';
-
-      // Hysteresis prevents rapid hide/show changes around the boundary.
-      if (!hidden && scrollTop > 12) {
-        delete panel.dataset.crackUiThemeStripRestoring;
-        panel.dataset.crackUiThemeStripHidden = '1';
-        return;
+    const measureExpandedThemeStripHeight = () => {
+      if (panel.dataset.crackUiThemeStripHidden !== '1') {
+        expandedThemeStripHeight = Math.max(
+          expandedThemeStripHeight,
+          Math.ceil(themeStrip.getBoundingClientRect().height)
+        );
       }
 
-      // Restore only after the scroller has actually reached the top.
-      // Height/padding return immediately, avoiding the upward "thud" effect.
-      if (hidden && scrollTop <= 1) {
-        panel.dataset.crackUiThemeStripRestoring = '1';
-        panel.dataset.crackUiThemeStripHidden = '0';
-        clearRestoreMode();
+      return expandedThemeStripHeight;
+    };
+
+    const armRestoreFromUpwardIntent = () => {
+      if (panel.dataset.crackUiThemeStripHidden === '1') {
+        restoreArmed = true;
       }
     };
 
+    const updateThemeStripVisibility = () => {
+      const scrollTop = Math.max(0, scroller.scrollTop);
+      const hidden = panel.dataset.crackUiThemeStripHidden === '1';
+      const now = performance.now();
+
+      /*
+       * Scrollbar dragging may not emit wheel/touch events.
+       * Ignore layout-driven scrollTop decreases for 240ms after collapse.
+       */
+      if (hidden && now >= collapseGuardUntil && scrollTop < lastScrollTop - 0.5) {
+        restoreArmed = true;
+      }
+
+      if (!hidden) {
+        const stripHeight = measureExpandedThemeStripHeight();
+        const hideThreshold = Math.max(32, stripHeight + 12);
+
+        if (scrollTop > hideThreshold) {
+          delete panel.dataset.crackUiThemeStripRestoring;
+          restoreArmed = false;
+          collapseGuardUntil = now + 240;
+          panel.dataset.crackUiThemeStripHidden = '1';
+          lastScrollTop = scrollTop;
+          return;
+        }
+      }
+
+      /*
+       * Restore only after an actual upward intent reaches the absolute top,
+       * not after the collapse animation adjusts the layout.
+       */
+      if (hidden && restoreArmed && scrollTop <= 1) {
+        panel.dataset.crackUiThemeStripRestoring = '1';
+        panel.dataset.crackUiThemeStripHidden = '0';
+        restoreArmed = true;
+        clearRestoreMode();
+      }
+
+      lastScrollTop = scrollTop;
+    };
+
+    scroller.addEventListener('wheel', (event) => {
+      if (event.deltaY < 0) armRestoreFromUpwardIntent();
+    }, { passive: true });
+
+    scroller.addEventListener('touchstart', (event) => {
+      lastTouchY = event.touches?.[0]?.clientY ?? null;
+    }, { passive: true });
+
+    scroller.addEventListener('touchmove', (event) => {
+      const currentY = event.touches?.[0]?.clientY;
+
+      if (currentY == null || lastTouchY == null) return;
+      if (currentY > lastTouchY + 2) armRestoreFromUpwardIntent();
+
+      lastTouchY = currentY;
+    }, { passive: true });
+
+    scroller.addEventListener('touchend', () => {
+      lastTouchY = null;
+    }, { passive: true });
+
+    scroller.addEventListener('keydown', (event) => {
+      if (
+        event.key === 'ArrowUp' ||
+        event.key === 'PageUp' ||
+        event.key === 'Home'
+      ) {
+        armRestoreFromUpwardIntent();
+      }
+    });
+
     scroller.addEventListener('scroll', updateThemeStripVisibility, { passive: true });
-    updateThemeStripVisibility();
+
+    requestAnimationFrame(() => {
+      measureExpandedThemeStripHeight();
+      updateThemeStripVisibility();
+    });
   }
 
   function bindCheckbox(panel, id, checked, onChange) {
@@ -5183,7 +5300,7 @@
               </span>
             </label>
 
-            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="5">
+            <label class="crack-ui-row crack-ui-chat-layout-full" data-crack-ui-chat-order="7">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">소설형 UI 모델 표기</span>
               </span>
@@ -5194,7 +5311,7 @@
               </span>
             </label>
 
-            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="6">
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="5">
               <span class="crack-ui-row-text">
                 <span class="crack-ui-row-name">줄바꿈 최적화</span>
                 <span class="crack-ui-row-desc">
@@ -5208,7 +5325,17 @@
               </span>
             </label>
 
+            <label class="crack-ui-row crack-ui-chat-layout-half" data-crack-ui-chat-order="6">
+              <span class="crack-ui-row-text">
+                <span class="crack-ui-row-name">읽는 중 자동 스크롤 방지</span>
+                <span class="crack-ui-row-desc">위쪽 메시지를 읽을 때 강제 하단 이동 차단</span>
+              </span>
 
+              <span>
+                <input id="${ID.toggleAntiScrollJacking}" class="crack-ui-toggle" type="checkbox">
+                <span class="crack-ui-switch" aria-hidden="true"></span>
+              </span>
+            </label>
 
 
           </div>
@@ -5321,6 +5448,15 @@
       writeStorage(LS.lineBreakOptimize, lineBreakOptimize ? '1' : '0');
       applyState();
     });
+    bindCheckbox(panel, ID.toggleAntiScrollJacking, antiScrollJacking, (checked) => {
+      antiScrollJacking = checked;
+      writeStorage(LS.antiScrollJacking, antiScrollJacking ? '1' : '0');
+
+      cachedAntiScrollScroller = null;
+      cachedAntiScrollHref = '';
+
+      applyState();
+    });
     bindCheckbox(panel, ID.toggleBottomModelPicker, bottomModelPicker, (checked) => {
       bottomModelPicker = checked;
       writeStorage(LS.bottomModelPicker, bottomModelPicker ? '1' : '0');
@@ -5406,6 +5542,7 @@
     syncCheckbox(ID.toggleAnimatedThumbs, pauseAnimatedThumbs);
     syncCheckbox(ID.toggleStatBar, hideStatBar);
     syncCheckbox(ID.toggleLineBreak, lineBreakOptimize);
+    syncCheckbox(ID.toggleAntiScrollJacking, antiScrollJacking);
     syncCheckbox(ID.toggleBottomModelPicker, bottomModelPicker);
     syncCheckbox(ID.toggleEmptySendGuard, emptySendGuard);
     syncCheckbox(ID.toggleHideSituationImage, hideSituationImage);
@@ -5489,6 +5626,7 @@
     });
     document.documentElement.classList.toggle(CLS.autoHide, autoHideHeader);
     document.documentElement.classList.toggle(CLS.lineBreak, lineBreakOptimize);
+    applyCrackUiAntiScrollState();
     document.documentElement.classList.toggle(CLS.pauseAnimatedThumbs, pauseAnimatedThumbs);
     document.documentElement.classList.toggle(CLS.hideStatBar, hideStatBar);
     document.documentElement.classList.toggle(CLS.hideSituationImage, hideSituationImage);
@@ -9971,6 +10109,361 @@
     return String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
+  function crackUiIsConversationRoute() {
+    const path = String(location.pathname || '');
+    return (
+      /^\/stories\/[^/]+\/episodes\/[^/]+/.test(path) ||
+      /^\/characters\/chat\/[^/]+/.test(path) ||
+      /^\/characters\/[^/]+\/chats\/[^/]+/.test(path) ||
+      /^\/u\/[^/]+\/c\/[^/]+/.test(path)
+    );
+  }
+
+  function isCrackUiAntiScrollScrollable(element) {
+    if (!element || !element.isConnected) return false;
+    const clientHeight = Number(element.clientHeight) || 0;
+    const scrollHeight = Number(element.scrollHeight) || 0;
+    return clientHeight > 0 && scrollHeight > clientHeight + 1;
+  }
+
+  function getCrackUiAntiScrollOwnedSelector() {
+    return [
+      ID.panelRoot ? `#${ID.panelRoot}` : '',
+      ID.panel ? `#${ID.panel}` : '',
+      ID.panelBackdrop ? `#${ID.panelBackdrop}` : '',
+      ID.bottomModelPopup ? `#${ID.bottomModelPopup}` : '',
+      '[data-crack-ui-chat-list-panel="1"]',
+      '[data-crack-ui-room-panel="1"]',
+      '[data-radix-popper-content-wrapper]',
+    ].filter(Boolean).join(', ');
+  }
+
+  function isCrackUiAntiScrollOwnedElement(element) {
+    const selector = getCrackUiAntiScrollOwnedSelector();
+    return !!(selector && element?.closest?.(selector));
+  }
+
+  /* Max의 .stick-to-bottom 채팅 뷰포트 점수화 로직에서 배경 모듈 의존만 제거한 형태 */
+  function findCrackUiAntiScrollPreferredViewport() {
+    const candidates = [...document.querySelectorAll('.stick-to-bottom')].filter((element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      if (isCrackUiAntiScrollOwnedElement(element)) return false;
+
+      const rect = element.getBoundingClientRect();
+      return rect.width >= 240 && rect.height >= 240;
+    });
+
+    let best = null;
+    let bestScore = -Infinity;
+
+    candidates.forEach((element) => {
+      const className = String(element.className || '');
+      const rect = element.getBoundingClientRect();
+      let score = 0;
+
+      if (element.querySelector('[data-message-group-id], .wrtn-markdown, [class*="wrtn-markdown"]')) {
+        score += 20;
+      }
+      if (className.includes('overflow-y-scroll')) score += 4;
+      if (String(element.style.height || '').includes('100%')) score += 3;
+      score += Math.min(8, Math.round((rect.width * rect.height) / 180000));
+
+      if (score > bestScore) {
+        best = element;
+        bestScore = score;
+      }
+    });
+
+    return best;
+  }
+
+  function findCrackUiAntiScrollScroller() {
+    if (!crackUiIsConversationRoute()) return null;
+
+    const cacheHasConversation = !!cachedAntiScrollScroller?.querySelector?.(
+      '[data-message-group-id], .wrtn-markdown, [class*="wrtn-markdown"]'
+    );
+
+    if (
+      cachedAntiScrollHref === location.href &&
+      cacheHasConversation &&
+      isCrackUiAntiScrollScrollable(cachedAntiScrollScroller)
+    ) {
+      return cachedAntiScrollScroller;
+    }
+
+    cachedAntiScrollScroller = null;
+    cachedAntiScrollHref = '';
+
+    const viewport = findCrackUiAntiScrollPreferredViewport();
+    if (isCrackUiAntiScrollScrollable(viewport)) {
+      cachedAntiScrollScroller = viewport;
+      cachedAntiScrollHref = location.href;
+      return viewport;
+    }
+
+    const groups = [...document.querySelectorAll('[data-message-group-id]')];
+    const lastGroup = groups.length ? groups[groups.length - 1] : null;
+
+    let current =
+      lastGroup?.parentElement ||
+      document.querySelector('main .wrtn-markdown, main [class*="wrtn-markdown"]')?.parentElement ||
+      null;
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (!isCrackUiAntiScrollOwnedElement(current) && isCrackUiAntiScrollScrollable(current)) {
+        cachedAntiScrollScroller = current;
+        cachedAntiScrollHref = location.href;
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    const pageScroller = document.scrollingElement || document.documentElement;
+    const markdown = document.querySelector('main .wrtn-markdown, main [class*="wrtn-markdown"]');
+    const pageContainsConversation =
+      (lastGroup && pageScroller?.contains?.(lastGroup)) ||
+      (markdown && pageScroller?.contains?.(markdown));
+
+    if (pageContainsConversation && isCrackUiAntiScrollScrollable(pageScroller)) {
+      cachedAntiScrollScroller = pageScroller;
+      cachedAntiScrollHref = location.href;
+      return pageScroller;
+    }
+
+    return null;
+  }
+
+  function isCrackUiUserReadingUp(scroller = findCrackUiAntiScrollScroller()) {
+    if (!antiScrollJacking || !crackUiIsConversationRoute() || !isCrackUiAntiScrollScrollable(scroller)) {
+      return false;
+    }
+
+    const distanceToBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    return distanceToBottom > 2;
+  }
+
+  function recordCrackUiBlockedAutoScroll() {
+    antiScrollGuardBlockedCount += 1;
+    antiScrollGuardLastBlockedAt = Date.now();
+  }
+
+  function getCrackUiRequestedScrollTop(method, args, currentTop) {
+    const first = args?.[0];
+
+    if (method === 'scrollBy') {
+      const delta = first && typeof first === 'object'
+        ? Number(first.top)
+        : Number(args?.[1]);
+
+      return Number.isFinite(delta) ? currentTop + delta : null;
+    }
+
+    const requested = first && typeof first === 'object'
+      ? Number(first.top)
+      : Number(args?.[1]);
+
+    return Number.isFinite(requested) ? requested : null;
+  }
+
+  function shouldCrackUiBlockElementScrollMethod(method, target, args) {
+    if (!antiScrollJacking || !crackUiIsConversationRoute()) return false;
+
+    const scroller = findCrackUiAntiScrollScroller();
+    if (!isCrackUiUserReadingUp(scroller)) return false;
+
+    if (method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded') {
+      if (!target || !(scroller === document.scrollingElement || scroller.contains?.(target))) {
+        return false;
+      }
+
+      try {
+        const targetRect = target.getBoundingClientRect();
+        const scrollerRect = scroller === document.scrollingElement
+          ? {
+              top: 0,
+              bottom: window.innerHeight || document.documentElement.clientHeight || 0,
+            }
+          : scroller.getBoundingClientRect();
+
+        /* 화면 아래에 있는 대상을 향한 강제 이동만 차단 */
+        return targetRect.bottom > scrollerRect.bottom + 1;
+      } catch {
+        return true;
+      }
+    }
+
+    if (target !== scroller) return false;
+
+    const requestedTop = getCrackUiRequestedScrollTop(method, args, scroller.scrollTop);
+    return requestedTop != null && requestedTop > scroller.scrollTop + 0.5;
+  }
+
+  function installCrackUiAntiScrollGuard() {
+    if (antiScrollGuardInstalled) return true;
+
+    const pageWindow = getCrackUiPublicWindow();
+    const elementPrototype = pageWindow?.Element?.prototype;
+    const htmlPrototype = pageWindow?.HTMLElement?.prototype;
+
+    if (!pageWindow || !elementPrototype || !htmlPrototype) return false;
+
+    /* 같은 페이지에서 Max/Pro 또는 재실행으로 중복 패치되지 않게 하는 표식 */
+    const guardKey = '__crackUiAntiScrollGuardV1';
+
+    if (pageWindow[guardKey]?.installed) {
+      antiScrollGuardInstalled = true;
+      return true;
+    }
+
+    const guard = { installed: true };
+
+    try {
+      Object.defineProperty(pageWindow, guardKey, {
+        value: guard,
+        configurable: true,
+      });
+    } catch {
+      pageWindow[guardKey] = guard;
+    }
+
+    /* element.scrollTop = 큰 값 형태의 강제 하단 이동 */
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(elementPrototype, 'scrollTop');
+
+      if (descriptor?.get && descriptor?.set) {
+        Object.defineProperty(elementPrototype, 'scrollTop', {
+          configurable: descriptor.configurable !== false,
+          enumerable: descriptor.enumerable === true,
+
+          get() {
+            return descriptor.get.call(this);
+          },
+
+          set(value) {
+            if (!antiScrollJacking || !crackUiIsConversationRoute()) {
+              return descriptor.set.call(this, value);
+            }
+
+            const current = descriptor.get.call(this);
+            const scroller = findCrackUiAntiScrollScroller();
+
+            if (
+              this === scroller &&
+              isCrackUiUserReadingUp(scroller) &&
+              Number(value) > Number(current) + 0.5
+            ) {
+              recordCrackUiBlockedAutoScroll();
+              return;
+            }
+
+            return descriptor.set.call(this, value);
+          },
+        });
+      }
+    } catch (error) {
+      console.warn('[Crack UI Pro] anti-scroll scrollTop guard unavailable', error);
+    }
+
+    /* Element 스크롤 메서드 */
+    ['scrollIntoView', 'scrollTo', 'scroll', 'scrollBy', 'scrollIntoViewIfNeeded'].forEach((method) => {
+      try {
+        const original = elementPrototype[method];
+        if (typeof original !== 'function') return;
+
+        elementPrototype[method] = function (...args) {
+          if (shouldCrackUiBlockElementScrollMethod(method, this, args)) {
+            recordCrackUiBlockedAutoScroll();
+            return;
+          }
+
+          return original.apply(this, args);
+        };
+      } catch (error) {
+        console.warn(`[Crack UI Pro] anti-scroll ${method} guard unavailable`, error);
+      }
+    });
+
+    /*
+     * 포커스를 없애지 않는다.
+     * 사용자가 위를 읽고 있을 때만 preventScroll을 강제해 포커스 이동으로 인한 점프를 막는다.
+     */
+    try {
+      const originalFocus = htmlPrototype.focus;
+
+      if (typeof originalFocus === 'function') {
+        htmlPrototype.focus = function (options) {
+          if (!antiScrollJacking || !crackUiIsConversationRoute()) {
+            return originalFocus.apply(this, arguments);
+          }
+
+          const scroller = findCrackUiAntiScrollScroller();
+
+          if (isCrackUiUserReadingUp(scroller)) {
+            const nextOptions = options && typeof options === 'object'
+              ? { ...options, preventScroll: true }
+              : { preventScroll: true };
+
+            return originalFocus.call(this, nextOptions);
+          }
+
+          return originalFocus.apply(this, arguments);
+        };
+      }
+    } catch (error) {
+      console.warn('[Crack UI Pro] anti-scroll focus guard unavailable', error);
+    }
+
+    /* 페이지 자체가 스크롤러인 경로의 window.scroll* */
+    ['scrollTo', 'scroll', 'scrollBy'].forEach((method) => {
+      try {
+        const original = pageWindow[method];
+        if (typeof original !== 'function') return;
+
+        pageWindow[method] = function (...args) {
+          if (!antiScrollJacking || !crackUiIsConversationRoute()) {
+            return original.apply(this, args);
+          }
+
+          const scroller = findCrackUiAntiScrollScroller();
+          const pageScroller = document.scrollingElement || document.documentElement;
+
+          if (scroller === pageScroller && isCrackUiUserReadingUp(scroller)) {
+            const requestedTop = getCrackUiRequestedScrollTop(method, args, scroller.scrollTop);
+
+            if (requestedTop != null && requestedTop > scroller.scrollTop + 0.5) {
+              recordCrackUiBlockedAutoScroll();
+              return;
+            }
+          }
+
+          return original.apply(this, args);
+        };
+      } catch (error) {
+        console.warn(`[Crack UI Pro] anti-scroll window.${method} guard unavailable`, error);
+      }
+    });
+
+    antiScrollGuardInstalled = true;
+    return true;
+  }
+
+  function applyCrackUiAntiScrollState() {
+    document.documentElement.classList.toggle(
+      CLS.antiScrollJacking,
+      antiScrollJacking && crackUiIsConversationRoute()
+    );
+
+    if (antiScrollJacking) {
+      installCrackUiAntiScrollGuard();
+    }
+
+    if (!antiScrollJacking || !crackUiIsConversationRoute()) {
+      cachedAntiScrollScroller = null;
+      cachedAntiScrollHref = '';
+    }
+  }
+
   function crackUiIsChatRoute() {
     return /^\/stories\/[^/]+\/episodes\/[^/]+/.test(location.pathname);
   }
@@ -10422,6 +10915,8 @@
     cachedHeader = null;
     cachedBottomSendButton = null;
     cachedComposerEditable = null;
+    cachedAntiScrollScroller = null;
+    cachedAntiScrollHref = '';
     cachedOriginalModelButton = null;
     cachedRoomMenuButton = null;
     cachedChatListPanel = null;
@@ -11101,6 +11596,11 @@
         autoHideHeader,
         imageSize,
         lineBreakOptimize,
+        antiScrollJacking,
+        antiScrollGuardInstalled,
+        antiScrollGuardBlockedCount,
+        antiScrollGuardLastBlockedAt,
+        antiScrollReadingUp: antiScrollJacking ? isCrackUiUserReadingUp() : false,
         pauseAnimatedThumbs,
         hideStatBar,
         hideSituationImage,
@@ -11428,6 +11928,7 @@
     });
   }
 
+  if (antiScrollJacking) installCrackUiAntiScrollGuard();
   if (novelModelIndicator) installNovelModelNetworkCapture();
 
   ready(() => {
