@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.08
+// @version      2.7.19
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.08';
+  const CRACK_UI_VERSION = '2.7.19';
 
   function getCrackUiPublicWindow() {
     try {
@@ -293,6 +293,7 @@
     customFontSource: '',
     textScale: 1.00,
     codeTextScale: 1.00,
+    codeBlockOpacity: 100,
     fontWeight: 400,
     lineHeight: 1.50,
     letterSpacing: 0,
@@ -370,11 +371,16 @@
   const FONT_SETTING_RANGE = Object.freeze({
     textScale: { min: 0.20, max: 3.00, step: 0.01, label: '글씨 크기', pointMin: 8, pointMax: 16, pointStep: 0.1 },
     codeTextScale: { min: 0.70, max: 1.20, step: 0.01, label: '코드블록 글씨 크기' },
+    codeBlockOpacity: { min: 0, max: 100, step: 1, label: '불투명도' },
     fontWeight: { min: 300, max: 900, step: 100, label: '폰트 두께' },
     lineHeight: { min: 1.35, max: 2.10, step: 0.01, label: '행간' },
     letterSpacing: { min: -0.03, max: 0.08, step: 0.01, label: '자간' },
     paragraphSpacing: { min: 0, max: 1.60, step: 0.01, label: '문단 간격' },
   });
+
+  const FONT_TYPOGRAPHY_RANGE_KEYS = Object.freeze(
+    Object.keys(FONT_SETTING_RANGE).filter((key) => key !== 'codeBlockOpacity')
+  );
 
   const FONT_TOGGLE_KEYS = Object.freeze([
     'masterEnabled',
@@ -502,6 +508,11 @@
     '--crack-ui-font-strong-rgb',
     '--crack-ui-font-strong-highlight-text',
     '--crack-ui-font-code-rgb',
+    '--crack-ui-font-code-border-alpha',
+    '--crack-ui-font-code-bg-alpha',
+    '--crack-ui-font-code-header-alpha',
+    '--crack-ui-font-code-header-shade-alpha',
+    '--crack-ui-font-code-divider-alpha',
     '--crack-ui-custom-font-stack',
     '--crack-ui-body-font-stack',
     '--crack-ui-code-font-stack',
@@ -1764,7 +1775,11 @@
   function getCrackUiFontRangeInputConfig(key, value = getCrackUiFontEffectiveSettingValue(key)) {
     const def = FONT_SETTING_RANGE[key];
     if (!def) return null;
-    const effectiveValue = isCrackUiFontSettingCustom(key) ? value : getCrackUiFontNativeSettingValue(key);
+    // codeBlockOpacity is an independent stored setting, not a native/custom override.
+    // Using the generic native fallback here reset the thumb to 100 when drag preview ended.
+    const effectiveValue = key === 'codeBlockOpacity'
+      ? value
+      : (isCrackUiFontSettingCustom(key) ? value : getCrackUiFontNativeSettingValue(key));
     if (key === 'textScale') {
       const basePoint = getCrackUiFontBasePointSize(key);
       const pointValue = clampCrackUiFontNumber(
@@ -1808,6 +1823,11 @@
   }
 
   function formatCrackUiFontSettingValue(key, value = getCrackUiFontEffectiveSettingValue(key)) {
+    // Standalone range: display the stored value directly instead of the native default.
+    if (key === 'codeBlockOpacity') {
+      const standaloneNumber = Number(value);
+      return `${Math.round(Number.isFinite(standaloneNumber) ? standaloneNumber : FONT_SETTINGS_DEFAULT.codeBlockOpacity)}%`;
+    }
     const custom = isCrackUiFontSettingCustom(key);
     const effectiveValue = custom ? value : getCrackUiFontNativeSettingValue(key);
     const number = Number(effectiveValue);
@@ -2021,6 +2041,7 @@
   let fontPresetStatusText = '';
   let fontPresetMenuOpen = false;
   let fontDialogueQuoteMenuOpen = false;
+  let fontCodeOpacityMenuOpen = false;
   let fontRecentColors = loadCrackUiFontRecentColors();
   let chatBackgroundSettings = loadCrackUiChatBackgroundSettings();
   let fontColorPickerOpen = false;
@@ -2502,6 +2523,13 @@
         word-break: keep-all !important;
         overflow-wrap: break-word !important;
         white-space: pre-wrap !important;
+      }
+
+      /* Keep Markdown source-formatting whitespace from stretching blockquote borders.
+         Descendant text still uses the line-break optimization rules above. */
+      html.${CLS.lineBreak} .wrtn-markdown blockquote,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] blockquote {
+        white-space: normal !important;
       }
 
       @media (min-width: 768px) {
@@ -4013,6 +4041,77 @@
         transition: opacity 170ms ease, filter 170ms ease;
       }
 
+      /* Code-block opacity is an on-demand editor, matching the dialogue quote-pair UI.
+         Keep the half card compact and open the range in an overlay only when requested. */
+      #${ID.panel} .crack-ui-font-code-card {
+        position: relative;
+        overflow: visible;
+        z-index: 3;
+      }
+
+      #${ID.panel} .crack-ui-font-code-card > .crack-ui-font-toggle-row {
+        padding-right: 12px;
+        border-radius: 17px 17px 0 0;
+      }
+
+      #${ID.panel} .crack-ui-font-code-card > .crack-ui-font-toggle-row > .crack-ui-row-text {
+        box-sizing: border-box;
+        padding-right: 126px;
+      }
+
+      #${ID.panel} .crack-ui-font-code-card > .crack-ui-font-color-grid {
+        border-radius: 0 0 17px 17px;
+      }
+
+      /* Keep only the shared range row visible. The generic quote-popover shell would add
+         a second translucent card, border and shadow around it, so strip that shell completely. */
+      #${ID.panel} .crack-ui-font-code-opacity-popover {
+        right: -46px;
+        left: 0;
+        width: auto;
+        padding: 0;
+        overflow: visible;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      #${ID.panel} .crack-ui-font-code-opacity-popover .crack-ui-font-range-grid {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 0;
+        border-top: 0;
+        background: transparent !important;
+      }
+
+      /* The outer popover shell stays transparent, but the actual shared range row must be
+         fully opaque. Otherwise the code color controls underneath show through before hover. */
+      #${ID.panel} .crack-ui-font-code-opacity-popover .crack-ui-font-range-grid .crack-ui-range-row {
+        background: #202024 !important;
+        border-color: rgba(255, 255, 255, .10) !important;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, .30);
+      }
+
+      #${ID.panel} .crack-ui-font-code-opacity-popover .crack-ui-font-range-grid .crack-ui-range-row:hover {
+        background: #27272c !important;
+        border-color: rgba(255, 255, 255, .15) !important;
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-code-opacity-popover .crack-ui-font-range-grid .crack-ui-range-row,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-code-opacity-popover .crack-ui-font-range-grid .crack-ui-range-row {
+        background: #f7f7f8 !important;
+        border-color: rgba(17, 24, 39, .10) !important;
+        box-shadow: 0 10px 28px rgba(17, 24, 39, .16);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-code-opacity-popover .crack-ui-font-range-grid .crack-ui-range-row:hover,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-code-opacity-popover .crack-ui-font-range-grid .crack-ui-range-row:hover {
+        background: #ffffff !important;
+        border-color: rgba(17, 24, 39, .14) !important;
+      }
+
       #${ID.panel} .crack-ui-font-highlight-card[data-feature-enabled="0"] .crack-ui-font-accent-switch:disabled {
         opacity: .76;
       }
@@ -5337,7 +5436,8 @@
           padding-right: 12px;
         }
 
-        #${ID.panel} .crack-ui-font-dialogue-card > .crack-ui-font-toggle-row > .crack-ui-row-text {
+        #${ID.panel} .crack-ui-font-dialogue-card > .crack-ui-font-toggle-row > .crack-ui-row-text,
+        #${ID.panel} .crack-ui-font-code-card > .crack-ui-font-toggle-row > .crack-ui-row-text {
           padding-right: 116px;
         }
 
@@ -5742,6 +5842,20 @@
         margin-bottom: 0 !important;
       }
 
+      /* A code block followed by normal text needs the same trailing rhythm as a
+         paragraph. Crack's paragraph-spacing override pins the following paragraph's
+         margin-top to zero, so without this the lower edge of the code block touches
+         the next line even though text above the block remains correctly spaced. */
+      html[data-crack-ui-font-paragraph-spacing="on"] body main .wrtn-codeblock,
+      html[data-crack-ui-font-paragraph-spacing="on"] body main .wrtn-markdown > pre {
+        margin-bottom: var(--crack-ui-font-paragraph-spacing) !important;
+      }
+
+      html[data-crack-ui-font-paragraph-spacing="on"] body main .wrtn-codeblock:last-child,
+      html[data-crack-ui-font-paragraph-spacing="on"] body main .wrtn-markdown > pre:last-child {
+        margin-bottom: 0 !important;
+      }
+
       html[data-crack-ui-font-paragraph-spacing="on"] body main .wrtn-markdown li {
         margin-top: calc(var(--crack-ui-font-paragraph-spacing) * .25) !important;
         margin-bottom: calc(var(--crack-ui-font-paragraph-spacing) * .25) !important;
@@ -5850,15 +5964,20 @@
       html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock,
       html[data-crack-ui-font-code-bg="on"] body main .wrtn-markdown pre {
         overflow: hidden;
-        border: 1px solid rgba(var(--crack-ui-font-code-rgb, 200,166,182), .30) !important;
+        border: 1px solid rgba(var(--crack-ui-font-code-rgb, 200,166,182), var(--crack-ui-font-code-border-alpha, .30)) !important;
         border-radius: 14px !important;
-        background: rgba(var(--crack-ui-font-code-rgb, 200,166,182), .10) !important;
+        background: rgba(var(--crack-ui-font-code-rgb, 200,166,182), var(--crack-ui-font-code-bg-alpha, .10)) !important;
         box-shadow: none !important;
       }
 
       html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock > :first-child {
-        border-bottom: 0 !important;
-        background: rgba(var(--crack-ui-font-code-rgb, 200,166,182), .16) !important;
+        border-bottom: 1px solid rgba(0, 0, 0, var(--crack-ui-font-code-divider-alpha, .22)) !important;
+        background:
+          linear-gradient(
+            rgba(0, 0, 0, var(--crack-ui-font-code-header-shade-alpha, .12)),
+            rgba(0, 0, 0, var(--crack-ui-font-code-header-shade-alpha, .12))
+          ),
+          rgba(var(--crack-ui-font-code-rgb, 200,166,182), var(--crack-ui-font-code-header-alpha, .16)) !important;
       }
 
       html[data-crack-ui-font-code-bg="on"] body main .wrtn-codeblock > :nth-child(2),
@@ -9913,6 +10032,18 @@ ${record.css}`)}`
     setCrackUiFontCssVariable('--crack-ui-font-strong-rgb', crackUiFontHexToRgb(settings.strongBg, '240,224,232'));
     setCrackUiFontCssVariable('--crack-ui-font-strong-highlight-text', getCrackUiFontEffectiveSettingValue('strongBgTextColor'));
     setCrackUiFontCssVariable('--crack-ui-font-code-rgb', crackUiFontHexToRgb(settings.codeAccent, '200,166,182'));
+    const codeBlockOpacityScale = clampCrackUiFontNumber(
+      settings.codeBlockOpacity,
+      FONT_SETTING_RANGE.codeBlockOpacity.min,
+      FONT_SETTING_RANGE.codeBlockOpacity.max,
+      FONT_SETTINGS_DEFAULT.codeBlockOpacity
+    ) / 100;
+    setCrackUiFontCssVariable('--crack-ui-font-code-border-alpha', codeBlockOpacityScale.toFixed(3));
+    setCrackUiFontCssVariable('--crack-ui-font-code-bg-alpha', codeBlockOpacityScale.toFixed(3));
+    setCrackUiFontCssVariable('--crack-ui-font-code-header-alpha', codeBlockOpacityScale.toFixed(3));
+    // Keep header/body separation proportional: both disappear cleanly at 0%.
+    setCrackUiFontCssVariable('--crack-ui-font-code-header-shade-alpha', (codeBlockOpacityScale * 0.12).toFixed(3));
+    setCrackUiFontCssVariable('--crack-ui-font-code-divider-alpha', (codeBlockOpacityScale * 0.22).toFixed(3));
 
     const bodyFamilyStack = crackUiFontCssStack(bodyFamily);
     const codeFamilyStack = crackUiFontCssStack(codeFamily);
@@ -9933,7 +10064,7 @@ ${record.css}`)}`
     setCrackUiFontDataAttribute('data-crack-ui-font-body-font', !!bodyFamily);
     setCrackUiFontDataAttribute('data-crack-ui-font-code-font', !!codeFamily);
     setCrackUiFontDataAttribute('data-crack-ui-font-title-font', !!titleFamily);
-    const typographyCustom = Object.keys(FONT_SETTING_RANGE).some((key) => isCrackUiFontSettingCustom(key, settings));
+    const typographyCustom = FONT_TYPOGRAPHY_RANGE_KEYS.some((key) => isCrackUiFontSettingCustom(key, settings));
     setCrackUiFontDataAttribute('data-crack-ui-font-typography', typographyCustom);
     setCrackUiFontDataAttribute('data-crack-ui-font-size', settings.textScaleCustom);
     setCrackUiFontDataAttribute('data-crack-ui-font-code-size', settings.codeTextScaleCustom);
@@ -10735,25 +10866,54 @@ ${record.css}`)}`
       </div>`;
   }
 
-  function renderCrackUiFontRangeRow(key) {
+  function renderCrackUiFontRangeRow(key, options = {}) {
     const def = FONT_SETTING_RANGE[key];
     const inputConfig = getCrackUiFontRangeInputConfig(key, getCrackUiFontEffectiveSettingValue(key));
+    const showReset = !(options && typeof options === 'object' && options.showReset === false);
+    const resetButton = showReset
+      ? `<button
+              type="button"
+              class="crack-ui-font-range-reset-button"
+              data-crack-ui-font-range-reset="${key}"
+              aria-label="${crackUiFontEscapeHtml(def.label)} 초기화"
+              title="${crackUiFontEscapeHtml(def.label)} 초기화"
+            >↺</button>`
+      : '';
     return `
       <div class="crack-ui-range-row crack-ui-font-range-row">
         <div class="crack-ui-range-head">
           <span class="crack-ui-row-name">${crackUiFontEscapeHtml(def.label)}</span>
           <span class="crack-ui-font-range-actions">
             <span class="crack-ui-range-value" data-crack-ui-font-range-value="${key}">${formatCrackUiFontSettingValue(key, getCrackUiFontEffectiveSettingValue(key))}</span>
-            <button
-              type="button"
-              class="crack-ui-font-range-reset-button"
-              data-crack-ui-font-range-reset="${key}"
-              aria-label="${crackUiFontEscapeHtml(def.label)} 초기화"
-              title="${crackUiFontEscapeHtml(def.label)} 초기화"
-            >↺</button>
+            ${resetButton}
           </span>
         </div>
         <input class="crack-ui-range" type="range" min="${inputConfig.min}" max="${inputConfig.max}" step="${inputConfig.step}" value="${inputConfig.value}" data-crack-ui-font-range="${key}" aria-label="${crackUiFontEscapeHtml(def.label)}">
+      </div>`;
+  }
+
+  function renderCrackUiFontCodeOpacityControl() {
+    const value = Math.round(clampCrackUiFontNumber(
+      fontSettings.codeBlockOpacity,
+      FONT_SETTING_RANGE.codeBlockOpacity.min,
+      FONT_SETTING_RANGE.codeBlockOpacity.max,
+      FONT_SETTINGS_DEFAULT.codeBlockOpacity
+    ));
+    return `
+      <div class="crack-ui-font-quote-tools crack-ui-font-code-opacity-tools" data-crack-ui-font-code-opacity-tools="1" data-open="${fontCodeOpacityMenuOpen ? '1' : '0'}">
+        <button
+          type="button"
+          class="crack-ui-font-quote-toggle crack-ui-font-code-opacity-toggle"
+          data-crack-ui-font-code-opacity-toggle="1"
+          aria-expanded="${fontCodeOpacityMenuOpen ? 'true' : 'false'}"
+          aria-label="코드블럭 불투명도 조절"
+          title="코드블럭 불투명도 조절"
+        ><span>불투명도 <span data-crack-ui-font-code-opacity-current="1">${value}%</span></span><span class="crack-ui-font-quote-toggle-arrow" aria-hidden="true">▾</span></button>
+        <div class="crack-ui-font-quote-popover crack-ui-font-code-opacity-popover" data-crack-ui-font-code-opacity-popover="1"${fontCodeOpacityMenuOpen ? '' : ' hidden'}>
+          <div class="crack-ui-font-range-grid" data-crack-ui-font-code-opacity-control="1">
+            ${renderCrackUiFontRangeRow('codeBlockOpacity', { showReset: false })}
+          </div>
+        </div>
       </div>`;
   }
 
@@ -10843,7 +11003,8 @@ ${record.css}`)}`
     const layoutClass = options.half ? ' crack-ui-font-highlight-card-half' : '';
     const dialogueClass = options.dialogue ? ' crack-ui-font-dialogue-card' : '';
     const italicClass = options.italic ? ' crack-ui-font-italic-card' : '';
-    const extraClass = `${layoutClass}${dialogueClass}${italicClass}`;
+    const codeClass = options.code ? ' crack-ui-font-code-card' : '';
+    const extraClass = `${layoutClass}${dialogueClass}${italicClass}${codeClass}`;
     return `
       <div class="crack-ui-font-card crack-ui-font-highlight-card${extraClass}">
         ${renderCrackUiFontToggleRow(key, label, description)}
@@ -10947,7 +11108,7 @@ ${record.css}`)}`
             ${renderCrackUiFontHighlightCard('codeBlockBgEnabled', '코드블럭', '코드블럭 테두리·배경·글자색을 설정', [
               ['codeAccent', '배경색'],
               ['codeTextColor', '글자색'],
-            ], { half: true })}
+            ], { half: true, code: true, extraHtml: renderCrackUiFontCodeOpacityControl() })}
           </div>
 
           <div class="crack-ui-font-card crack-ui-font-typography-card">
@@ -10964,7 +11125,7 @@ ${record.css}`)}`
               >초기화</button>
             </div>
             <div class="crack-ui-font-range-grid">
-              ${Object.keys(FONT_SETTING_RANGE).map(renderCrackUiFontRangeRow).join('')}
+              ${FONT_TYPOGRAPHY_RANGE_KEYS.map(renderCrackUiFontRangeRow).join('')}
             </div>
           </div>
 
@@ -11375,14 +11536,61 @@ ${record.css}`)}`
 
     const output = panel.querySelector(`[data-crack-ui-font-range-value="${key}"]`);
     if (output) output.textContent = formatCrackUiFontSettingValue(key, effectiveValue);
+    if (key === 'codeBlockOpacity') {
+      const compactValue = panel.querySelector('[data-crack-ui-font-code-opacity-current]');
+      if (compactValue) compactValue.textContent = `${Math.round(Number(effectiveValue) || 0)}%`;
+    }
 
     const reset = panel.querySelector(`[data-crack-ui-font-range-reset="${key}"]`);
-    if (reset) reset.disabled = fontSettings.masterEnabled !== true || !isCrackUiFontSettingCustom(key);
+    if (reset) {
+      if (key === 'codeBlockOpacity') {
+        const featureAvailable = fontSettings.codeBlockBgEnabled === true && fontSettings.codeAccentEnabled === true;
+        reset.disabled = fontSettings.masterEnabled !== true || !featureAvailable ||
+          Number(fontSettings.codeBlockOpacity) === FONT_SETTINGS_DEFAULT.codeBlockOpacity;
+      } else {
+        reset.disabled = fontSettings.masterEnabled !== true || !isCrackUiFontSettingCustom(key);
+      }
+    }
 
     const resetAll = panel.querySelector('[data-crack-ui-font-range-reset-all]');
     if (resetAll) {
       resetAll.disabled = fontSettings.masterEnabled !== true ||
-        !Object.keys(FONT_SETTING_RANGE).some((rangeKey) => isCrackUiFontSettingCustom(rangeKey));
+        !FONT_TYPOGRAPHY_RANGE_KEYS.some((rangeKey) => isCrackUiFontSettingCustom(rangeKey));
+    }
+  }
+
+  function syncCrackUiFontCodeOpacityControl(panel = document.getElementById(ID.panel)) {
+    const tools = panel?.querySelector?.('[data-crack-ui-font-code-opacity-tools]');
+    const toggle = tools?.querySelector?.('[data-crack-ui-font-code-opacity-toggle]');
+    const current = tools?.querySelector?.('[data-crack-ui-font-code-opacity-current]');
+    const available = fontSettings.masterEnabled === true &&
+      fontSettings.codeBlockBgEnabled === true &&
+      fontSettings.codeAccentEnabled === true;
+    const value = Math.round(clampCrackUiFontNumber(
+      fontSettings.codeBlockOpacity,
+      FONT_SETTING_RANGE.codeBlockOpacity.min,
+      FONT_SETTING_RANGE.codeBlockOpacity.max,
+      FONT_SETTINGS_DEFAULT.codeBlockOpacity
+    ));
+    if (current) current.textContent = `${value}%`;
+    if (toggle) toggle.disabled = !available;
+    if (!available && fontCodeOpacityMenuOpen) setCrackUiFontCodeOpacityMenuOpen(false, panel);
+  }
+
+  function setCrackUiFontCodeOpacityMenuOpen(nextOpen, panel = document.getElementById(ID.panel)) {
+    const available = fontSettings.masterEnabled === true &&
+      fontSettings.codeBlockBgEnabled === true &&
+      fontSettings.codeAccentEnabled === true;
+    fontCodeOpacityMenuOpen = nextOpen === true && activePanelSection === 'font' && available;
+    if (!panel) return;
+    const tools = panel.querySelector('[data-crack-ui-font-code-opacity-tools]');
+    if (tools) tools.dataset.open = fontCodeOpacityMenuOpen ? '1' : '0';
+    const popover = tools?.querySelector?.('[data-crack-ui-font-code-opacity-popover]');
+    if (popover) popover.hidden = !fontCodeOpacityMenuOpen;
+    const toggle = tools?.querySelector?.('[data-crack-ui-font-code-opacity-toggle]');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', fontCodeOpacityMenuOpen ? 'true' : 'false');
+      toggle.title = fontCodeOpacityMenuOpen ? '코드블럭 불투명도 닫기' : '코드블럭 불투명도 조절';
     }
   }
 
@@ -11609,6 +11817,7 @@ ${record.css}`)}`
     closeCrackUiFontColorPicker({ commit: true });
     setCrackUiFontPresetMenuOpen(false, panel);
     setCrackUiDialogueQuoteMenuOpen(false, panel);
+    setCrackUiFontCodeOpacityMenuOpen(false, panel);
 
     const value = key === CHAT_BACKGROUND_COLOR_PICKER_KEY
       ? normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color)
@@ -11984,16 +12193,28 @@ ${record.css}`)}`
       input.max = String(inputConfig.max);
       input.step = String(inputConfig.step);
       input.value = String(inputConfig.value);
-      input.disabled = !masterEnabled;
+      const featureAvailable = key !== 'codeBlockOpacity' || (
+        fontSettings.codeBlockBgEnabled === true && fontSettings.codeAccentEnabled === true
+      );
+      input.disabled = !masterEnabled || !featureAvailable;
+      const row = input.closest('.crack-ui-range-row');
+      if (row) row.dataset.disabled = input.disabled ? '1' : '0';
       const output = panel.querySelector(`[data-crack-ui-font-range-value="${key}"]`);
       if (output) output.textContent = formatCrackUiFontSettingValue(key, effectiveValue);
     });
 
     panel.querySelectorAll('[data-crack-ui-font-range-reset]').forEach((button) => {
-      button.disabled = !masterEnabled || !isCrackUiFontSettingCustom(button.dataset.crackUiFontRangeReset);
+      const key = button.dataset.crackUiFontRangeReset;
+      if (key === 'codeBlockOpacity') {
+        const featureAvailable = fontSettings.codeBlockBgEnabled === true && fontSettings.codeAccentEnabled === true;
+        button.disabled = !masterEnabled || !featureAvailable ||
+          Number(fontSettings.codeBlockOpacity) === FONT_SETTINGS_DEFAULT.codeBlockOpacity;
+        return;
+      }
+      button.disabled = !masterEnabled || !isCrackUiFontSettingCustom(key);
     });
     panel.querySelectorAll('[data-crack-ui-font-range-reset-all]').forEach((button) => {
-      button.disabled = !masterEnabled || !Object.keys(FONT_SETTING_RANGE).some((key) => isCrackUiFontSettingCustom(key));
+      button.disabled = !masterEnabled || !FONT_TYPOGRAPHY_RANGE_KEYS.some((key) => isCrackUiFontSettingCustom(key));
     });
 
     panel.querySelectorAll('.crack-ui-font-highlight-card:not(.crack-ui-background-feature-card)').forEach((card) => {
@@ -12013,6 +12234,7 @@ ${record.css}`)}`
     if (italicStyleControl) italicStyleControl.dataset.disabled = italicStyleAvailable ? '0' : '1';
 
     syncCrackUiDialogueQuoteEditor(panel);
+    syncCrackUiFontCodeOpacityControl(panel);
 
     panel.querySelectorAll('[data-crack-ui-font-color-reset]').forEach((button) => {
       const key = button.dataset.crackUiFontColorReset;
@@ -12287,11 +12509,26 @@ ${record.css}`)}`
     // Font toggles are handled manually. Preventing the label's native default click avoids
     // Chromium scrolling the outer settings panel to the focused hidden checkbox.
     panel.addEventListener('click', (event) => {
+      const codeOpacityToggle = event.target?.closest?.('[data-crack-ui-font-code-opacity-toggle]');
+      if (codeOpacityToggle && panel.contains(codeOpacityToggle)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (codeOpacityToggle.disabled) return;
+        setCrackUiDialogueQuoteMenuOpen(false, panel);
+        setCrackUiFontPresetMenuOpen(false, panel);
+        closeCrackUiFontColorPicker({ commit: true });
+        setCrackUiFontCodeOpacityMenuOpen(!fontCodeOpacityMenuOpen, panel);
+        return;
+      }
+
       const quoteToggle = event.target?.closest?.('[data-crack-ui-dialogue-quote-toggle]');
       if (quoteToggle && panel.contains(quoteToggle)) {
         event.preventDefault();
         event.stopPropagation();
         if (quoteToggle.disabled) return;
+        setCrackUiFontCodeOpacityMenuOpen(false, panel);
+        setCrackUiFontPresetMenuOpen(false, panel);
+        closeCrackUiFontColorPicker({ commit: true });
         setCrackUiDialogueQuoteMenuOpen(!fontDialogueQuoteMenuOpen, panel);
         return;
       }
@@ -12362,7 +12599,7 @@ ${record.css}`)}`
       if (rangeResetAll && panel.contains(rangeResetAll)) {
         event.preventDefault();
         event.stopPropagation();
-        resetCrackUiFontRangeSettings(Object.keys(FONT_SETTING_RANGE), panel);
+        resetCrackUiFontRangeSettings(FONT_TYPOGRAPHY_RANGE_KEYS, panel);
         return;
       }
 
@@ -12464,19 +12701,28 @@ ${record.css}`)}`
     });
 
     panel.addEventListener('click', (event) => {
-      if (!fontDialogueQuoteMenuOpen) return;
-      const tools = panel.querySelector('[data-crack-ui-dialogue-quote-tools]');
-      if (tools && !tools.contains(event.target)) setCrackUiDialogueQuoteMenuOpen(false, panel);
+      if (fontDialogueQuoteMenuOpen) {
+        const quoteTools = panel.querySelector('[data-crack-ui-dialogue-quote-tools]');
+        if (quoteTools && !quoteTools.contains(event.target)) setCrackUiDialogueQuoteMenuOpen(false, panel);
+      }
+      if (fontCodeOpacityMenuOpen) {
+        const opacityTools = panel.querySelector('[data-crack-ui-font-code-opacity-tools]');
+        if (opacityTools && !opacityTools.contains(event.target)) setCrackUiFontCodeOpacityMenuOpen(false, panel);
+      }
     });
 
     panel.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || !fontDialogueQuoteMenuOpen) return;
-      setCrackUiDialogueQuoteMenuOpen(false, panel);
+      if (event.key !== 'Escape') return;
+      if (fontDialogueQuoteMenuOpen) setCrackUiDialogueQuoteMenuOpen(false, panel);
+      if (fontCodeOpacityMenuOpen) setCrackUiFontCodeOpacityMenuOpen(false, panel);
     });
 
     panel.querySelector(`#${ID.fontPresetToggleButton}`)?.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
+      setCrackUiDialogueQuoteMenuOpen(false, panel);
+      setCrackUiFontCodeOpacityMenuOpen(false, panel);
+      closeCrackUiFontColorPicker({ commit: true });
       setCrackUiFontPresetMenuOpen(!fontPresetMenuOpen, panel);
     });
 
@@ -12664,6 +12910,7 @@ ${record.css}`)}`
     if (activePanelSection !== 'font') {
       setCrackUiFontPresetMenuOpen(false, panel);
       setCrackUiDialogueQuoteMenuOpen(false, panel);
+      setCrackUiFontCodeOpacityMenuOpen(false, panel);
     }
     if (fontColorPickerOpen) {
       const pickerIsBackground = isCrackUiBackgroundColorPickerKey(fontColorPickerKey);
@@ -13777,6 +14024,7 @@ ${error?.message || error}`);
     clearPanelInteractionState(panel);
     closeMenuAssistModePanels(panel);
     setCrackUiDialogueQuoteMenuOpen(false, panel);
+    setCrackUiFontCodeOpacityMenuOpen(false, panel);
     flushImageSizeSave();
     flushChatWidthSave();
 
