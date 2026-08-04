@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.5.8
+// @version      2.6.0
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.5.8';
+  const CRACK_UI_VERSION = '2.6.0';
 
   function getCrackUiPublicWindow() {
     try {
@@ -442,9 +442,11 @@
   let antiScrollGuardLastBlockedAt = 0;
   let antiScrollManualBottomUntil = 0;
   let antiScrollUserUiUntil = 0;
+  let antiScrollKeyboardViewportUntil = 0;
   let antiScrollBottomButtonListenerInstalled = false;
   let antiScrollManualBottomBypassCount = 0;
   let antiScrollUserUiBypassCount = 0;
+  let antiScrollKeyboardViewportBypassCount = 0;
   let emptySendGuardUiRaf = 0;
   let cachedOriginalModelButton = null;
   let cachedRoomMenuButton = null;
@@ -10167,23 +10169,70 @@
       return true;
     }
 
-    /* Some Crack mobile sheets do not expose a stable dialog attribute.
-       Treat a large fixed ancestor of the focused control as an overlay. */
+    /*
+     * 일부 Crack 모바일 시트는 role=dialog가 없고,
+     * position: fixed도 인라인 style이 아닌 계산 스타일로만 나타난다.
+     *
+     * 계산된 position까지 읽고, 포커스된 편집 요소를 포함하는
+     * 큰 고 z-index absolute 표면도 오버레이로 인정한다.
+     */
     let current = element;
-    const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-    const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    const active = document.activeElement;
+    const activeEditable = isCrackUiAntiScrollEditableElement(active) ? active : null;
+    const viewport = window.visualViewport;
+
+    const viewportWidth = Math.max(
+      1,
+      Number(viewport?.width || window.innerWidth || document.documentElement.clientWidth || 1)
+    );
+
+    const viewportHeight = Math.max(
+      1,
+      Number(viewport?.height || window.innerHeight || document.documentElement.clientHeight || 1)
+    );
 
     while (current && current !== document.body && current !== document.documentElement) {
       const className = String(current.className || '');
       const inlinePosition = String(current.style?.position || '');
-      const looksFixed =
+      let computedPosition = '';
+      let computedZIndex = 0;
+
+      try {
+        const style = getComputedStyle(current);
+        computedPosition = String(style.position || '');
+
+        const parsedZIndex = Number.parseInt(style.zIndex, 10);
+        computedZIndex = Number.isFinite(parsedZIndex) ? parsedZIndex : 0;
+      } catch {
+      }
+
+      const fixedLike =
         inlinePosition === 'fixed' ||
+        computedPosition === 'fixed' ||
         /(?:^|\s)fixed(?:\s|$)/.test(className);
 
-      if (looksFixed) {
+      const elevatedAbsolute =
+        (
+          inlinePosition === 'absolute' ||
+          computedPosition === 'absolute' ||
+          /(?:^|\s)absolute(?:\s|$)/.test(className)
+        ) &&
+        (
+          computedZIndex >= 10 ||
+          /(?:^|\s)z-(?:\[?\d+|modal|dialog)(?:\]?\s|$)/.test(className)
+        );
+
+      const containsFocusedEditor =
+        !!activeEditable && current.contains?.(activeEditable);
+
+      if (fixedLike || (elevatedAbsolute && containsFocusedEditor)) {
         try {
           const rect = current.getBoundingClientRect();
-          if (rect.width >= viewportWidth * 0.62 && rect.height >= viewportHeight * 0.24) {
+
+          if (
+            rect.width >= viewportWidth * 0.62 &&
+            rect.height >= viewportHeight * 0.24
+          ) {
             return true;
           }
         } catch {
@@ -10240,6 +10289,19 @@
     return true;
   }
 
+  function allowCrackUiKeyboardViewportScroll(durationMs = 1300) {
+    antiScrollKeyboardViewportUntil = Math.max(
+      antiScrollKeyboardViewportUntil,
+      Date.now() + Math.max(350, Number(durationMs) || 0)
+    );
+
+    antiScrollKeyboardViewportBypassCount += 1;
+  }
+
+  function isCrackUiKeyboardViewportScrollAllowed() {
+    return Date.now() < antiScrollKeyboardViewportUntil;
+  }
+
   function allowCrackUiUserUiScroll(durationMs = 1500) {
     antiScrollUserUiUntil = Math.max(
       antiScrollUserUiUntil,
@@ -10249,7 +10311,10 @@
   }
 
   function isCrackUiUserUiScrollAllowed() {
-    return Date.now() < antiScrollUserUiUntil;
+    return (
+      Date.now() < antiScrollUserUiUntil ||
+      isCrackUiKeyboardViewportScrollAllowed()
+    );
   }
 
   /* Max의 .stick-to-bottom 채팅 뷰포트 점수화 로직에서 배경 모듈 의존만 제거한 형태 */
@@ -10407,34 +10472,102 @@
   function installCrackUiBottomButtonBypass() {
     if (antiScrollBottomButtonListenerInstalled) return;
 
+    const noteEditableKeyboardRequest = (target, durationMs = 1600) => {
+      if (!antiScrollJacking || !isTouchLikeDevice()) return;
+      if (!isCrackUiAntiScrollEditableElement(target)) return;
+
+      /*
+       * Android는 최초 focus 이후에도 visual viewport를 여러 단계로 이동시킨다.
+       * 키보드 열림/정착 구간만 자동 스크롤 가드에서 제외한다.
+       */
+      allowCrackUiKeyboardViewportScroll(durationMs);
+    };
+
     const markPointerRequest = (event) => {
       if (!antiScrollJacking || event?.isTrusted === false) return;
 
-      /* Mobile dialogs and editable fields need their normal focus/viewport adjustment
-         while the software keyboard is opening. This short window is only created by
-         an actual user interaction and does not apply to output-completion calls. */
+      /*
+       * 실제 UI 조작과 편집창 포커스에는 원본 focus/viewport 보정이 필요하다.
+       * 출력 완료 자동 이동은 trusted 사용자 입력이 아니므로 이 허용 창을 만들지 않는다.
+       */
       if (isCrackUiAntiScrollUiGestureTarget(event?.target)) {
-        allowCrackUiUserUiScroll(1500);
+        allowCrackUiUserUiScroll(1800);
       }
+
+      noteEditableKeyboardRequest(event?.target, 1800);
 
       if (!isCrackUiScrollToBottomButton(event?.target)) return;
 
       /*
-       * Crack의 하단 이동 버튼과 출력 완료 자동 이동은 같은 scroll API를 사용할 수 있다.
-       * 실제 사용자 버튼 입력 직후만 잠시 허용해 자동 이동 차단은 유지한다.
+       * 맨 아래 버튼과 출력 완료 자동 이동은 같은 scroll API를 사용할 수 있다.
+       * 실제 버튼 입력 직후만 잠시 하단 이동을 허용한다.
        */
       allowCrackUiManualScrollToBottom(2000);
     };
 
     const markManualBottomClick = (event) => {
       if (!antiScrollJacking || event?.isTrusted === false) return;
+
       if (isCrackUiScrollToBottomButton(event?.target)) {
         allowCrackUiManualScrollToBottom(2000);
       }
     };
 
+    const markEditableFocus = (event) => {
+      if (!antiScrollJacking) return;
+
+      const target = event?.target;
+      if (!isCrackUiAntiScrollEditableElement(target)) return;
+
+      /*
+       * pointerdown이 wrapper에 걸렸거나 시트 애니메이션 후
+       * 프로그램으로 focus가 위임되는 경로도 focusin에서 잡는다.
+       */
+      allowCrackUiUserUiScroll(1600);
+      noteEditableKeyboardRequest(target, 1800);
+    };
+
+    const markKeyboardViewportChange = () => {
+      if (!antiScrollJacking || !isTouchLikeDevice()) return;
+
+      const active = document.activeElement;
+
+      if (
+        !isCrackUiAntiScrollEditableElement(active) &&
+        !isCrackUiAntiScrollOverlayOpen()
+      ) {
+        return;
+      }
+
+      /*
+       * 최초 터치 기준 고정 시간이 아니라,
+       * 키보드 애니메이션의 마지막 resize/scroll 단계부터 다시 1.4초를 연장한다.
+       */
+      allowCrackUiKeyboardViewportScroll(1400);
+    };
+
     document.addEventListener('pointerdown', markPointerRequest, true);
     document.addEventListener('click', markManualBottomClick, true);
+    document.addEventListener('focusin', markEditableFocus, true);
+
+    window.addEventListener(
+      'resize',
+      markKeyboardViewportChange,
+      { passive: true }
+    );
+
+    window.visualViewport?.addEventListener?.(
+      'resize',
+      markKeyboardViewportChange,
+      { passive: true }
+    );
+
+    window.visualViewport?.addEventListener?.(
+      'scroll',
+      markKeyboardViewportChange,
+      { passive: true }
+    );
+
     antiScrollBottomButtonListenerInstalled = true;
   }
 
@@ -10597,9 +10730,16 @@
             return originalFocus.apply(this, arguments);
           }
 
-          /* Never force preventScroll inside a modal/bottom sheet. On Android this can
-             stop the visual viewport from lifting the editor above the software keyboard. */
-          if (isCrackUiAntiScrollOverlayElement(this)) {
+          /*
+           * 실제 편집 요소나 모달/바텀시트에는 절대 preventScroll을 강제하지 않는다.
+           *
+           * Android는 소프트 키보드가 완전히 열린 뒤 마지막 native pan을 실행할 수 있다.
+           * 이를 막으면 입력창 아래 컨트롤이 키보드 뒤에 남는다.
+           */
+          if (
+            isCrackUiAntiScrollEditableElement(this) ||
+            isCrackUiAntiScrollOverlayElement(this)
+          ) {
             return originalFocus.apply(this, arguments);
           }
 
@@ -10672,6 +10812,7 @@
     if (!antiScrollJacking || !crackUiIsConversationRoute()) {
       cachedAntiScrollScroller = null;
       cachedAntiScrollHref = '';
+      antiScrollKeyboardViewportUntil = 0;
     }
   }
 
@@ -11817,6 +11958,9 @@
         antiScrollUserUiUntil,
         antiScrollUserUiBypassCount,
         antiScrollUserUiAllowed: isCrackUiUserUiScrollAllowed(),
+        antiScrollKeyboardViewportUntil,
+        antiScrollKeyboardViewportBypassCount,
+        antiScrollKeyboardViewportAllowed: isCrackUiKeyboardViewportScrollAllowed(),
         antiScrollOverlayOpen: isCrackUiAntiScrollOverlayOpen(),
         antiScrollReadingUp: antiScrollJacking ? isCrackUiUserReadingUp() : false,
         pauseAnimatedThumbs,
