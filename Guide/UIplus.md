@@ -30,10 +30,10 @@
     ⤷ 표시할 모델 : 미선택한 모델은 상단 모델 선택창과 입력창 모델 선택창에서 모두 숨김
 
 ➢ 채팅방 설정 자동 숨김 : 채팅방 설정창을 자동으로 숨김
-<img width="1172" height="341" alt="image" src="https://github.com/user-attachments/assets/3465a156-6155-44f9-bad1-078dd9fa8863" />
+<img width="582" height="174" alt="image" src="https://github.com/user-attachments/assets/41c89866-fb3d-45a5-99cb-9950284d11e0" />
 
     ⤷ PC : 화면 오른쪽 끝에 마우스를 가져가면 나타남
-    ⤷ 태블릿 / 모바일 : 오른쪽 핸들이나 슬라이드 기능으로 열 수 있음
+    ⤷ 태블릿 / 모바일 : 오른쪽 핸들이나 우에서 좌로 슬라이드 기능으로 열 수 있음
 
 ➢ 스탯창 숨김 : 스탯이 존재하는 채팅에서 상단 스탯창을 숨김
 
