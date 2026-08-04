@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.33
+// @version      2.7.34
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.33';
+  const CRACK_UI_VERSION = '2.7.34';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2411,14 +2411,14 @@
         width: 3px;
         height: 30px;
         border-radius: 999px;
-        background: rgba(165, 165, 175, .62);
+        background: rgba(255, 255, 255, .28);
         box-shadow: none;
         transform: translateY(-50%);
       }
 
       html[data-theme="light"].${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListHandle}::after,
       body[data-theme="light"] #${ID.chatListHandle}::after {
-        background: rgba(120, 120, 128, .44);
+        background: rgba(255, 255, 255, .28);
         box-shadow: none;
       }
 
@@ -6664,7 +6664,7 @@
           width: 3px;
           height: 30px;
           border-radius: 999px;
-          background: rgba(165, 165, 175, .62);
+          background: rgba(255, 255, 255, .28);
           box-shadow: none;
           transform: translateY(-50%);
         }
@@ -6711,14 +6711,14 @@
           width: 3px;
           height: 30px;
           border-radius: 999px;
-          background: rgba(165, 165, 175, .62);
+          background: rgba(255, 255, 255, .28);
           box-shadow: none;
           transform: translateY(-50%);
         }
 
         html[data-theme="light"].${CLS.roomMenuEnabled} #${ID.roomMenuHandle}::after,
         body[data-theme="light"] #${ID.roomMenuHandle}::after {
-          background: rgba(120, 120, 128, .44);
+          background: rgba(255, 255, 255, .28);
           box-shadow: none;
         }
 
