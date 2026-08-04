@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.26
+// @version      2.7.27
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.26';
+  const CRACK_UI_VERSION = '2.7.27';
 
   function getCrackUiPublicWindow() {
     try {
@@ -10768,7 +10768,7 @@ ${record.css}`)}`
     }
   }
 
-  function releaseCrackUiFontAssignmentPickerActive(select, { delay = 0, force = false } = {}) {
+  function releaseCrackUiFontAssignmentPickerActive(select, { delay = 0, force = false, sync = true } = {}) {
     if (!(select instanceof HTMLSelectElement)) return;
     const release = () => {
       if (!select.isConnected) return;
@@ -10778,7 +10778,7 @@ ${record.css}`)}`
       delete select.dataset.crackUiFontPickerTouch;
       delete select.dataset.crackUiFontPickerActiveUntil;
       const panel = select.closest(`#${ID.panel}`);
-      if (panel) syncCrackUiFontSettingsUi(panel);
+      if (sync && panel) syncCrackUiFontSettingsUi(panel);
     };
     if (delay > 0) setTimeout(release, delay);
     else release();
@@ -10817,8 +10817,9 @@ ${record.css}`)}`
 
     if (!pickerActive && select.value !== selectedId) select.value = selectedId;
     // Some Android WebViews close and reopen the native picker when even a same-value
-    // property write lands while the sheet is opening. Leave the live select untouched.
-    if (!pickerActive) select.disabled = !masterEnabled;
+    // property write lands while the sheet is opening or closing. Write only on a real change.
+    const shouldDisable = !masterEnabled;
+    if (!pickerActive && select.disabled !== shouldDisable) select.disabled = shouldDisable;
   }
 
   function renderCrackUiFontSelectOptions(selectedId = '') {
@@ -11217,30 +11218,30 @@ ${record.css}`)}`
               </span>
             </div>
             <div class="crack-ui-font-select-grid">
-              <label class="crack-ui-font-select-field">
+              <div class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">본문</span>
-                <select id="${ID.fontBodySelect}" data-crack-ui-font-assignment="bodyFontId">${renderCrackUiFontSelectOptions(fontSettings.bodyFontId)}</select>
+                <select id="${ID.fontBodySelect}" data-crack-ui-font-assignment="bodyFontId" aria-label="본문 폰트">${renderCrackUiFontSelectOptions(fontSettings.bodyFontId)}</select>
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="body" aria-label="본문 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">가나다라마바사 아자차카타파하</span>
                   <span class="crack-ui-font-preview-line">The quick brown fox · 1234567890</span>
                 </span>
-              </label>
-              <label class="crack-ui-font-select-field">
+              </div>
+              <div class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">코드블럭</span>
-                <select id="${ID.fontCodeSelect}" data-crack-ui-font-assignment="codeFontId">${renderCrackUiFontSelectOptions(fontSettings.codeFontId)}</select>
+                <select id="${ID.fontCodeSelect}" data-crack-ui-font-assignment="codeFontId" aria-label="코드블럭 폰트">${renderCrackUiFontSelectOptions(fontSettings.codeFontId)}</select>
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="code" aria-label="코드블럭 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">const message = "안녕하세요";</span>
                   <span class="crack-ui-font-preview-line">console.log(message); // 123</span>
                 </span>
-              </label>
-              <label class="crack-ui-font-select-field">
+              </div>
+              <div class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">타이틀</span>
-                <select id="${ID.fontTitleSelect}" data-crack-ui-font-assignment="titleFontId">${renderCrackUiFontSelectOptions(fontSettings.titleFontId)}</select>
+                <select id="${ID.fontTitleSelect}" data-crack-ui-font-assignment="titleFontId" aria-label="타이틀 폰트">${renderCrackUiFontSelectOptions(fontSettings.titleFontId)}</select>
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="title" aria-label="타이틀 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">가나다라마바사 타이틀 미리보기</span>
                   <span class="crack-ui-font-preview-line">Sample title · 1234567890</span>
                 </span>
-              </label>
+              </div>
             </div>
           </div>
 
@@ -12457,7 +12458,11 @@ ${record.css}`)}`
     const panel = document.getElementById(ID.panel);
     const isRangeUpdate = Object.prototype.hasOwnProperty.call(FONT_SETTING_RANGE, key);
     const isLiveRangeUpdate = isRangeUpdate && options.flush !== true && !!activePanelRangePreviewInput;
-    const scrollSnapshot = isLiveRangeUpdate ? null : getCrackUiFontScrollSnapshot(panel);
+    const preserveScroll = options.preserveScroll !== false;
+    const syncUi = options.syncUi !== false;
+    const scrollSnapshot = isLiveRangeUpdate || !preserveScroll
+      ? null
+      : getCrackUiFontScrollSnapshot(panel);
 
     // Do not cancel the live preview on every range input event. Pointer/input delegation
     // starts it, and change/blur ends it exactly like the original image/chat-width sliders.
@@ -12516,10 +12521,10 @@ ${record.css}`)}`
       return;
     }
 
-    syncCrackUiFontSettingsUi(panel);
+    if (syncUi) syncCrackUiFontSettingsUi(panel);
     if (options.flush) persistCrackUiFontSettings();
     else saveCrackUiFontSettingsSoon();
-    restoreCrackUiFontScrollSnapshot(scrollSnapshot);
+    if (scrollSnapshot) restoreCrackUiFontScrollSnapshot(scrollSnapshot);
   }
 
   function resetCrackUiFontRangeSettings(keys, panel = document.getElementById(ID.panel)) {
@@ -12615,6 +12620,12 @@ ${record.css}`)}`
       panel.querySelectorAll('select[data-crack-ui-font-assignment][data-crack-ui-font-picker-touch="1"]')
         .forEach((select) => releaseCrackUiFontAssignmentPickerActive(select, { force: true }));
     }, true);
+
+    // A mobile native <select> must receive its own click exactly once. Stop bubbling
+    // at the control itself without cancelling the browser's native picker action.
+    panel.querySelectorAll('select[data-crack-ui-font-assignment]').forEach((select) => {
+      select.addEventListener('click', (event) => event.stopPropagation());
+    });
 
     // Font toggles are handled manually. Preventing the label's native default click avoids
     // Chromium scrolling the outer settings panel to the focused hidden checkbox.
@@ -12741,9 +12752,19 @@ ${record.css}`)}`
     panel.addEventListener('change', (event) => {
       const target = event.target;
       if (target instanceof HTMLSelectElement && target.matches('[data-crack-ui-font-assignment]')) {
-        updateCrackUiFontSetting(target.dataset.crackUiFontAssignment, target.value, { flush: true });
-        // Let the native sheet finish closing before normal select synchronization resumes.
-        releaseCrackUiFontAssignmentPickerActive(target, { delay: 250, force: true });
+        updateCrackUiFontSetting(target.dataset.crackUiFontAssignment, target.value, {
+          flush: true,
+          syncUi: false,
+          preserveScroll: false,
+        });
+        // The native control already owns the chosen value. Do not immediately run a full UI
+        // sync while Android's sheet is closing; touching the select can reopen it a second time.
+        const touchPicker = target.dataset.crackUiFontPickerTouch === '1';
+        releaseCrackUiFontAssignmentPickerActive(target, {
+          delay: touchPicker ? 700 : 250,
+          force: true,
+          sync: !touchPicker,
+        });
         return;
       }
       if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
