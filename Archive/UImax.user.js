@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.30
+// @version      2.7.31
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.30';
+  const CRACK_UI_VERSION = '2.7.31';
 
   function getCrackUiPublicWindow() {
     try {
@@ -19607,20 +19607,19 @@ ${error?.message || error}`);
       '[data-radix-dialog-content][data-state="open"]'
     );
 
-    for (const element of candidates) {
-      if (!element?.isConnected) continue;
+    return [...candidates].some((element) => {
+      if (!element?.isConnected) return false;
 
       try {
         const rect = element.getBoundingClientRect();
-        if (rect.width <= 1 || rect.height <= 1) continue;
+        if (rect.width <= 1 || rect.height <= 1) return false;
 
         const style = getComputedStyle(element);
-        if (style.display !== 'none' && style.visibility !== 'hidden') return true;
+        return style.display !== 'none' && style.visibility !== 'hidden';
       } catch {
+        return false;
       }
-    }
-
-    return false;
+    });
   }
 
   function isCrackUiAntiScrollUiGestureTarget(target) {
@@ -19635,12 +19634,9 @@ ${error?.message || error}`);
 
     if (!interactive) return false;
 
-    /* Sending a message must not create a bypass window that could cover a very short response.
-       Check only the clicked control instead of rescanning every button in the page. */
-    const interactiveButton = interactive.matches?.('button')
-      ? interactive
-      : interactive.closest?.('button');
-    if (interactiveButton && isChatComposerSendButton(interactiveButton)) return false;
+    /* Sending a message must not create a bypass window that could cover a very short response. */
+    const sendButton = findBottomSendButton();
+    if (sendButton && (interactive === sendButton || sendButton.contains?.(interactive))) return false;
 
     return true;
   }
@@ -19671,8 +19667,10 @@ ${error?.message || error}`);
 
   function findCrackUiAntiScrollScroller() {
     if (!crackUiIsConversationRoute()) return null;
+    const cacheHasConversation = !!cachedAntiScrollScroller?.querySelector?.('[data-message-group-id], .wrtn-markdown');
     if (
       cachedAntiScrollHref === location.href &&
+      cacheHasConversation &&
       isCrackUiAntiScrollScrollable(cachedAntiScrollScroller)
     ) {
       return cachedAntiScrollScroller;
@@ -19714,8 +19712,8 @@ ${error?.message || error}`);
       !antiScrollJacking ||
       !crackUiIsConversationRoute() ||
       isCrackUiUserUiScrollAllowed() ||
-      !isCrackUiAntiScrollScrollable(scroller) ||
-      isCrackUiAntiScrollOverlayOpen()
+      isCrackUiAntiScrollOverlayOpen() ||
+      !isCrackUiAntiScrollScrollable(scroller)
     ) {
       return false;
     }
@@ -19801,13 +19799,7 @@ ${error?.message || error}`);
     };
 
     const markManualBottomClick = (event) => {
-      if (
-        !antiScrollJacking ||
-        event?.isTrusted === false ||
-        isCrackUiManualScrollToBottomAllowed()
-      ) {
-        return;
-      }
+      if (!antiScrollJacking || event?.isTrusted === false) return;
       if (isCrackUiScrollToBottomButton(event?.target)) {
         allowCrackUiManualScrollToBottom(2000);
       }
@@ -19828,16 +19820,7 @@ ${error?.message || error}`);
       if (!antiScrollJacking || !isTouchLikeDevice()) return;
 
       const active = document.activeElement;
-
-      /* Android may temporarily move focus away from the editor while the keyboard
-         and modal finish their visual-viewport adjustment. Keep extending the bypass
-         while either the editor still owns focus or its overlay remains open. */
-      if (
-        !isCrackUiAntiScrollEditableElement(active) &&
-        !isCrackUiAntiScrollOverlayOpen()
-      ) {
-        return;
-      }
+      if (!isCrackUiAntiScrollEditableElement(active) && !isCrackUiAntiScrollOverlayOpen()) return;
 
       /* Every resize/offset step extends from the latest keyboard animation frame,
          rather than relying on one fixed delay from the original tap. */
@@ -19866,27 +19849,16 @@ ${error?.message || error}`);
   function shouldCrackUiBlockElementScrollMethod(method, target, args) {
     if (!antiScrollJacking || !crackUiIsConversationRoute()) return false;
     if (isCrackUiManualScrollToBottomAllowed()) return false;
-
+    if (isCrackUiAntiScrollOverlayElement(target)) return false;
     const scroller = findCrackUiAntiScrollScroller();
-    const intoView = method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded';
+    if (!isCrackUiUserReadingUp(scroller)) return false;
 
-    if (intoView) {
-      if (
-        !target ||
-        !(scroller === document.scrollingElement || scroller?.contains?.(target))
-      ) {
-        return false;
-      }
-      if (isCrackUiAntiScrollOverlayElement(target)) return false;
-      if (!isCrackUiUserReadingUp(scroller)) return false;
-
+    if (method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded') {
+      if (!target || !(scroller === document.scrollingElement || scroller.contains?.(target))) return false;
       try {
         const targetRect = target.getBoundingClientRect();
         const scrollerRect = scroller === document.scrollingElement
-          ? {
-              top: 0,
-              bottom: window.innerHeight || document.documentElement.clientHeight || 0,
-            }
+          ? { top: 0, bottom: window.innerHeight || document.documentElement.clientHeight || 0 }
           : scroller.getBoundingClientRect();
         return targetRect.bottom > scrollerRect.bottom + 1;
       } catch {
@@ -19894,10 +19866,7 @@ ${error?.message || error}`);
       }
     }
 
-    // Direct scroll/scrollTo/scrollBy calls matter only on the cached chat scroller.
-    // Reject other elements before doing overlay/style or reading-up work.
-    if (target !== scroller || !isCrackUiUserReadingUp(scroller)) return false;
-
+    if (target !== scroller) return false;
     const requestedTop = getCrackUiRequestedScrollTop(method, args, scroller.scrollTop);
     return requestedTop != null && requestedTop > scroller.scrollTop + 0.5;
   }
