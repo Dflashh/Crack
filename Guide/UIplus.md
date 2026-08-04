@@ -1,5 +1,5 @@
 # Crack UI Plus 가이드
-<img width="1920" height="72" alt="image" src="https://github.com/user-attachments/assets/5457dd41-e522-4572-be70-6b7de6c0deb3" />
+<img width="1920" height="98" alt="image" src="https://github.com/user-attachments/assets/6c9c71bc-a32e-49a5-aea2-614f0a4af410" />
 
 **➢ 설정창** : PC / 태블릿 / 모바일 모두 검색창 옆 톱니바퀴를 눌러 사용 가능
 
