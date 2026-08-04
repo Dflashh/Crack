@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.28
+// @version      2.7.30
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.28';
+  const CRACK_UI_VERSION = '2.7.30';
 
   function getCrackUiPublicWindow() {
     try {
@@ -4655,16 +4655,6 @@
         to { opacity: 1; transform: translateY(0); }
       }
 
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-handle {
-        display: block;
-        width: 40px;
-        height: 4px;
-        flex: 0 0 auto;
-        margin: 9px auto 2px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, .20);
-      }
-
       #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head {
         display: flex;
         min-height: 48px;
@@ -5621,11 +5611,6 @@
         background: rgb(255, 255, 255);
         color: rgba(17, 24, 39, .94);
         box-shadow: 0 18px 48px rgba(15, 23, 42, .22), inset 0 1px 0 rgba(255, 255, 255, .92);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-handle,
-      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-handle {
-        background: rgba(17, 24, 39, .18);
       }
 
       body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head,
@@ -11130,7 +11115,6 @@ ${record.css}`)}`
           tabindex="-1"
         ></button>
         <div class="crack-ui-font-assignment-sheet">
-          <span class="crack-ui-font-assignment-sheet-handle" aria-hidden="true"></span>
           <div class="crack-ui-font-assignment-sheet-head">
             <span id="${ID.fontAssignmentPickerTitle}" class="crack-ui-font-assignment-sheet-title">${crackUiFontEscapeHtml(title)}</span>
             <button
@@ -19843,10 +19827,17 @@ ${error?.message || error}`);
     const markKeyboardViewportChange = () => {
       if (!antiScrollJacking || !isTouchLikeDevice()) return;
 
-      // Keyboard viewport changes are relevant only while a real editor owns focus.
-      // A merely open modal should not extend the auto-scroll bypass on every resize.
       const active = document.activeElement;
-      if (!isCrackUiAntiScrollEditableElement(active)) return;
+
+      /* Android may temporarily move focus away from the editor while the keyboard
+         and modal finish their visual-viewport adjustment. Keep extending the bypass
+         while either the editor still owns focus or its overlay remains open. */
+      if (
+        !isCrackUiAntiScrollEditableElement(active) &&
+        !isCrackUiAntiScrollOverlayOpen()
+      ) {
+        return;
+      }
 
       /* Every resize/offset step extends from the latest keyboard animation frame,
          rather than relying on one fixed delay from the original tap. */
