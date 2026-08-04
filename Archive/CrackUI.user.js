@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.6.0
+// @version      2.6.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.6.0';
+  const CRACK_UI_VERSION = '2.6.1';
 
   function getCrackUiPublicWindow() {
     try {
@@ -660,15 +660,15 @@
         width: 3px;
         height: 30px;
         border-radius: 999px;
-        background: rgba(165, 165, 175, .62);
-        box-shadow: none;
+        background: rgba(255, 255, 255, .28);
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
         transform: translateY(-50%);
       }
 
       html[data-theme="light"].${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListHandle}::after,
       body[data-theme="light"] #${ID.chatListHandle}::after {
-        background: rgba(120, 120, 128, .44);
-        box-shadow: none;
+        background: rgba(255, 255, 255, .28);
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
       }
 
       html.${CLS.chatListMobilePopoverOpen} #${ID.chatListZone},
@@ -2464,8 +2464,8 @@
           width: 3px;
           height: 30px;
           border-radius: 999px;
-          background: rgba(165, 165, 175, .62);
-          box-shadow: none;
+          background: rgba(255, 255, 255, .28);
+          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
           transform: translateY(-50%);
         }
 
@@ -2511,15 +2511,15 @@
           width: 3px;
           height: 30px;
           border-radius: 999px;
-          background: rgba(165, 165, 175, .62);
-          box-shadow: none;
+          background: rgba(255, 255, 255, .28);
+          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
           transform: translateY(-50%);
         }
 
         html[data-theme="light"].${CLS.roomMenuEnabled} #${ID.roomMenuHandle}::after,
         body[data-theme="light"] #${ID.roomMenuHandle}::after {
-          background: rgba(120, 120, 128, .44);
-          box-shadow: none;
+          background: rgba(255, 255, 255, .28);
+          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle}[data-has-dot="1"]::before {
