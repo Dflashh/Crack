@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.34
+// @version      3.0.0
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -11,7 +11,7 @@
 // @grant        unsafeWindow
 // @connect      crack-api.wrtn.ai
 // @connect      *
-// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UI.webp
+// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UImax.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // ==/UserScript==
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.34';
+  const CRACK_UI_VERSION = '3.0.0';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2412,14 +2412,14 @@
         height: 30px;
         border-radius: 999px;
         background: rgba(255, 255, 255, .28);
-        box-shadow: none;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
         transform: translateY(-50%);
       }
 
       html[data-theme="light"].${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListHandle}::after,
       body[data-theme="light"] #${ID.chatListHandle}::after {
         background: rgba(255, 255, 255, .28);
-        box-shadow: none;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
       }
 
       html.${CLS.chatListMobilePopoverOpen} #${ID.chatListZone},
@@ -6665,7 +6665,7 @@
           height: 30px;
           border-radius: 999px;
           background: rgba(255, 255, 255, .28);
-          box-shadow: none;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
           transform: translateY(-50%);
         }
 
@@ -6712,14 +6712,14 @@
           height: 30px;
           border-radius: 999px;
           background: rgba(255, 255, 255, .28);
-          box-shadow: none;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
           transform: translateY(-50%);
         }
 
         html[data-theme="light"].${CLS.roomMenuEnabled} #${ID.roomMenuHandle}::after,
         body[data-theme="light"] #${ID.roomMenuHandle}::after {
           background: rgba(255, 255, 255, .28);
-          box-shadow: none;
+          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle}[data-has-dot="1"]::before {
