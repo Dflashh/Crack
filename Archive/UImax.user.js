@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.27
+// @version      2.7.28
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.27';
+  const CRACK_UI_VERSION = '2.7.28';
 
   function getCrackUiPublicWindow() {
     try {
@@ -112,6 +112,10 @@
     fontBodySelect: 'crack-ui-font-body-select',
     fontCodeSelect: 'crack-ui-font-code-select',
     fontTitleSelect: 'crack-ui-font-title-select',
+    fontAssignmentPicker: 'crack-ui-font-assignment-picker',
+    fontAssignmentPickerTitle: 'crack-ui-font-assignment-picker-title',
+    fontAssignmentPickerList: 'crack-ui-font-assignment-picker-list',
+    fontAssignmentPickerClose: 'crack-ui-font-assignment-picker-close',
     fontSavedList: 'crack-ui-font-saved-list',
     fontSaveButton: 'crack-ui-font-save-button',
     fontFileButton: 'crack-ui-font-file-button',
@@ -2052,6 +2056,9 @@
   let fontPresetMenuOpen = false;
   let fontDialogueQuoteMenuOpen = false;
   let fontCodeOpacityMenuOpen = false;
+  let fontAssignmentPickerOpen = false;
+  let fontAssignmentPickerKey = '';
+  let fontAssignmentPickerTrigger = null;
   let fontRecentColors = loadCrackUiFontRecentColors();
   let chatBackgroundSettings = loadCrackUiChatBackgroundSettings();
   let fontColorPickerOpen = false;
@@ -4541,12 +4548,16 @@
       }
 
 
-      #${ID.panel} .crack-ui-font-select-field select {
+      #${ID.panel} .crack-ui-font-assignment-trigger {
+        display: flex;
         width: 100%;
         height: 34px;
         min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
         box-sizing: border-box;
-        padding: 0 32px 0 10px;
+        padding: 0 10px;
         border: 1px solid rgba(255, 255, 255, .09);
         border-radius: 11px;
         outline: none;
@@ -4555,6 +4566,230 @@
         font: inherit;
         font-size: 11px;
         font-weight: 700;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 130ms ease, background-color 130ms ease, opacity 130ms ease;
+      }
+
+      #${ID.panel} .crack-ui-font-assignment-trigger:hover:not(:disabled),
+      #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"] {
+        border-color: rgba(254, 69, 50, .42);
+        background: rgba(254, 69, 50, .09);
+      }
+
+      #${ID.panel} .crack-ui-font-assignment-trigger:focus-visible {
+        border-color: rgba(254, 69, 50, .58);
+        box-shadow: 0 0 0 3px rgba(254, 69, 50, .12);
+      }
+
+      #${ID.panel} .crack-ui-font-assignment-trigger:disabled {
+        cursor: default;
+        opacity: .42;
+      }
+
+      #${ID.panel} .crack-ui-font-assignment-current {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #${ID.panel} .crack-ui-font-assignment-arrow {
+        flex: 0 0 auto;
+        font-size: 9px;
+        transition: transform 150ms ease;
+      }
+
+      #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"] .crack-ui-font-assignment-arrow {
+        transform: rotate(180deg);
+      }
+
+      #${ID.fontAssignmentPicker} {
+        position: absolute;
+        z-index: 80;
+        inset: 0;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        box-sizing: border-box;
+        padding: 10px;
+        overflow: hidden;
+        border-radius: inherit;
+      }
+
+      #${ID.fontAssignmentPicker}[hidden] {
+        display: none !important;
+      }
+
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-picker-backdrop {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: rgba(0, 0, 0, .42);
+        cursor: default;
+      }
+
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        width: min(560px, 100%);
+        max-height: min(72%, 520px);
+        flex-direction: column;
+        box-sizing: border-box;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: 20px;
+        background: rgb(31, 31, 34);
+        color: rgba(255, 255, 255, .94);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .06);
+        animation: crackUiFontAssignmentSheetIn 160ms ease-out;
+      }
+
+      @keyframes crackUiFontAssignmentSheetIn {
+        from { opacity: 0; transform: translateY(18px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-handle {
+        display: block;
+        width: 40px;
+        height: 4px;
+        flex: 0 0 auto;
+        margin: 9px auto 2px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .20);
+      }
+
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head {
+        display: flex;
+        min-height: 48px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 4px 10px 8px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, .08);
+      }
+
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-title {
+        min-width: 0;
+        overflow: hidden;
+        font-size: 14px;
+        font-weight: 900;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close {
+        display: inline-flex;
+        width: 34px;
+        height: 34px;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .06);
+        color: rgba(255, 255, 255, .70);
+        font: inherit;
+        font-size: 22px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close:hover,
+      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close:focus-visible {
+        outline: none;
+        background: rgba(255, 255, 255, .11);
+        color: rgba(255, 255, 255, .96);
+      }
+
+      #${ID.fontAssignmentPickerList} {
+        display: flex;
+        min-height: 0;
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 7px;
+        padding: 10px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option {
+        display: flex;
+        width: 100%;
+        min-height: 56px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        box-sizing: border-box;
+        padding: 9px 12px;
+        border: 1px solid rgba(255, 255, 255, .075);
+        border-radius: 14px;
+        outline: none;
+        background: rgba(255, 255, 255, .035);
+        color: rgba(255, 255, 255, .90);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:hover,
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:focus-visible {
+        border-color: rgba(254, 69, 50, .40);
+        background: rgba(254, 69, 50, .08);
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"] {
+        border-color: rgba(254, 69, 50, .58);
+        background: rgba(254, 69, 50, .13);
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-copy {
+        display: flex;
+        min-width: 0;
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-name,
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-name {
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample {
+        color: rgba(255, 255, 255, .52);
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-check {
+        flex: 0 0 auto;
+        color: #FE4532;
+        font-size: 16px;
+        font-weight: 900;
+        opacity: 0;
+      }
+
+      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"] .crack-ui-font-assignment-option-check {
+        opacity: 1;
       }
 
       #${ID.panel} .crack-ui-font-preview {
@@ -4601,7 +4836,7 @@
         white-space: nowrap;
       }
 
-      #${ID.panel} .crack-ui-font-select-field select:disabled + .crack-ui-font-preview {
+      #${ID.panel} .crack-ui-font-assignment-trigger:disabled + .crack-ui-font-preview {
         opacity: .38;
       }
 
@@ -5360,11 +5595,70 @@
         color: rgba(17, 24, 39, .90);
       }
 
-      body[data-theme="light"] #${ID.panel} .crack-ui-font-select-field select,
-      html[data-theme="light"] #${ID.panel} .crack-ui-font-select-field select {
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger {
         border-color: rgba(17, 24, 39, .09);
         background: rgba(17, 24, 39, .035);
         color: rgba(17, 24, 39, .90);
+      }
+
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger:hover:not(:disabled),
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger:hover:not(:disabled),
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"],
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"] {
+        border-color: rgba(254, 69, 50, .42);
+        background: rgba(254, 69, 50, .08);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-picker-backdrop,
+      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-picker-backdrop {
+        background: rgba(15, 23, 42, .24);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet,
+      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet {
+        border-color: rgba(17, 24, 39, .10);
+        background: rgb(255, 255, 255);
+        color: rgba(17, 24, 39, .94);
+        box-shadow: 0 18px 48px rgba(15, 23, 42, .22), inset 0 1px 0 rgba(255, 255, 255, .92);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-handle,
+      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-handle {
+        background: rgba(17, 24, 39, .18);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head,
+      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head {
+        border-bottom-color: rgba(17, 24, 39, .08);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close,
+      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close {
+        background: rgba(17, 24, 39, .055);
+        color: rgba(17, 24, 39, .58);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option,
+      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option {
+        border-color: rgba(17, 24, 39, .075);
+        background: rgba(17, 24, 39, .025);
+        color: rgba(17, 24, 39, .90);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:hover,
+      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:hover,
+      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:focus-visible,
+      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:focus-visible,
+      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"],
+      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"] {
+        border-color: rgba(254, 69, 50, .42);
+        background: rgba(254, 69, 50, .08);
+      }
+
+      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample,
+      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample {
+        color: rgba(17, 24, 39, .50);
       }
 
 
@@ -10741,6 +11035,12 @@ ${record.css}`)}`
     return count ? `저장된 폰트 ${count}개` : '저장된 폰트 없음';
   }
 
+  const CRACK_UI_FONT_ASSIGNMENT_META = Object.freeze({
+    bodyFontId: Object.freeze({ id: ID.fontBodySelect, label: '본문' }),
+    codeFontId: Object.freeze({ id: ID.fontCodeSelect, label: '코드블럭' }),
+    titleFontId: Object.freeze({ id: ID.fontTitleSelect, label: '타이틀' }),
+  });
+
   function getCrackUiFontSelectOptionEntries(records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
     return [
       ['', 'Crack 기본 폰트'],
@@ -10748,84 +11048,195 @@ ${record.css}`)}`
     ];
   }
 
-  function getCrackUiFontSelectOptionSignature(entries = getCrackUiFontSelectOptionEntries()) {
-    return JSON.stringify(entries);
-  }
-
-  function getCrackUiFontSelectCurrentSignature(select) {
-    if (!(select instanceof HTMLSelectElement)) return '';
-    return JSON.stringify([...select.options].map((option) => [option.value, option.textContent || '']));
-  }
-
-  const CRACK_UI_FONT_PICKER_TOUCH_HOLD_MS = 15000;
-
-  function markCrackUiFontAssignmentPickerActive(select, { touchLike = false } = {}) {
-    if (!(select instanceof HTMLSelectElement)) return;
-    select.dataset.crackUiFontPickerActive = '1';
-    if (touchLike) {
-      select.dataset.crackUiFontPickerTouch = '1';
-      select.dataset.crackUiFontPickerActiveUntil = String(Date.now() + CRACK_UI_FONT_PICKER_TOUCH_HOLD_MS);
-    }
-  }
-
-  function releaseCrackUiFontAssignmentPickerActive(select, { delay = 0, force = false, sync = true } = {}) {
-    if (!(select instanceof HTMLSelectElement)) return;
-    const release = () => {
-      if (!select.isConnected) return;
-      const activeUntil = Number(select.dataset.crackUiFontPickerActiveUntil || 0);
-      if (!force && select.dataset.crackUiFontPickerTouch === '1' && activeUntil > Date.now()) return;
-      delete select.dataset.crackUiFontPickerActive;
-      delete select.dataset.crackUiFontPickerTouch;
-      delete select.dataset.crackUiFontPickerActiveUntil;
-      const panel = select.closest(`#${ID.panel}`);
-      if (sync && panel) syncCrackUiFontSettingsUi(panel);
-    };
-    if (delay > 0) setTimeout(release, delay);
-    else release();
-  }
-
-  function isCrackUiFontAssignmentPickerActive(select) {
-    if (!(select instanceof HTMLSelectElement)) return false;
-    const touchHoldActive = select.dataset.crackUiFontPickerTouch === '1'
-      && Number(select.dataset.crackUiFontPickerActiveUntil || 0) > Date.now();
-    return select.dataset.crackUiFontPickerActive === '1'
-      || touchHoldActive
-      || document.activeElement === select;
-  }
-
-  function syncCrackUiFontAssignmentSelect(select, settingKey, masterEnabled, entries = getCrackUiFontSelectOptionEntries()) {
-    if (!(select instanceof HTMLSelectElement)) return;
-
-    const optionsSignature = getCrackUiFontSelectOptionSignature(entries);
-    const pickerActive = isCrackUiFontAssignmentPickerActive(select);
+  function getCrackUiFontAssignmentSelectedId(settingKey, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
     const storedId = String(fontSettings[settingKey] || '');
-    const selectedId = getCrackUiSavedFontById(storedId) ? storedId : '';
-
-    // Replacing <option> nodes while iOS/Android's native select sheet is open can
-    // close and immediately reopen the sheet in a loop. Keep the live select DOM
-    // completely untouched until the picker loses focus.
-    if (!pickerActive && getCrackUiFontSelectCurrentSignature(select) !== optionsSignature) {
-      const fragment = document.createDocumentFragment();
-      entries.forEach(([value, label]) => {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = label;
-        fragment.appendChild(option);
-      });
-      select.replaceChildren(fragment);
-    }
-
-    if (!pickerActive && select.value !== selectedId) select.value = selectedId;
-    // Some Android WebViews close and reopen the native picker when even a same-value
-    // property write lands while the sheet is opening or closing. Write only on a real change.
-    const shouldDisable = !masterEnabled;
-    if (!pickerActive && select.disabled !== shouldDisable) select.disabled = shouldDisable;
+    return records.some((record) => record.id === storedId) ? storedId : '';
   }
 
-  function renderCrackUiFontSelectOptions(selectedId = '') {
-    return getCrackUiFontSelectOptionEntries()
-      .map(([value, label]) => `<option value="${crackUiFontEscapeHtml(value)}"${value === selectedId ? ' selected' : ''}>${crackUiFontEscapeHtml(label)}</option>`)
-      .join('');
+  function getCrackUiFontAssignmentDisplayLabel(settingKey, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
+    const selectedId = getCrackUiFontAssignmentSelectedId(settingKey, records);
+    const entry = getCrackUiFontSelectOptionEntries(records).find(([value]) => value === selectedId);
+    return entry?.[1] || 'Crack 기본 폰트';
+  }
+
+  function getCrackUiFontAssignmentOptionStyle(fontId, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
+    if (!fontId) return '';
+    const record = records.find((item) => item.id === fontId);
+    const runtimeFamily = getCrackUiSavedFontRuntimeFamily(record);
+    const stack = crackUiFontCssStack(runtimeFamily);
+    return stack ? ` style="font-family:${crackUiFontEscapeHtml(stack)}"` : '';
+  }
+
+  function renderCrackUiFontAssignmentButton(id, settingKey, label) {
+    const current = getCrackUiFontAssignmentDisplayLabel(settingKey);
+    const open = fontAssignmentPickerOpen && fontAssignmentPickerKey === settingKey;
+    return `
+      <button
+        id="${id}"
+        type="button"
+        class="crack-ui-font-assignment-trigger"
+        data-crack-ui-font-assignment-trigger="${settingKey}"
+        data-open="${open ? '1' : '0'}"
+        aria-haspopup="listbox"
+        aria-expanded="${open ? 'true' : 'false'}"
+        aria-controls="${ID.fontAssignmentPickerList}"
+        aria-label="${crackUiFontEscapeHtml(label)} 폰트 선택"
+        title="${crackUiFontEscapeHtml(label)} 폰트 선택"
+      >
+        <span class="crack-ui-font-assignment-current" data-crack-ui-font-assignment-current="${settingKey}">${crackUiFontEscapeHtml(current)}</span>
+        <span class="crack-ui-font-assignment-arrow" aria-hidden="true">▾</span>
+      </button>`;
+  }
+
+  function renderCrackUiFontAssignmentPickerOptions(settingKey = fontAssignmentPickerKey, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
+    if (!CRACK_UI_FONT_ASSIGNMENT_META[settingKey]) return '';
+    const selectedId = getCrackUiFontAssignmentSelectedId(settingKey, records);
+    return getCrackUiFontSelectOptionEntries(records).map(([value, label]) => {
+      const selected = value === selectedId;
+      const sampleStyle = getCrackUiFontAssignmentOptionStyle(value, records);
+      return `
+        <button
+          type="button"
+          class="crack-ui-font-assignment-option"
+          data-crack-ui-font-assignment-option="${crackUiFontEscapeHtml(value)}"
+          data-selected="${selected ? '1' : '0'}"
+          role="option"
+          aria-selected="${selected ? 'true' : 'false'}"
+        >
+          <span class="crack-ui-font-assignment-option-copy">
+            <span class="crack-ui-font-assignment-option-name"${sampleStyle}>${crackUiFontEscapeHtml(label)}</span>
+            <span class="crack-ui-font-assignment-option-sample"${sampleStyle}>가나다 Aa 123</span>
+          </span>
+          <span class="crack-ui-font-assignment-option-check" aria-hidden="true">✓</span>
+        </button>`;
+    }).join('');
+  }
+
+  function renderCrackUiFontAssignmentPicker() {
+    const meta = CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey];
+    const title = meta ? `${meta.label} 폰트 선택` : '폰트 선택';
+    return `
+      <div
+        id="${ID.fontAssignmentPicker}"
+        class="crack-ui-font-assignment-picker"
+        data-open="${fontAssignmentPickerOpen ? '1' : '0'}"
+        ${fontAssignmentPickerOpen ? '' : 'hidden'}
+      >
+        <button
+          type="button"
+          class="crack-ui-font-assignment-picker-backdrop"
+          data-crack-ui-font-assignment-picker-close="1"
+          aria-label="폰트 선택창 닫기"
+          tabindex="-1"
+        ></button>
+        <div class="crack-ui-font-assignment-sheet">
+          <span class="crack-ui-font-assignment-sheet-handle" aria-hidden="true"></span>
+          <div class="crack-ui-font-assignment-sheet-head">
+            <span id="${ID.fontAssignmentPickerTitle}" class="crack-ui-font-assignment-sheet-title">${crackUiFontEscapeHtml(title)}</span>
+            <button
+              id="${ID.fontAssignmentPickerClose}"
+              type="button"
+              class="crack-ui-font-assignment-sheet-close"
+              data-crack-ui-font-assignment-picker-close="1"
+              aria-label="폰트 선택창 닫기"
+            >×</button>
+          </div>
+          <div
+            id="${ID.fontAssignmentPickerList}"
+            class="crack-ui-font-assignment-list"
+            role="listbox"
+            aria-labelledby="${ID.fontAssignmentPickerTitle}"
+          >${renderCrackUiFontAssignmentPickerOptions()}</div>
+        </div>
+      </div>`;
+  }
+
+  function syncCrackUiFontAssignmentTrigger(button, settingKey, masterEnabled, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
+    if (!(button instanceof HTMLButtonElement)) return;
+    const meta = CRACK_UI_FONT_ASSIGNMENT_META[settingKey];
+    if (!meta) return;
+    const open = fontAssignmentPickerOpen && fontAssignmentPickerKey === settingKey;
+    const current = button.querySelector('[data-crack-ui-font-assignment-current]');
+    if (current) current.textContent = getCrackUiFontAssignmentDisplayLabel(settingKey, records);
+    button.disabled = !masterEnabled;
+    button.dataset.open = open ? '1' : '0';
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    button.title = open ? `${meta.label} 폰트 선택창 닫기` : `${meta.label} 폰트 선택`;
+  }
+
+  function syncCrackUiFontAssignmentPicker(panel = document.getElementById(ID.panel), records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
+    if (!panel) return;
+    const validKey = !!CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey];
+    const open = fontAssignmentPickerOpen && validKey && fontSettings.masterEnabled === true && activePanelSection === 'font';
+    if (fontAssignmentPickerOpen && !open) {
+      fontAssignmentPickerOpen = false;
+      fontAssignmentPickerKey = '';
+      fontAssignmentPickerTrigger = null;
+    }
+
+    Object.entries(CRACK_UI_FONT_ASSIGNMENT_META).forEach(([settingKey, meta]) => {
+      syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${meta.id}`), settingKey, fontSettings.masterEnabled === true, records);
+    });
+
+    const picker = panel.querySelector(`#${ID.fontAssignmentPicker}`);
+    if (!picker) return;
+    picker.hidden = !open;
+    picker.dataset.open = open ? '1' : '0';
+    panel.dataset.crackUiFontAssignmentPickerOpen = open ? '1' : '0';
+
+    const meta = CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey];
+    const title = picker.querySelector(`#${ID.fontAssignmentPickerTitle}`);
+    if (title) title.textContent = meta ? `${meta.label} 폰트 선택` : '폰트 선택';
+
+    const list = picker.querySelector(`#${ID.fontAssignmentPickerList}`);
+    if (list) {
+      const signature = JSON.stringify([
+        fontAssignmentPickerKey,
+        getCrackUiFontAssignmentSelectedId(fontAssignmentPickerKey, records),
+        getCrackUiFontSelectOptionEntries(records),
+      ]);
+      if (list.dataset.crackUiFontAssignmentSignature !== signature) {
+        list.innerHTML = renderCrackUiFontAssignmentPickerOptions(fontAssignmentPickerKey, records);
+        list.dataset.crackUiFontAssignmentSignature = signature;
+      }
+    }
+  }
+
+  function setCrackUiFontAssignmentPickerOpen(nextOpen, settingKey = fontAssignmentPickerKey, panel = document.getElementById(ID.panel), options = {}) {
+    if (!panel) return;
+    const shouldOpen = nextOpen === true &&
+      !!CRACK_UI_FONT_ASSIGNMENT_META[settingKey] &&
+      fontSettings.masterEnabled === true &&
+      activePanelSection === 'font';
+    const previousTrigger = fontAssignmentPickerTrigger;
+
+    if (shouldOpen) {
+      setCrackUiFontPresetMenuOpen(false, panel);
+      setCrackUiDialogueQuoteMenuOpen(false, panel);
+      setCrackUiFontCodeOpacityMenuOpen(false, panel);
+      closeCrackUiFontColorPicker({ commit: true, sync: false });
+    }
+
+    fontAssignmentPickerOpen = shouldOpen;
+    fontAssignmentPickerKey = shouldOpen ? settingKey : '';
+    fontAssignmentPickerTrigger = shouldOpen
+      ? panel.querySelector(`[data-crack-ui-font-assignment-trigger="${settingKey}"]`)
+      : null;
+    syncCrackUiFontAssignmentPicker(panel);
+
+    if (shouldOpen) {
+      requestAnimationFrame(() => {
+        const selected = panel.querySelector(`#${ID.fontAssignmentPickerList} [data-selected="1"]`);
+        const first = panel.querySelector(`#${ID.fontAssignmentPickerList} [data-crack-ui-font-assignment-option]`);
+        try { (selected || first)?.focus?.({ preventScroll: true }); }
+        catch { (selected || first)?.focus?.(); }
+      });
+    } else if (options.restoreFocus === true && previousTrigger?.isConnected) {
+      requestAnimationFrame(() => {
+        try { previousTrigger.focus({ preventScroll: true }); }
+        catch { previousTrigger.focus(); }
+      });
+    }
   }
 
   function getCrackUiSavedFontListSignature(records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
@@ -11220,7 +11631,7 @@ ${record.css}`)}`
             <div class="crack-ui-font-select-grid">
               <div class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">본문</span>
-                <select id="${ID.fontBodySelect}" data-crack-ui-font-assignment="bodyFontId" aria-label="본문 폰트">${renderCrackUiFontSelectOptions(fontSettings.bodyFontId)}</select>
+                ${renderCrackUiFontAssignmentButton(ID.fontBodySelect, 'bodyFontId', '본문')}
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="body" aria-label="본문 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">가나다라마바사 아자차카타파하</span>
                   <span class="crack-ui-font-preview-line">The quick brown fox · 1234567890</span>
@@ -11228,7 +11639,7 @@ ${record.css}`)}`
               </div>
               <div class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">코드블럭</span>
-                <select id="${ID.fontCodeSelect}" data-crack-ui-font-assignment="codeFontId" aria-label="코드블럭 폰트">${renderCrackUiFontSelectOptions(fontSettings.codeFontId)}</select>
+                ${renderCrackUiFontAssignmentButton(ID.fontCodeSelect, 'codeFontId', '코드블럭')}
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="code" aria-label="코드블럭 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">const message = "안녕하세요";</span>
                   <span class="crack-ui-font-preview-line">console.log(message); // 123</span>
@@ -11236,7 +11647,7 @@ ${record.css}`)}`
               </div>
               <div class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">타이틀</span>
-                <select id="${ID.fontTitleSelect}" data-crack-ui-font-assignment="titleFontId" aria-label="타이틀 폰트">${renderCrackUiFontSelectOptions(fontSettings.titleFontId)}</select>
+                ${renderCrackUiFontAssignmentButton(ID.fontTitleSelect, 'titleFontId', '타이틀')}
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="title" aria-label="타이틀 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">가나다라마바사 타이틀 미리보기</span>
                   <span class="crack-ui-font-preview-line">Sample title · 1234567890</span>
@@ -11918,6 +12329,7 @@ ${record.css}`)}`
     const key = trigger?.dataset?.crackUiFontColorPicker || '';
     if (!isCrackUiColorPickerKey(key) || trigger.disabled) return;
     closeCrackUiFontColorPicker({ commit: true });
+    setCrackUiFontAssignmentPickerOpen(false, '', panel);
     setCrackUiFontPresetMenuOpen(false, panel);
     setCrackUiDialogueQuoteMenuOpen(false, panel);
     setCrackUiFontCodeOpacityMenuOpen(false, panel);
@@ -12399,25 +12811,10 @@ ${record.css}`)}`
     if (sourceInput) sourceInput.disabled = !masterEnabled;
 
     const savedFontRecords = normalizeCrackUiSavedFonts(fontSettings.savedFonts);
-    const fontSelectEntries = getCrackUiFontSelectOptionEntries(savedFontRecords);
-    syncCrackUiFontAssignmentSelect(
-      panel.querySelector(`#${ID.fontBodySelect}`),
-      'bodyFontId',
-      masterEnabled,
-      fontSelectEntries
-    );
-    syncCrackUiFontAssignmentSelect(
-      panel.querySelector(`#${ID.fontCodeSelect}`),
-      'codeFontId',
-      masterEnabled,
-      fontSelectEntries
-    );
-    syncCrackUiFontAssignmentSelect(
-      panel.querySelector(`#${ID.fontTitleSelect}`),
-      'titleFontId',
-      masterEnabled,
-      fontSelectEntries
-    );
+    syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${ID.fontBodySelect}`), 'bodyFontId', masterEnabled, savedFontRecords);
+    syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${ID.fontCodeSelect}`), 'codeFontId', masterEnabled, savedFontRecords);
+    syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${ID.fontTitleSelect}`), 'titleFontId', masterEnabled, savedFontRecords);
+    syncCrackUiFontAssignmentPicker(panel, savedFontRecords);
     const savedList = panel.querySelector(`#${ID.fontSavedList}`);
     if (savedList) {
       const signature = getCrackUiSavedFontListSignature(savedFontRecords);
@@ -12572,69 +12969,58 @@ ${record.css}`)}`
     // #panel has overflow clipping, but browsers may still try to scroll an overflow-hidden
     // ancestor when a deep checkbox receives focus. Keep the outer panel pinned at zero.
     panel.addEventListener('scroll', () => resetCrackUiPanelOuterScroll(panel), { passive: true });
-    const markFontAssignmentPickerFromEvent = (event) => {
-      const select = event.target instanceof HTMLSelectElement &&
-        event.target.matches('[data-crack-ui-font-assignment]')
-        ? event.target
-        : null;
-      if (!select) return;
-      const touchLike = event.type === 'touchstart'
-        || (event instanceof PointerEvent && event.pointerType !== 'mouse');
-      markCrackUiFontAssignmentPickerActive(select, { touchLike });
-    };
-    if ('PointerEvent' in window) {
-      panel.addEventListener('pointerdown', markFontAssignmentPickerFromEvent, true);
-    } else {
-      panel.addEventListener('touchstart', markFontAssignmentPickerFromEvent, { capture: true, passive: true });
-    }
-    panel.addEventListener('focusin', (event) => {
-      const select = event.target instanceof HTMLSelectElement &&
-        event.target.matches('[data-crack-ui-font-assignment]')
-        ? event.target
-        : null;
-      if (select) {
-        markCrackUiFontAssignmentPickerActive(select, {
-          touchLike: select.dataset.crackUiFontPickerTouch === '1',
-        });
-        return;
-      }
+    panel.addEventListener('focusin', () => {
       resetCrackUiPanelOuterScroll(panel);
       requestAnimationFrame(() => resetCrackUiPanelOuterScroll(panel));
-    });
-    panel.addEventListener('focusout', (event) => {
-      const select = event.target instanceof HTMLSelectElement &&
-        event.target.matches('[data-crack-ui-font-assignment]')
-        ? event.target
-        : null;
-      if (!select) return;
-      // Android may blur the <select> while its native sheet is still opening. Mouse
-      // pickers can release immediately; touch pickers stay locked until change/cancel.
-      if (select.dataset.crackUiFontPickerTouch === '1') return;
-      requestAnimationFrame(() => releaseCrackUiFontAssignmentPickerActive(select, { force: true }));
-    });
-
-    panel.addEventListener('pointerdown', (event) => {
-      const touchedSelect = event.target instanceof HTMLSelectElement
-        && event.target.matches('[data-crack-ui-font-assignment]');
-      if (touchedSelect) return;
-      panel.querySelectorAll('select[data-crack-ui-font-assignment][data-crack-ui-font-picker-touch="1"]')
-        .forEach((select) => releaseCrackUiFontAssignmentPickerActive(select, { force: true }));
-    }, true);
-
-    // A mobile native <select> must receive its own click exactly once. Stop bubbling
-    // at the control itself without cancelling the browser's native picker action.
-    panel.querySelectorAll('select[data-crack-ui-font-assignment]').forEach((select) => {
-      select.addEventListener('click', (event) => event.stopPropagation());
     });
 
     // Font toggles are handled manually. Preventing the label's native default click avoids
     // Chromium scrolling the outer settings panel to the focused hidden checkbox.
     panel.addEventListener('click', (event) => {
+      const assignmentClose = event.target?.closest?.('[data-crack-ui-font-assignment-picker-close]');
+      if (assignmentClose && panel.contains(assignmentClose)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCrackUiFontAssignmentPickerOpen(false, '', panel, { restoreFocus: true });
+        return;
+      }
+
+      const assignmentOption = event.target?.closest?.('[data-crack-ui-font-assignment-option]');
+      if (assignmentOption && panel.contains(assignmentOption)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!fontAssignmentPickerOpen || !CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey]) return;
+        const settingKey = fontAssignmentPickerKey;
+        const value = assignmentOption.dataset.crackUiFontAssignmentOption || '';
+        const trigger = fontAssignmentPickerTrigger;
+        setCrackUiFontAssignmentPickerOpen(false, '', panel);
+        updateCrackUiFontSetting(settingKey, value, { flush: true });
+        if (trigger?.isConnected) {
+          requestAnimationFrame(() => {
+            try { trigger.focus({ preventScroll: true }); }
+            catch { trigger.focus(); }
+          });
+        }
+        return;
+      }
+
+      const assignmentTrigger = event.target?.closest?.('[data-crack-ui-font-assignment-trigger]');
+      if (assignmentTrigger && panel.contains(assignmentTrigger)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (assignmentTrigger.disabled) return;
+        const settingKey = assignmentTrigger.dataset.crackUiFontAssignmentTrigger || '';
+        const sameOpen = fontAssignmentPickerOpen && fontAssignmentPickerKey === settingKey;
+        setCrackUiFontAssignmentPickerOpen(!sameOpen, settingKey, panel, { restoreFocus: sameOpen });
+        return;
+      }
+
       const codeOpacityToggle = event.target?.closest?.('[data-crack-ui-font-code-opacity-toggle]');
       if (codeOpacityToggle && panel.contains(codeOpacityToggle)) {
         event.preventDefault();
         event.stopPropagation();
         if (codeOpacityToggle.disabled) return;
+        setCrackUiFontAssignmentPickerOpen(false, '', panel);
         setCrackUiDialogueQuoteMenuOpen(false, panel);
         setCrackUiFontPresetMenuOpen(false, panel);
         closeCrackUiFontColorPicker({ commit: true });
@@ -12647,6 +13033,7 @@ ${record.css}`)}`
         event.preventDefault();
         event.stopPropagation();
         if (quoteToggle.disabled) return;
+        setCrackUiFontAssignmentPickerOpen(false, '', panel);
         setCrackUiFontCodeOpacityMenuOpen(false, panel);
         setCrackUiFontPresetMenuOpen(false, panel);
         closeCrackUiFontColorPicker({ commit: true });
@@ -12751,22 +13138,6 @@ ${record.css}`)}`
 
     panel.addEventListener('change', (event) => {
       const target = event.target;
-      if (target instanceof HTMLSelectElement && target.matches('[data-crack-ui-font-assignment]')) {
-        updateCrackUiFontSetting(target.dataset.crackUiFontAssignment, target.value, {
-          flush: true,
-          syncUi: false,
-          preserveScroll: false,
-        });
-        // The native control already owns the chosen value. Do not immediately run a full UI
-        // sync while Android's sheet is closing; touching the select can reopen it a second time.
-        const touchPicker = target.dataset.crackUiFontPickerTouch === '1';
-        releaseCrackUiFontAssignmentPickerActive(target, {
-          delay: touchPicker ? 700 : 250,
-          force: true,
-          sync: !touchPicker,
-        });
-        return;
-      }
       if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
       if (target.matches('[data-crack-ui-font-italic-style-toggle]')) {
         updateCrackUiFontSetting('italicStyleEnabled', target.checked, { flush: true });
@@ -12844,6 +13215,12 @@ ${record.css}`)}`
 
     panel.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
+      if (fontAssignmentPickerOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCrackUiFontAssignmentPickerOpen(false, '', panel, { restoreFocus: true });
+        return;
+      }
       if (fontDialogueQuoteMenuOpen) setCrackUiDialogueQuoteMenuOpen(false, panel);
       if (fontCodeOpacityMenuOpen) setCrackUiFontCodeOpacityMenuOpen(false, panel);
     });
@@ -12851,6 +13228,7 @@ ${record.css}`)}`
     panel.querySelector(`#${ID.fontPresetToggleButton}`)?.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
+      setCrackUiFontAssignmentPickerOpen(false, '', panel);
       setCrackUiDialogueQuoteMenuOpen(false, panel);
       setCrackUiFontCodeOpacityMenuOpen(false, panel);
       closeCrackUiFontColorPicker({ commit: true });
@@ -13039,6 +13417,7 @@ ${record.css}`)}`
     const fontPresetDock = panel.querySelector(`#${ID.fontPresetDock}`);
     if (fontPresetDock) fontPresetDock.hidden = activePanelSection !== 'font';
     if (activePanelSection !== 'font') {
+      setCrackUiFontAssignmentPickerOpen(false, '', panel);
       setCrackUiFontPresetMenuOpen(false, panel);
       setCrackUiDialogueQuoteMenuOpen(false, panel);
       setCrackUiFontCodeOpacityMenuOpen(false, panel);
@@ -13527,6 +13906,9 @@ ${record.css}`)}`
     const existingPanel = document.getElementById(ID.panel);
     if (existingPanel) {
       if (existingPanel.parentElement !== panelRoot) panelRoot.appendChild(existingPanel);
+      if (!existingPanel.querySelector(`#${ID.fontAssignmentPicker}`)) {
+        existingPanel.insertAdjacentHTML('beforeend', renderCrackUiFontAssignmentPicker());
+      }
       if (!document.getElementById(ID.fontColorPickerPopover)) {
         panelRoot.insertAdjacentHTML('beforeend', renderCrackUiFontColorPickerPopover());
       }
@@ -13834,6 +14216,7 @@ ${record.css}`)}`
           </div>
         </div>
       </div>
+      ${renderCrackUiFontAssignmentPicker()}
     `;
     panel.addEventListener('click', (e) => e.stopPropagation());
     panel.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
@@ -14189,6 +14572,7 @@ ${error?.message || error}`);
   }
 
   function clearPanelInteractionState(panel = document.getElementById(ID.panel)) {
+    setCrackUiFontAssignmentPickerOpen(false, '', panel);
     closeCrackUiFontColorPicker({ commit: true, sync: false });
     crackUiPanelLifecycleToken += 1;
     cancelCrackUiFontScrollRestore();
