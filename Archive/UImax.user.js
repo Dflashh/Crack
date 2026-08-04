@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.24
+// @version      2.7.25
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -11,7 +11,7 @@
 // @grant        unsafeWindow
 // @connect      crack-api.wrtn.ai
 // @connect      *
-// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UImax.webp
+// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UI.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // ==/UserScript==
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.24';
+  const CRACK_UI_VERSION = '2.7.25';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2120,9 +2120,11 @@
   let antiScrollGuardLastBlockedAt = 0;
   let antiScrollManualBottomUntil = 0;
   let antiScrollUserUiUntil = 0;
+  let antiScrollKeyboardViewportUntil = 0;
   let antiScrollBottomButtonListenerInstalled = false;
   let antiScrollManualBottomBypassCount = 0;
   let antiScrollUserUiBypassCount = 0;
+  let antiScrollKeyboardViewportBypassCount = 0;
   let cachedChatBackgroundComposerShell = null;
   let appliedChatBackgroundTarget = null;
   let appliedNovelBackdropTarget = null;
@@ -18920,6 +18922,13 @@ ${error?.message || error}`);
     );
   }
 
+  function isCrackUiAntiScrollEditableElement(element) {
+    return !!element?.closest?.(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
+      '[role="textbox"], [role="combobox"], [role="searchbox"]'
+    );
+  }
+
   function isCrackUiAntiScrollOverlayElement(element) {
     if (!element?.closest) return false;
 
@@ -18930,20 +18939,46 @@ ${error?.message || error}`);
       return true;
     }
 
-    /* Some Crack mobile sheets do not expose a stable dialog attribute.
-       Treat a large fixed ancestor of the focused control as an overlay. */
+    /* Some Crack mobile sheets expose neither role=dialog nor an inline `fixed` style.
+       Read the computed position as well, and accept a large elevated absolute surface
+       only when it actually contains the focused editor. */
     let current = element;
-    const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-    const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    const active = document.activeElement;
+    const activeEditable = isCrackUiAntiScrollEditableElement(active) ? active : null;
+    const viewport = window.visualViewport;
+    const viewportWidth = Math.max(
+      1,
+      Number(viewport?.width || window.innerWidth || document.documentElement.clientWidth || 1)
+    );
+    const viewportHeight = Math.max(
+      1,
+      Number(viewport?.height || window.innerHeight || document.documentElement.clientHeight || 1)
+    );
 
     while (current && current !== document.body && current !== document.documentElement) {
       const className = String(current.className || '');
       const inlinePosition = String(current.style?.position || '');
-      const looksFixed =
-        inlinePosition === 'fixed' ||
-        /(?:^|\s)fixed(?:\s|$)/.test(className);
+      let computedPosition = '';
+      let computedZIndex = 0;
 
-      if (looksFixed) {
+      try {
+        const style = getComputedStyle(current);
+        computedPosition = String(style.position || '');
+        const parsedZIndex = Number.parseInt(style.zIndex, 10);
+        computedZIndex = Number.isFinite(parsedZIndex) ? parsedZIndex : 0;
+      } catch {
+      }
+
+      const fixedLike =
+        inlinePosition === 'fixed' ||
+        computedPosition === 'fixed' ||
+        /(?:^|\s)fixed(?:\s|$)/.test(className);
+      const elevatedAbsolute =
+        (inlinePosition === 'absolute' || computedPosition === 'absolute' || /(?:^|\s)absolute(?:\s|$)/.test(className)) &&
+        (computedZIndex >= 10 || /(?:^|\s)z-(?:\[?\d+|modal|dialog)(?:\]?\s|$)/.test(className));
+      const containsFocusedEditor = !!activeEditable && current.contains?.(activeEditable);
+
+      if (fixedLike || (elevatedAbsolute && containsFocusedEditor)) {
         try {
           const rect = current.getBoundingClientRect();
           if (rect.width >= viewportWidth * 0.62 && rect.height >= viewportHeight * 0.24) {
@@ -19003,6 +19038,18 @@ ${error?.message || error}`);
     return true;
   }
 
+  function allowCrackUiKeyboardViewportScroll(durationMs = 1300) {
+    antiScrollKeyboardViewportUntil = Math.max(
+      antiScrollKeyboardViewportUntil,
+      Date.now() + Math.max(350, Number(durationMs) || 0)
+    );
+    antiScrollKeyboardViewportBypassCount += 1;
+  }
+
+  function isCrackUiKeyboardViewportScrollAllowed() {
+    return Date.now() < antiScrollKeyboardViewportUntil;
+  }
+
   function allowCrackUiUserUiScroll(durationMs = 1500) {
     antiScrollUserUiUntil = Math.max(
       antiScrollUserUiUntil,
@@ -19012,7 +19059,7 @@ ${error?.message || error}`);
   }
 
   function isCrackUiUserUiScrollAllowed() {
-    return Date.now() < antiScrollUserUiUntil;
+    return Date.now() < antiScrollUserUiUntil || isCrackUiKeyboardViewportScrollAllowed();
   }
 
   function findCrackUiAntiScrollScroller() {
@@ -19121,6 +19168,15 @@ ${error?.message || error}`);
   function installCrackUiBottomButtonBypass() {
     if (antiScrollBottomButtonListenerInstalled) return;
 
+    const noteEditableKeyboardRequest = (target, durationMs = 1600) => {
+      if (!antiScrollJacking || !isTouchLikeDevice()) return;
+      if (!isCrackUiAntiScrollEditableElement(target)) return;
+
+      /* Android may finish panning the visual viewport after the initial focus event.
+         Keep only that keyboard-opening/settling window unguarded. */
+      allowCrackUiKeyboardViewportScroll(durationMs);
+    };
+
     const markPointerRequest = (event) => {
       if (!antiScrollJacking || event?.isTrusted === false) return;
 
@@ -19128,8 +19184,9 @@ ${error?.message || error}`);
          while the software keyboard is opening. This short window is only created by
          an actual user interaction and does not apply to output-completion calls. */
       if (isCrackUiAntiScrollUiGestureTarget(event?.target)) {
-        allowCrackUiUserUiScroll(1500);
+        allowCrackUiUserUiScroll(1800);
       }
+      noteEditableKeyboardRequest(event?.target, 1800);
 
       if (!isCrackUiScrollToBottomButton(event?.target)) return;
 
@@ -19145,8 +19202,34 @@ ${error?.message || error}`);
       }
     };
 
+    const markEditableFocus = (event) => {
+      if (!antiScrollJacking) return;
+      const target = event?.target;
+      if (!isCrackUiAntiScrollEditableElement(target)) return;
+
+      /* focusin also covers keyboard-open paths where pointerdown lands on a wrapper
+         or focus is delegated programmatically after the sheet animation. */
+      allowCrackUiUserUiScroll(1600);
+      noteEditableKeyboardRequest(target, 1800);
+    };
+
+    const markKeyboardViewportChange = () => {
+      if (!antiScrollJacking || !isTouchLikeDevice()) return;
+
+      const active = document.activeElement;
+      if (!isCrackUiAntiScrollEditableElement(active) && !isCrackUiAntiScrollOverlayOpen()) return;
+
+      /* Every resize/offset step extends from the latest keyboard animation frame,
+         rather than relying on one fixed delay from the original tap. */
+      allowCrackUiKeyboardViewportScroll(1400);
+    };
+
     document.addEventListener('pointerdown', markPointerRequest, true);
     document.addEventListener('click', markManualBottomClick, true);
+    document.addEventListener('focusin', markEditableFocus, true);
+    window.addEventListener('resize', markKeyboardViewportChange, { passive: true });
+    window.visualViewport?.addEventListener?.('resize', markKeyboardViewportChange, { passive: true });
+    window.visualViewport?.addEventListener?.('scroll', markKeyboardViewportChange, { passive: true });
     antiScrollBottomButtonListenerInstalled = true;
   }
 
@@ -19268,9 +19351,13 @@ ${error?.message || error}`);
             return originalFocus.apply(this, arguments);
           }
 
-          /* Never force preventScroll inside a modal/bottom sheet. On Android this can
-             stop the visual viewport from lifting the editor above the software keyboard. */
-          if (isCrackUiAntiScrollOverlayElement(this)) {
+          /* Never force preventScroll on an actual editor or inside a modal/bottom sheet.
+             Android may perform the final pan only after the software keyboard is fully open;
+             suppressing that native focus scroll leaves the lower controls behind the keyboard. */
+          if (
+            isCrackUiAntiScrollEditableElement(this) ||
+            isCrackUiAntiScrollOverlayElement(this)
+          ) {
             return originalFocus.apply(this, arguments);
           }
 
@@ -19329,6 +19416,7 @@ ${error?.message || error}`);
     if (!antiScrollJacking || !crackUiIsConversationRoute()) {
       cachedAntiScrollScroller = null;
       cachedAntiScrollHref = '';
+      antiScrollKeyboardViewportUntil = 0;
     }
   }
 
@@ -20584,6 +20672,9 @@ ${error?.message || error}`);
         antiScrollUserUiUntil,
         antiScrollUserUiBypassCount,
         antiScrollUserUiAllowed: isCrackUiUserUiScrollAllowed(),
+        antiScrollKeyboardViewportUntil,
+        antiScrollKeyboardViewportBypassCount,
+        antiScrollKeyboardViewportAllowed: isCrackUiKeyboardViewportScrollAllowed(),
         antiScrollOverlayOpen: isCrackUiAntiScrollOverlayOpen(),
         antiScrollReadingUp: antiScrollJacking ? isCrackUiUserReadingUp() : false,
         pauseAnimatedThumbs,
