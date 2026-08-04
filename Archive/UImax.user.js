@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.25
+// @version      2.7.26
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.25';
+  const CRACK_UI_VERSION = '2.7.26';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2064,6 +2064,7 @@
   let fontColorPickerValue = 0;
   let fontColorPickerPendingHex = '';
   let fontColorPickerApplyRaf = 0;
+  let fontColorPickerPositionRaf = 0;
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
   let roomMenuAssistMode = normalizeMenuAssistMode(readStorage(LS.roomMenuAssistMode, 'handle'));
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
@@ -2193,6 +2194,7 @@
   let fontQuoteScanRaf = 0;
   let fontQuoteLastScanAt = 0;
   let fontQuoteMutationObserver = null;
+  let fontQuoteMutationObserverActive = false;
   const fontQuoteDirtyRoots = new Set();
   let fontQuoteFullScanPending = true;
   let fontQuoteWrapSeq = 0;
@@ -8537,7 +8539,7 @@
   }
 
 
-  function updateThemeUi() {
+  function updateThemeUi(options = {}) {
     document.querySelectorAll('[data-crack-ui-theme-mode]').forEach((button) => {
       const selected = normalizeThemeMode(button.dataset.crackUiThemeMode) === themeMode;
       button.dataset.selected = selected ? '1' : '0';
@@ -8550,7 +8552,9 @@
       button.setAttribute('aria-checked', selected ? 'true' : 'false');
     });
 
-    syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+    if (options.syncBackground !== false) {
+      syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
+    }
   }
 
   function setImageSize(nextValue) {
@@ -10033,10 +10037,17 @@ ${record.css}`)}`
         injectCrackUiCustomFontStyle();
       }
       if (isCrackUiFontInlineDecorationEnabled(settings)) {
+        connectCrackUiFontQuoteMutationObserver();
         if (options.scheduleQuotes !== false) {
           scheduleCrackUiFontQuoteScan({ immediate: options.immediateQuotes === true });
         }
-      } else if (fontQuoteWraps.size || document.querySelector('[data-crack-ui-font-base="1"]') || fontQuoteScanTimer || fontQuoteScanRaf) {
+      } else if (
+        fontQuoteMutationObserverActive ||
+        fontQuoteWraps.size ||
+        document.querySelector('[data-crack-ui-font-base="1"]') ||
+        fontQuoteScanTimer ||
+        fontQuoteScanRaf
+      ) {
         disableCrackUiFontQuoteDecorations();
       }
       return;
@@ -10156,6 +10167,7 @@ ${record.css}`)}`
     crackUiFontRuntimeSignature = getCrackUiFontRuntimeSignature(settings, `${bodyFamily}|${codeFamily}|${titleFamily}`);
 
     if (isCrackUiFontInlineDecorationEnabled(settings)) {
+      connectCrackUiFontQuoteMutationObserver();
       if (options.scheduleQuotes !== false) {
         scheduleCrackUiFontQuoteScan({ immediate: options.immediateQuotes === true });
       }
@@ -10466,7 +10478,33 @@ ${record.css}`)}`
     });
   }
 
+  function disconnectCrackUiFontQuoteMutationObserver() {
+    if (!fontQuoteMutationObserver) return;
+    fontQuoteMutationObserver.disconnect();
+    fontQuoteMutationObserverActive = false;
+  }
+
+  function connectCrackUiFontQuoteMutationObserver() {
+    if (
+      !fontQuoteMutationObserver ||
+      fontQuoteMutationObserverActive ||
+      !document.body ||
+      !fontSettings.masterEnabled ||
+      !isCrackUiFontInlineDecorationEnabled()
+    ) {
+      return;
+    }
+
+    fontQuoteMutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    fontQuoteMutationObserverActive = true;
+  }
+
   function disableCrackUiFontQuoteDecorations() {
+    disconnectCrackUiFontQuoteMutationObserver();
     clearTimeout(fontQuoteScanTimer);
     fontQuoteScanTimer = null;
     if (fontQuoteScanRaf) cancelAnimationFrame(fontQuoteScanRaf);
@@ -10518,60 +10556,60 @@ ${record.css}`)}`
   }
 
   function observeCrackUiFontQuoteMutations() {
-    if (fontQuoteMutationObserver || !document.body) return;
+    if (!document.body) return;
 
-    fontQuoteMutationObserver = new MutationObserver((mutations) => {
-      if (!fontSettings.masterEnabled || !isCrackUiFontInlineDecorationEnabled()) return;
+    if (!fontQuoteMutationObserver) {
+      fontQuoteMutationObserver = new MutationObserver((mutations) => {
+        if (!fontSettings.masterEnabled || !isCrackUiFontInlineDecorationEnabled()) return;
 
-      const changedRoots = new Set();
-      const addDirectRoot = (node) => {
-        const directRoot = getCrackUiFontMarkdownRootFromNode(node);
-        if (directRoot) changedRoots.add(directRoot);
-      };
-      const addAddedRoot = (node) => {
-        addDirectRoot(node);
-        if (!(node instanceof Element)) return;
-        if (node.closest(`#${ID.panelRoot}, #${ID.panel}, #${ID.bottomModelPopup}, .not-wrtn-markdown`)) return;
-        node.querySelectorAll?.('.wrtn-markdown').forEach((markdown) => {
-          const root = getCrackUiFontMarkdownRootFromNode(markdown);
-          if (root) changedRoots.add(root);
-        });
-      };
+        const changedRoots = new Set();
+        const addDirectRoot = (node) => {
+          const directRoot = getCrackUiFontMarkdownRootFromNode(node);
+          if (directRoot) changedRoots.add(directRoot);
+        };
+        const addAddedRoot = (node) => {
+          addDirectRoot(node);
+          if (!(node instanceof Element)) return;
+          if (node.closest(`#${ID.panelRoot}, #${ID.panel}, #${ID.bottomModelPopup}, .not-wrtn-markdown`)) return;
+          node.querySelectorAll?.('.wrtn-markdown').forEach((markdown) => {
+            const root = getCrackUiFontMarkdownRootFromNode(markdown);
+            if (root) changedRoots.add(root);
+          });
+        };
 
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'characterData') {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'characterData') {
+            addDirectRoot(mutation.target);
+            return;
+          }
+          if (mutation.type !== 'childList') return;
+          // mutation.target may be <body>. Descendant-scanning it would mark every old log
+          // dirty whenever an unrelated overlay/button is inserted. Only scan added subtrees.
           addDirectRoot(mutation.target);
-          return;
-        }
-        if (mutation.type !== 'childList') return;
-        // mutation.target may be <body>. Descendant-scanning it would mark every old log
-        // dirty whenever an unrelated overlay/button is inserted. Only scan added subtrees.
-        addDirectRoot(mutation.target);
-        mutation.addedNodes.forEach(addAddedRoot);
-      });
+          mutation.addedNodes.forEach(addAddedRoot);
+        });
 
-      if (!changedRoots.size) return;
-      changedRoots.forEach((markdown) => {
-        clearCrackUiFontQuoteRootScanState(markdown);
-        fontQuoteDirtyRoots.add(markdown);
+        if (!changedRoots.size) return;
+        changedRoots.forEach((markdown) => {
+          clearCrackUiFontQuoteRootScanState(markdown);
+          fontQuoteDirtyRoots.add(markdown);
+        });
+        scheduleCrackUiFontQuoteScan();
       });
-      scheduleCrackUiFontQuoteScan();
-    });
+    }
 
-    fontQuoteMutationObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    scheduleCrackUiFontQuoteScan({ immediate: true, full: true });
+    connectCrackUiFontQuoteMutationObserver();
+    if (fontQuoteMutationObserverActive) {
+      scheduleCrackUiFontQuoteScan({ immediate: true, full: true });
+    }
   }
 
   function scanCrackUiFontQuotes() {
     fontQuoteLastScanAt = Date.now();
     if (!fontSettings.masterEnabled || !isCrackUiFontInlineDecorationEnabled()) return;
 
-    const observer = fontQuoteMutationObserver;
-    observer?.disconnect();
+    const observerWasActive = fontQuoteMutationObserverActive;
+    disconnectCrackUiFontQuoteMutationObserver();
     try {
       const fullScan = fontQuoteFullScanPending || fontQuoteDirtyRoots.size === 0;
       fontQuoteFullScanPending = false;
@@ -10607,7 +10645,6 @@ ${record.css}`)}`
         if (!recent && markdown.dataset.crackUiFontQuotedKey !== undefined) return;
 
         const content = markdown.textContent || '';
-        const length = content.length;
         const textKey = getCrackUiFontQuoteTextKey(content);
         const previousTextKey = markdown.dataset.crackUiFontTextKey || '';
         const decoratedTextKey = markdown.dataset.crackUiFontQuotedKey || '';
@@ -10665,12 +10702,12 @@ ${record.css}`)}`
 
       if (needsFollowUp) scheduleCrackUiFontQuoteScan();
     } finally {
-      if (observer && document.body) {
-        observer.observe(document.body, {
-          childList: true,
-          subtree: true,
-          characterData: true,
-        });
+      if (
+        observerWasActive &&
+        fontSettings.masterEnabled &&
+        isCrackUiFontInlineDecorationEnabled()
+      ) {
+        connectCrackUiFontQuoteMutationObserver();
       }
     }
   }
@@ -11385,7 +11422,15 @@ ${record.css}`)}`
   }
 
   function syncCrackUiChatBackgroundUi(panel = document.getElementById(ID.panel)) {
-    if (!panel) return;
+    if (
+      !panel ||
+      !panelOpen ||
+      panel.dataset.open !== '1' ||
+      activePanelSection !== 'background'
+    ) {
+      return;
+    }
+
     const enabled = chatBackgroundSettings.enabled === true;
     const colorEnabled = enabled && chatBackgroundSettings.imageEnabled !== true;
     const imageEnabled = enabled && chatBackgroundSettings.imageEnabled === true;
@@ -11465,9 +11510,12 @@ ${record.css}`)}`
   }
 
   function updateCrackUiChatBackgroundColor(value, options = {}) {
-    const normalized = normalizeCrackUiFontHex(value, chatBackgroundSettings.color || CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
+    const normalized = normalizeCrackUiFontHex(
+      value,
+      chatBackgroundSettings.color || CHAT_BACKGROUND_SETTINGS_DEFAULT.color
+    );
     chatBackgroundSettings.color = normalized;
-    applyCrackUiChatBackground();
+    applyCrackUiChatBackgroundPaintVariables();
     if (options.persist !== false) persistCrackUiChatBackgroundSettings();
     if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
@@ -11475,18 +11523,25 @@ ${record.css}`)}`
   function updateCrackUiNovelBackdropColor(value, options = {}) {
     const normalized = normalizeCrackUiFontHex(
       value,
-      chatBackgroundSettings.novelBackdropColor || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+      chatBackgroundSettings.novelBackdropColor ||
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
     );
     chatBackgroundSettings.novelBackdropColor = normalized;
-    applyCrackUiChatBackground();
+    applyCrackUiNovelBackdropPaintVariables();
     if (options.persist !== false) persistCrackUiChatBackgroundSettings();
     if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
 
   function updateCrackUiNovelBackdropOpacity(value, options = {}) {
-    const normalized = Math.max(5, Math.min(100, Math.round(Number(value) || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity)));
+    const normalized = Math.max(5, Math.min(
+      100,
+      Math.round(
+        Number(value) ||
+        CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
+      )
+    ));
     chatBackgroundSettings.novelBackdropOpacity = normalized;
-    applyCrackUiChatBackground();
+    applyCrackUiNovelBackdropPaintVariables();
     if (options.persist !== false) persistCrackUiChatBackgroundSettings();
     if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
@@ -11738,9 +11793,13 @@ ${record.css}`)}`
         ? CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
         : CHAT_BACKGROUND_SETTINGS_DEFAULT.color;
       const normalized = normalizeCrackUiFontHex(value, current || fallback);
-      if (isNovelBackdrop) chatBackgroundSettings.novelBackdropColor = normalized;
-      else chatBackgroundSettings.color = normalized;
-      applyCrackUiChatBackground();
+      if (isNovelBackdrop) {
+        chatBackgroundSettings.novelBackdropColor = normalized;
+        applyCrackUiNovelBackdropPaintVariables();
+      } else {
+        chatBackgroundSettings.color = normalized;
+        applyCrackUiChatBackgroundPaintVariables();
+      }
       const trigger = panel?.querySelector?.(`[data-crack-ui-font-color-picker="${key}"]`);
       if (trigger) trigger.style.setProperty('--crack-ui-font-swatch', normalized);
       const code = panel?.querySelector?.(isNovelBackdrop
@@ -11828,6 +11887,14 @@ ${record.css}`)}`
     syncCrackUiFontColorPickerUi({ preview: false, forceHex: true });
   }
 
+  function scheduleCrackUiFontColorPickerPosition() {
+    if (!fontColorPickerOpen || fontColorPickerPositionRaf) return;
+    fontColorPickerPositionRaf = requestAnimationFrame(() => {
+      fontColorPickerPositionRaf = 0;
+      positionCrackUiFontColorPicker();
+    });
+  }
+
   function positionCrackUiFontColorPicker() {
     const popover = document.getElementById(ID.fontColorPickerPopover);
     const trigger = fontColorPickerTrigger;
@@ -11893,7 +11960,7 @@ ${record.css}`)}`
     trigger.setAttribute('aria-expanded', 'true');
     syncCrackUiFontColorPickerRecentUi(popover);
     syncCrackUiFontColorPickerUi({ preview: false, forceHex: true });
-    requestAnimationFrame(positionCrackUiFontColorPicker);
+    scheduleCrackUiFontColorPickerPosition();
   }
 
   function closeCrackUiFontColorPicker(options = {}) {
@@ -11902,6 +11969,10 @@ ${record.css}`)}`
     const trigger = fontColorPickerTrigger;
     const snapshot = fontColorPickerSnapshot;
     if (wasOpen) flushCrackUiFontColorPreview();
+    if (fontColorPickerPositionRaf) {
+      cancelAnimationFrame(fontColorPickerPositionRaf);
+      fontColorPickerPositionRaf = 0;
+    }
 
     if (wasOpen && options.commit === false && snapshot?.key === key && isCrackUiColorPickerKey(key)) {
       if (snapshot.background === true) {
@@ -11913,7 +11984,11 @@ ${record.css}`)}`
         } else {
           chatBackgroundSettings.color = normalizeCrackUiFontHex(snapshot.storedValue, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
         }
-        applyCrackUiChatBackground();
+        if (key === NOVEL_BACKDROP_COLOR_PICKER_KEY) {
+          applyCrackUiNovelBackdropPaintVariables();
+        } else {
+          applyCrackUiChatBackgroundPaintVariables();
+        }
         persistCrackUiChatBackgroundSettings();
       } else {
         fontSettings[key] = snapshot.storedValue;
@@ -12074,12 +12149,12 @@ ${record.css}`)}`
       trigger?.focus?.({ preventScroll: true });
     }, true);
 
-    window.addEventListener('resize', () => {
-      if (fontColorPickerOpen) requestAnimationFrame(positionCrackUiFontColorPicker);
-    }, { passive: true });
-    panel.querySelector('.crack-ui-panel-body')?.addEventListener('scroll', () => {
-      if (fontColorPickerOpen) requestAnimationFrame(positionCrackUiFontColorPicker);
-    }, { passive: true });
+    window.addEventListener('resize', scheduleCrackUiFontColorPickerPosition, { passive: true });
+    panel.querySelector('.crack-ui-panel-body')?.addEventListener(
+      'scroll',
+      scheduleCrackUiFontColorPickerPosition,
+      { passive: true }
+    );
   }
 
   function setCrackUiFontPresetMenuOpen(nextOpen, panel = document.getElementById(ID.panel)) {
@@ -13019,10 +13094,11 @@ ${record.css}`)}`
   function bindPanelThemeStripScroll(panel) {
     const scroller = panel.querySelector('.crack-ui-panel-body');
     const themeStrip = panel.querySelector('.crack-ui-panel-theme-strip');
-    if (!scroller || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
+    if (!scroller || !themeStrip || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
 
     scroller.dataset.crackUiThemeStripScrollBound = '1';
     let restoreCleanupRaf = 0;
+    let visibilityRaf = 0;
     let expandedThemeStripHeight = 0;
     let lastScrollTop = Math.max(0, scroller.scrollTop);
     let collapseGuardUntil = 0;
@@ -13040,9 +13116,12 @@ ${record.css}`)}`
     };
 
     const measureExpandedThemeStripHeight = () => {
-      if (themeStrip && panel.dataset.crackUiThemeStripHidden !== '1') {
+      if (
+        expandedThemeStripHeight <= 0 &&
+        panel.dataset.crackUiThemeStripHidden !== '1'
+      ) {
         expandedThemeStripHeight = Math.max(
-          expandedThemeStripHeight,
+          0,
           Math.ceil(themeStrip.getBoundingClientRect().height)
         );
       }
@@ -13054,6 +13133,7 @@ ${record.css}`)}`
     };
 
     const updateThemeStripVisibility = () => {
+      visibilityRaf = 0;
       const scrollTop = Math.max(0, scroller.scrollTop);
       const hidden = panel.dataset.crackUiThemeStripHidden === '1';
       const now = performance.now();
@@ -13067,8 +13147,8 @@ ${record.css}`)}`
 
       if (!hidden) {
         const stripHeight = measureExpandedThemeStripHeight();
-        // The previous fixed 12px threshold was smaller than the strip itself. Collapsing the
-        // strip could therefore clamp scrollTop back to zero and immediately reopen it.
+        // Measure once per panel instance. Re-reading layout on every scroll event caused
+        // avoidable forced-layout work on mobile while the strip was still visible.
         const hideThreshold = Math.max(32, stripHeight + 12);
         if (scrollTop > hideThreshold) {
           delete panel.dataset.crackUiThemeStripRestoring;
@@ -13090,6 +13170,11 @@ ${record.css}`)}`
       }
 
       lastScrollTop = scrollTop;
+    };
+
+    const scheduleThemeStripVisibilityUpdate = () => {
+      if (visibilityRaf) return;
+      visibilityRaf = requestAnimationFrame(updateThemeStripVisibility);
     };
 
     scroller.addEventListener('wheel', (event) => {
@@ -13117,11 +13202,8 @@ ${record.css}`)}`
       }
     });
 
-    scroller.addEventListener('scroll', updateThemeStripVisibility, { passive: true });
-    requestAnimationFrame(() => {
-      measureExpandedThemeStripHeight();
-      updateThemeStripVisibility();
-    });
+    scroller.addEventListener('scroll', scheduleThemeStripVisibilityUpdate, { passive: true });
+    scheduleThemeStripVisibilityUpdate();
   }
 
   function bindCheckbox(panel, id, checked, onChange) {
@@ -14025,7 +14107,12 @@ ${error?.message || error}`);
 
     const novelBackdropOpacityInput = panel.querySelector('[data-crack-ui-novel-backdrop-opacity]');
     novelBackdropOpacityInput?.addEventListener('input', () => {
-      updateCrackUiNovelBackdropOpacity(novelBackdropOpacityInput.value, { persist: false, sync: true });
+      updateCrackUiNovelBackdropOpacity(
+        novelBackdropOpacityInput.value,
+        { persist: false, sync: false }
+      );
+      const output = panel.querySelector('[data-crack-ui-novel-backdrop-opacity-value]');
+      if (output) output.textContent = `${chatBackgroundSettings.novelBackdropOpacity}%`;
     });
     novelBackdropOpacityInput?.addEventListener('change', () => {
       updateCrackUiNovelBackdropOpacity(novelBackdropOpacityInput.value);
@@ -14060,30 +14147,22 @@ ${error?.message || error}`);
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
     syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
-    syncCheckbox(
-      ID.toggleChatBackground,
-      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled !== true
-    );
-    syncCheckbox(
-      ID.toggleChatBackgroundImage,
-      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled === true
-    );
-    syncCheckbox(ID.toggleNovelBackdrop, chatBackgroundSettings.novelBackdropEnabled);
+    // Background controls are synchronized only when that tab is visible.
+    // This avoids updating hidden controls every time the panel opens.
     closeMenuAssistModePanels(panel);
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
 
     syncThemeStateFromOriginalSettings();
     syncPanelSections();
-    updateThemeUi();
+    // The active background tab was already synchronized by syncPanelSections().
+    updateThemeUi({ syncBackground: false });
     updateImageSizeUi();
     updateChatWidthUi();
     crackUiPanelLifecycleToken += 1;
     if (activePanelSection === 'font') {
       measureCrackUiFontNativeSnapshot({ force: true });
       syncCrackUiFontSettingsUi(panel);
-    } else if (activePanelSection === 'background') {
-      syncCrackUiChatBackgroundUi(panel);
     }
     applyState();
   }
@@ -14261,49 +14340,141 @@ ${error?.message || error}`);
     return layer;
   }
 
+  function setCrackUiBackgroundStyleProperty(element, name, value) {
+    if (!element) return;
+    const next = String(value);
+    if (element.style.getPropertyValue(name) !== next) {
+      element.style.setProperty(name, next);
+    }
+  }
+
+  function setCrackUiBackgroundAttribute(element, name, value) {
+    if (!element) return;
+    const next = String(value);
+    if (element.getAttribute(name) !== next) element.setAttribute(name, next);
+  }
+
+  function applyCrackUiChatBackgroundPaintVariables() {
+    const root = document.documentElement;
+    const enabled = chatBackgroundSettings.enabled === true && crackUiIsChatRoute();
+    const color = normalizeCrackUiFontHex(
+      chatBackgroundSettings.color,
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.color
+    );
+    const imageMode = enabled && chatBackgroundSettings.imageEnabled === true;
+    const imageReady = imageMode && !!chatBackgroundImageObjectUrl;
+
+    setCrackUiBackgroundStyleProperty(
+      root,
+      '--crack-ui-chat-background-color',
+      imageMode ? 'transparent' : color
+    );
+    setCrackUiBackgroundStyleProperty(
+      root,
+      '--crack-ui-chat-background-image',
+      imageReady
+        ? crackUiChatBackgroundEscapeCssUrl(chatBackgroundImageObjectUrl)
+        : 'none'
+    );
+  }
+
+  function applyCrackUiNovelBackdropPaintVariables() {
+    const root = document.documentElement;
+    const novelColor = normalizeCrackUiFontHex(
+      chatBackgroundSettings.novelBackdropColor,
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+    );
+    const novelOpacityPercent = Math.max(5, Math.min(100, Math.round(
+      Number(chatBackgroundSettings.novelBackdropOpacity) ||
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
+    )));
+    const novelOpacity = novelOpacityPercent / 100;
+
+    setCrackUiBackgroundStyleProperty(
+      root,
+      '--crack-ui-novel-backdrop-rgb',
+      crackUiFontHexToRgb(novelColor)
+    );
+    setCrackUiBackgroundStyleProperty(
+      root,
+      '--crack-ui-novel-backdrop-alpha',
+      novelOpacity.toFixed(3)
+    );
+    setCrackUiBackgroundStyleProperty(
+      root,
+      '--crack-ui-novel-backdrop-soft-alpha',
+      Math.max(0, novelOpacity * 0.36).toFixed(3)
+    );
+  }
+
   function isCrackUiNovelBackdropLayout(viewport) {
-    if (normalizeEpisodeUiMode(episodeUiMode) !== 'novel') return false;
-    if (!(viewport instanceof HTMLElement)) return false;
-    if (viewport.querySelector('[data-message-group-id] .rounded-none.bg-transparent .wrtn-markdown')) return true;
-    return true;
+    return (
+      normalizeEpisodeUiMode(episodeUiMode) === 'novel' &&
+      viewport instanceof HTMLElement
+    );
+  }
+
+  function shouldObserveCrackUiWeatherRoot() {
+    if (!crackUiIsChatRoute()) return false;
+    const chatEnabled = chatBackgroundSettings.enabled === true;
+    const novelEnabled =
+      chatBackgroundSettings.novelBackdropEnabled === true &&
+      normalizeEpisodeUiMode(episodeUiMode) === 'novel';
+    return chatEnabled || novelEnabled;
+  }
+
+  function clearCrackUiChatBackgroundTargets() {
+    if (appliedChatBackgroundTarget) {
+      appliedChatBackgroundTarget.removeAttribute('data-crack-ui-chat-background-target');
+      appliedChatBackgroundTarget = null;
+    }
+    if (appliedNovelBackdropTarget) {
+      appliedNovelBackdropTarget.removeAttribute('data-crack-ui-novel-backdrop-target');
+      appliedNovelBackdropTarget = null;
+    }
+    if (appliedChatBackgroundComposerShell) {
+      appliedChatBackgroundComposerShell.removeAttribute('data-crack-ui-chat-background-composer-shell');
+      appliedChatBackgroundComposerShell = null;
+    }
   }
 
   function applyCrackUiChatBackground() {
     const root = document.documentElement;
     const routeEnabled = crackUiIsChatRoute();
     const enabled = chatBackgroundSettings.enabled === true && routeEnabled;
-    const color = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
-    const imageMode = enabled && chatBackgroundSettings.imageEnabled === true;
-    const imageReady = imageMode && !!chatBackgroundImageObjectUrl;
+    const novelCandidate =
+      chatBackgroundSettings.novelBackdropEnabled === true &&
+      routeEnabled &&
+      normalizeEpisodeUiMode(episodeUiMode) === 'novel';
 
-    // Color and image are exclusive modes. Do not keep the previously selected
-    // color (for example black) painted underneath image mode on mobile.
-    root.style.setProperty('--crack-ui-chat-background-color', imageMode ? 'transparent' : color);
-    root.style.setProperty(
-      '--crack-ui-chat-background-image',
-      imageReady ? crackUiChatBackgroundEscapeCssUrl(chatBackgroundImageObjectUrl) : 'none'
-    );
+    // Keep paint-only updates separate from target discovery. Color picker and opacity
+    // dragging can now update CSS variables without rescanning the chat DOM.
+    applyCrackUiChatBackgroundPaintVariables();
+    applyCrackUiNovelBackdropPaintVariables();
 
-    const viewport = routeEnabled ? DOM.chatBackgroundViewport() : null;
-    const novelColor = normalizeCrackUiFontHex(
-      chatBackgroundSettings.novelBackdropColor,
-      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
-    );
-    const novelOpacityPercent = Math.max(5, Math.min(100, Math.round(
-      Number(chatBackgroundSettings.novelBackdropOpacity) || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
-    )));
-    const novelOpacity = novelOpacityPercent / 100;
-    const novelEnabled = chatBackgroundSettings.novelBackdropEnabled === true
-      && routeEnabled
-      && isCrackUiNovelBackdropLayout(viewport);
-    const weather = routeEnabled && (enabled || novelEnabled) ? findCrackUiActiveWeatherLayer() : null;
+    // Default/off state is the common path. Do not search the chat viewport or composer
+    // when neither background feature can render on the current route.
+    if (!enabled && !novelCandidate) {
+      clearCrackUiChatBackgroundTargets();
+      removeCrackUiChatBackgroundWeatherLayer();
+      removeCrackUiNovelBackdropWeatherLayer();
+      refreshCrackUiWeatherRootObserver();
+      setCrackUiBackgroundAttribute(root, 'data-crack-ui-novel-backdrop', 'off');
+      setCrackUiBackgroundAttribute(root, 'data-crack-ui-novel-backdrop-weather', 'off');
+      setCrackUiBackgroundAttribute(root, 'data-crack-ui-chat-background', 'off');
+      return;
+    }
+
+    refreshCrackUiWeatherRootObserver();
+
+    const viewport = DOM.chatBackgroundViewport();
+    const novelEnabled = novelCandidate && isCrackUiNovelBackdropLayout(viewport);
+    const weather = findCrackUiActiveWeatherLayer();
     const nextTarget = enabled && !weather ? viewport : null;
     const nextNovelTarget = novelEnabled && !weather ? viewport : null;
-    const nextComposerShell = (enabled || novelEnabled) ? DOM.chatBackgroundComposerShell() : null;
-
-    root.style.setProperty('--crack-ui-novel-backdrop-rgb', crackUiFontHexToRgb(novelColor));
-    root.style.setProperty('--crack-ui-novel-backdrop-alpha', novelOpacity.toFixed(3));
-    root.style.setProperty('--crack-ui-novel-backdrop-soft-alpha', Math.max(0, novelOpacity * 0.36).toFixed(3));
+    const nextComposerShell = (enabled || novelEnabled)
+      ? DOM.chatBackgroundComposerShell()
+      : null;
 
     if (appliedChatBackgroundTarget && appliedChatBackgroundTarget !== nextTarget) {
       appliedChatBackgroundTarget.removeAttribute('data-crack-ui-chat-background-target');
@@ -14315,8 +14486,13 @@ ${error?.message || error}`);
     }
     appliedNovelBackdropTarget = nextNovelTarget;
 
-    if (appliedChatBackgroundComposerShell && appliedChatBackgroundComposerShell !== nextComposerShell) {
-      appliedChatBackgroundComposerShell.removeAttribute('data-crack-ui-chat-background-composer-shell');
+    if (
+      appliedChatBackgroundComposerShell &&
+      appliedChatBackgroundComposerShell !== nextComposerShell
+    ) {
+      appliedChatBackgroundComposerShell.removeAttribute(
+        'data-crack-ui-chat-background-composer-shell'
+      );
     }
     appliedChatBackgroundComposerShell = nextComposerShell;
 
@@ -14326,18 +14502,47 @@ ${error?.message || error}`);
     } else {
       removeCrackUiChatBackgroundWeatherLayer();
     }
+
     if (weather && novelEnabled) {
       weatherNovelLayer = ensureCrackUiNovelBackdropWeatherLayer(weather);
     } else {
       removeCrackUiNovelBackdropWeatherLayer();
     }
 
-    if (nextTarget) nextTarget.setAttribute('data-crack-ui-chat-background-target', '1');
-    if (nextNovelTarget) nextNovelTarget.setAttribute('data-crack-ui-novel-backdrop-target', '1');
-    if (nextComposerShell) nextComposerShell.setAttribute('data-crack-ui-chat-background-composer-shell', '1');
-    root.setAttribute('data-crack-ui-novel-backdrop', nextNovelTarget || weatherNovelLayer ? 'on' : 'off');
-    root.setAttribute('data-crack-ui-novel-backdrop-weather', weatherNovelLayer ? 'on' : 'off');
-    root.setAttribute(
+    if (nextTarget) {
+      setCrackUiBackgroundAttribute(
+        nextTarget,
+        'data-crack-ui-chat-background-target',
+        '1'
+      );
+    }
+    if (nextNovelTarget) {
+      setCrackUiBackgroundAttribute(
+        nextNovelTarget,
+        'data-crack-ui-novel-backdrop-target',
+        '1'
+      );
+    }
+    if (nextComposerShell) {
+      setCrackUiBackgroundAttribute(
+        nextComposerShell,
+        'data-crack-ui-chat-background-composer-shell',
+        '1'
+      );
+    }
+
+    setCrackUiBackgroundAttribute(
+      root,
+      'data-crack-ui-novel-backdrop',
+      nextNovelTarget || weatherNovelLayer ? 'on' : 'off'
+    );
+    setCrackUiBackgroundAttribute(
+      root,
+      'data-crack-ui-novel-backdrop-weather',
+      weatherNovelLayer ? 'on' : 'off'
+    );
+    setCrackUiBackgroundAttribute(
+      root,
       'data-crack-ui-chat-background',
       weather ? 'weather-underlay' : (nextTarget ? 'viewport' : 'off')
     );
@@ -14358,6 +14563,13 @@ ${error?.message || error}`);
   }
 
   function refreshCrackUiWeatherRootObserver() {
+    if (!shouldObserveCrackUiWeatherRoot()) {
+      chatBackgroundWeatherRootObserver?.disconnect();
+      chatBackgroundWeatherRootObserver = null;
+      observedChatBackgroundWeatherRoot = null;
+      return null;
+    }
+
     const nextRoot = document.getElementById('cawf-root');
     if (observedChatBackgroundWeatherRoot === nextRoot && nextRoot?.isConnected) return nextRoot;
 
@@ -14389,8 +14601,9 @@ ${error?.message || error}`);
   function observeCrackUiChatBackgroundCompatibility() {
     if (chatBackgroundCompatibilityObserver) return;
     chatBackgroundCompatibilityObserver = new MutationObserver(() => {
+      const compatibilityActive = shouldObserveCrackUiWeatherRoot();
       refreshCrackUiWeatherRootObserver();
-      scheduleCrackUiChatBackgroundApply();
+      if (compatibilityActive) scheduleCrackUiChatBackgroundApply();
     });
     chatBackgroundCompatibilityObserver.observe(document.documentElement, {
       attributes: true,
@@ -18918,7 +19131,8 @@ ${error?.message || error}`);
   function isCrackUiAntiScrollOwnedElement(element) {
     return !!element?.closest?.(
       `#${ID.panelRoot}, #${ID.panel}, #${ID.panelBackdrop}, #${ID.bottomModelPopup}, ` +
-      '[data-crack-ui-chat-list-panel="1"], [data-radix-popper-content-wrapper]'
+      '[data-crack-ui-chat-list-panel="1"], [data-crack-ui-room-panel="1"], ' +
+      '[data-radix-popper-content-wrapper]'
     );
   }
 
@@ -19004,19 +19218,20 @@ ${error?.message || error}`);
       '[data-radix-dialog-content][data-state="open"]'
     );
 
-    return [...candidates].some((element) => {
-      if (!element?.isConnected) return false;
+    for (const element of candidates) {
+      if (!element?.isConnected) continue;
 
       try {
         const rect = element.getBoundingClientRect();
-        if (rect.width <= 1 || rect.height <= 1) return false;
+        if (rect.width <= 1 || rect.height <= 1) continue;
 
         const style = getComputedStyle(element);
-        return style.display !== 'none' && style.visibility !== 'hidden';
+        if (style.display !== 'none' && style.visibility !== 'hidden') return true;
       } catch {
-        return false;
       }
-    });
+    }
+
+    return false;
   }
 
   function isCrackUiAntiScrollUiGestureTarget(target) {
@@ -19031,9 +19246,12 @@ ${error?.message || error}`);
 
     if (!interactive) return false;
 
-    /* Sending a message must not create a bypass window that could cover a very short response. */
-    const sendButton = findBottomSendButton();
-    if (sendButton && (interactive === sendButton || sendButton.contains?.(interactive))) return false;
+    /* Sending a message must not create a bypass window that could cover a very short response.
+       Check only the clicked control instead of rescanning every button in the page. */
+    const interactiveButton = interactive.matches?.('button')
+      ? interactive
+      : interactive.closest?.('button');
+    if (interactiveButton && isChatComposerSendButton(interactiveButton)) return false;
 
     return true;
   }
@@ -19064,10 +19282,8 @@ ${error?.message || error}`);
 
   function findCrackUiAntiScrollScroller() {
     if (!crackUiIsConversationRoute()) return null;
-    const cacheHasConversation = !!cachedAntiScrollScroller?.querySelector?.('[data-message-group-id], .wrtn-markdown');
     if (
       cachedAntiScrollHref === location.href &&
-      cacheHasConversation &&
       isCrackUiAntiScrollScrollable(cachedAntiScrollScroller)
     ) {
       return cachedAntiScrollScroller;
@@ -19109,8 +19325,8 @@ ${error?.message || error}`);
       !antiScrollJacking ||
       !crackUiIsConversationRoute() ||
       isCrackUiUserUiScrollAllowed() ||
-      isCrackUiAntiScrollOverlayOpen() ||
-      !isCrackUiAntiScrollScrollable(scroller)
+      !isCrackUiAntiScrollScrollable(scroller) ||
+      isCrackUiAntiScrollOverlayOpen()
     ) {
       return false;
     }
@@ -19196,7 +19412,13 @@ ${error?.message || error}`);
     };
 
     const markManualBottomClick = (event) => {
-      if (!antiScrollJacking || event?.isTrusted === false) return;
+      if (
+        !antiScrollJacking ||
+        event?.isTrusted === false ||
+        isCrackUiManualScrollToBottomAllowed()
+      ) {
+        return;
+      }
       if (isCrackUiScrollToBottomButton(event?.target)) {
         allowCrackUiManualScrollToBottom(2000);
       }
@@ -19216,8 +19438,10 @@ ${error?.message || error}`);
     const markKeyboardViewportChange = () => {
       if (!antiScrollJacking || !isTouchLikeDevice()) return;
 
+      // Keyboard viewport changes are relevant only while a real editor owns focus.
+      // A merely open modal should not extend the auto-scroll bypass on every resize.
       const active = document.activeElement;
-      if (!isCrackUiAntiScrollEditableElement(active) && !isCrackUiAntiScrollOverlayOpen()) return;
+      if (!isCrackUiAntiScrollEditableElement(active)) return;
 
       /* Every resize/offset step extends from the latest keyboard animation frame,
          rather than relying on one fixed delay from the original tap. */
@@ -19246,16 +19470,27 @@ ${error?.message || error}`);
   function shouldCrackUiBlockElementScrollMethod(method, target, args) {
     if (!antiScrollJacking || !crackUiIsConversationRoute()) return false;
     if (isCrackUiManualScrollToBottomAllowed()) return false;
-    if (isCrackUiAntiScrollOverlayElement(target)) return false;
-    const scroller = findCrackUiAntiScrollScroller();
-    if (!isCrackUiUserReadingUp(scroller)) return false;
 
-    if (method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded') {
-      if (!target || !(scroller === document.scrollingElement || scroller.contains?.(target))) return false;
+    const scroller = findCrackUiAntiScrollScroller();
+    const intoView = method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded';
+
+    if (intoView) {
+      if (
+        !target ||
+        !(scroller === document.scrollingElement || scroller?.contains?.(target))
+      ) {
+        return false;
+      }
+      if (isCrackUiAntiScrollOverlayElement(target)) return false;
+      if (!isCrackUiUserReadingUp(scroller)) return false;
+
       try {
         const targetRect = target.getBoundingClientRect();
         const scrollerRect = scroller === document.scrollingElement
-          ? { top: 0, bottom: window.innerHeight || document.documentElement.clientHeight || 0 }
+          ? {
+              top: 0,
+              bottom: window.innerHeight || document.documentElement.clientHeight || 0,
+            }
           : scroller.getBoundingClientRect();
         return targetRect.bottom > scrollerRect.bottom + 1;
       } catch {
@@ -19263,7 +19498,10 @@ ${error?.message || error}`);
       }
     }
 
-    if (target !== scroller) return false;
+    // Direct scroll/scrollTo/scrollBy calls matter only on the cached chat scroller.
+    // Reject other elements before doing overlay/style or reading-up work.
+    if (target !== scroller || !isCrackUiUserReadingUp(scroller)) return false;
+
     const requestedTop = getCrackUiRequestedScrollTop(method, args, scroller.scrollTop);
     return requestedTop != null && requestedTop > scroller.scrollTop + 0.5;
   }
@@ -20702,7 +20940,9 @@ ${error?.message || error}`);
         fontResolvedFamilyCount: fontResolvedFamilies.length,
         fontQuoteRenderedCount: document.querySelectorAll('[data-crack-ui-font-quote]').length,
         fontQuoteTrackedCount: fontQuoteWraps.size,
+        fontQuoteObserverActive: fontQuoteMutationObserverActive,
         fontQuoteScanScheduled: !!fontQuoteScanTimer || !!fontQuoteScanRaf,
+        fontColorPickerPositionScheduled: !!fontColorPickerPositionRaf,
         novelModelIndicatorCacheCount: Object.keys(novelModelMessageCache).length,
         novelModelIndicatorCatalogCount: novelModelCatalogById.size,
         novelModelIndicatorRetiredCatalogCount: [...novelModelCatalogById.values()].filter((entry) => entry.retired).length,
@@ -21063,8 +21303,9 @@ ${error?.message || error}`);
 
       const weatherStructureChanged = mutations.some(mutationTouchesCrackUiWeatherRoot);
       if (weatherStructureChanged) {
+        const weatherCompatibilityActive = shouldObserveCrackUiWeatherRoot();
         refreshCrackUiWeatherRootObserver();
-        scheduleCrackUiChatBackgroundApply();
+        if (weatherCompatibilityActive) scheduleCrackUiChatBackgroundApply();
         const onlyWeatherStructureChanges = mutations.every((mutation) =>
           mutationTouchesCrackUiWeatherRoot(mutation) || isCrackUiOwnMutationNode(mutation.target)
         );
