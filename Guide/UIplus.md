@@ -3,42 +3,33 @@
 
 **➢ 설정창** : PC / 태블릿 / 모바일 모두 검색창 옆 톱니바퀴를 눌러 사용 가능
 
-**➢ Passive** : 모델 선택창에서 모델 관련 설명 문구가 사라짐
-
+**➢ Passive** : 모델 선택창에서 모델 관련 설명 문구가 사라짐  
 <img width="477" height="84" alt="image" src="https://github.com/user-attachments/assets/156f1235-2f19-4c03-8b22-f32f3d3b8979" />
 
-
-**➢ 테마 변경**
-
-<img width="1220" height="71" alt="image" src="https://github.com/user-attachments/assets/e5dbee21-0950-477c-93c4-09a2d764f86e" />
-
-    ⤷ 색상 : 라이트 모드 / 다크 모드 변경
-    ⤷ 작품 UI 변경 : 소설형 UI / 채팅형 UI 변경
+**➢ 테마 변경**  
+<img width="1220" height="71" alt="image" src="https://github.com/user-attachments/assets/e5dbee21-0950-477c-93c4-09a2d764f86e" />  
+⤷ 색상 : 라이트 모드 / 다크 모드 변경  
+⤷ 작품 UI 변경 : 소설형 UI / 채팅형 UI 변경
 
 ***
 ### 채팅
 ***
 <img width="1221" height="690" alt="image" src="https://github.com/user-attachments/assets/66cebeb9-424f-4602-b938-cad687c03b41" />
 
-**➢ 대화창 폭 조절** : 보여지는 채팅 로그와 입력창의 폭을 조절
-
-    ⤷ PC / 태블릿 지원 ⭕
-    ⤷ 모바일 미지원 ❌
+**➢ 대화창 폭 조절** : 보여지는 채팅 로그와 입력창의 폭을 조절  
+⤷ PC / 태블릿 지원 ⭕  
+⤷ 모바일 미지원 ❌
 
 **➢ 이미지 사이즈 조절** : 채팅창 내 삽입되는 모든 이미지의 크기를 조절
 
-**➢ 입력창 모델 변경 버튼** : 입력창 전송 버튼 옆에 모델 선택 버튼이 생김
+**➢ 입력창 모델 변경 버튼** : 입력창 전송 버튼 옆에 모델 선택 버튼이 생김  
+<img width="423" height="210" alt="image" src="https://github.com/user-attachments/assets/041fcc54-d58e-4d03-8eb4-93ee2cdea712" /><img width="510" height="223" alt="image" src="https://github.com/user-attachments/assets/064d9c91-cd5b-4cc7-bdd1-06cd8ff8ac22" />  
+⤷ 표시할 모델 : 미선택한 모델은 상단 모델 선택창과 입력창 모델 선택창에서 모두 숨김
 
-<img width="423" height="210" alt="image" src="https://github.com/user-attachments/assets/041fcc54-d58e-4d03-8eb4-93ee2cdea712" /><img width="510" height="223" alt="image" src="https://github.com/user-attachments/assets/064d9c91-cd5b-4cc7-bdd1-06cd8ff8ac22" />
-
-    ⤷ 표시할 모델 : 미선택한 모델은 상단 모델 선택창과 입력창 모델 선택창에서 모두 숨김
-
-**➢ 채팅방 설정 자동 숨김** : 채팅방 설정창을 자동으로 숨김
-
-<img width="582" height="174" alt="image" src="https://github.com/user-attachments/assets/41c89866-fb3d-45a5-99cb-9950284d11e0" />
-
-    ⤷ PC : 화면 오른쪽 끝에 마우스를 가져가면 나타남
-    ⤷ 태블릿 / 모바일 : 오른쪽 핸들이나 우에서 좌로 슬라이드 기능으로 열 수 있음
+**➢ 채팅방 설정 자동 숨김** : 채팅방 설정창을 자동으로 숨김  
+<img width="582" height="174" alt="image" src="https://github.com/user-attachments/assets/41c89866-fb3d-45a5-99cb-9950284d11e0" />  
+⤷ PC : 화면 오른쪽 끝에 마우스를 가져가면 나타남  
+⤷ 태블릿 / 모바일 : 오른쪽 핸들이나 우에서 좌로 슬라이드 기능으로 열 수 있음
 
 **➢ 스탯창 숨김** : 스탯이 존재하는 채팅에서 상단 스탯창을 숨김
 
@@ -50,35 +41,27 @@
 
 **➢ 읽는 중 자동 스크롤 방지** : 이전 로그를 읽는 중 출력이 완료되어도 맨 아래로 강제 이동하지 않음
 
-**➢ 소설형 UI 모델 표기** : 소설형 UI 응답 좌측 하단에 사용된 모델 아이콘을 표시
-
-<img width="482" height="284" alt="image" src="https://github.com/user-attachments/assets/cf571a31-6803-49f1-8d63-4b6187bb0f6e" />
-
-    ⤷ 모델을 찾지 못하면 ? 아이콘이 표시됨
-    ⤷ 아이콘을 누르면 모델을 직접 선택하거나 자동 판정으로 되돌릴 수 있음
+**➢ 소설형 UI 모델 표기** : 소설형 UI 응답 좌측 하단에 사용된 모델 아이콘을 표시  
+<img width="482" height="284" alt="image" src="https://github.com/user-attachments/assets/cf571a31-6803-49f1-8d63-4b6187bb0f6e" />  
+⤷ 모델을 찾지 못하면 ? 아이콘이 표시됨  
+⤷ 아이콘을 누르면 모델을 직접 선택하거나 자동 판정으로 되돌릴 수 있음
 
 ***
 ### 화면
 ***
-➢ 상단바 자동 숨김 : Crack 상단바를 자동으로 숨김
+**➢ 상단바 자동 숨김** : Crack 상단바를 자동으로 숨김  
+<img width="850" height="92" alt="image" src="https://github.com/user-attachments/assets/e54840e2-ac5f-4d7c-a162-79a43aadd965" />  
+⤷ PC : 화면 맨 위에 마우스를 가져가면 나타남  
+⤷ 태블릿 / 모바일 : 화면 위쪽 가운데 핸들을 누르면 나타남
 
-<img width="850" height="92" alt="image" src="https://github.com/user-attachments/assets/e54840e2-ac5f-4d7c-a162-79a43aadd965" />
+**➢ 전체화면 버튼** : 채팅 화면에 전체화면 전환 버튼을 추가  
+<img width="260" height="76" alt="image" src="https://github.com/user-attachments/assets/7b6386af-6fcf-43cf-9c76-e3c2640d2f4d" />  
+⤷ iOS 지원 ❌
 
-    ⤷ PC : 화면 맨 위에 마우스를 가져가면 나타남
-    ⤷ 태블릿 / 모바일 : 화면 위쪽 가운데 핸들을 누르면 나타남
+**➢ 채팅 목록 자동 숨김** : 왼쪽 채팅 목록을 자동으로 숨김  
+<img width="582" height="174" alt="image" src="https://github.com/user-attachments/assets/41c89866-fb3d-45a5-99cb-9950284d11e0" />  
+⤷ PC : 화면 왼쪽 끝에 마우스를 가져가면 나타남  
+⤷ 모바일 : 왼쪽 핸들이나 슬라이드 기능으로 열 수 있음  
+⤷ 태블릿 : 슬라이드 기능으로 열 수 있음(태블릿은 핸들 공식 지원임)
 
-➢ 전체화면 버튼 : 채팅 화면에 전체화면 전환 버튼을 추가
-
-<img width="260" height="76" alt="image" src="https://github.com/user-attachments/assets/7b6386af-6fcf-43cf-9c76-e3c2640d2f4d" />
-
-    ⤷ iOS 지원 ❌
-
-➢ 채팅 목록 자동 숨김 : 왼쪽 채팅 목록을 자동으로 숨김
-
-<img width="582" height="174" alt="image" src="https://github.com/user-attachments/assets/41c89866-fb3d-45a5-99cb-9950284d11e0" />
-
-    ⤷ PC : 화면 왼쪽 끝에 마우스를 가져가면 나타남
-    ⤷ 모바일 : 왼쪽 핸들이나 슬라이드 기능으로 열 수 있음
-    ⤷ 태블릿 : 슬라이드 기능으로 열 수 있음(태블릿은 핸들 공식 지원임)
-
-➢ 썸네일 움짤 정지 : 움직이는 GIF 썸네일을 정지
+**➢ 썸네일 움짤 정지** : 움직이는 GIF 썸네일을 정지
