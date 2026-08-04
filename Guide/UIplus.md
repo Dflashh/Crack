@@ -25,11 +25,12 @@
 
 **➢ 입력창 모델 변경 버튼** : 입력창 전송 버튼 옆에 모델 선택 버튼이 생김
 
-<img width="423" height="210" alt="image" src="https://github.com/user-attachments/assets/041fcc54-d58e-4d03-8eb4-93ee2cdea712" /> | <img width="510" height="223" alt="image" src="https://github.com/user-attachments/assets/064d9c91-cd5b-4cc7-bdd1-06cd8ff8ac22" />
+<img width="423" height="210" alt="image" src="https://github.com/user-attachments/assets/041fcc54-d58e-4d03-8eb4-93ee2cdea712" /><img width="510" height="223" alt="image" src="https://github.com/user-attachments/assets/064d9c91-cd5b-4cc7-bdd1-06cd8ff8ac22" />
 
     ⤷ 표시할 모델 : 미선택한 모델은 상단 모델 선택창과 입력창 모델 선택창에서 모두 숨김
 
-➢ 채팅방 설정 자동 숨김 : 오른쪽 채팅방 설정창을 자동으로 숨김
+➢ 채팅방 설정 자동 숨김 : 채팅방 설정창을 자동으로 숨김
+<img width="1172" height="341" alt="image" src="https://github.com/user-attachments/assets/3465a156-6155-44f9-bad1-078dd9fa8863" />
 
     ⤷ PC : 화면 오른쪽 끝에 마우스를 가져가면 나타남
     ⤷ 태블릿 / 모바일 : 오른쪽 핸들이나 슬라이드 기능으로 열 수 있음
