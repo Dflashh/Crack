@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.31
+// @version      2.7.33
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.31';
+  const CRACK_UI_VERSION = '2.7.33';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2147,6 +2147,7 @@
   let chatContentRefreshRaf = 0;
   let chatContentRefreshLastAt = 0;
   let viewportRefreshRaf = 0;
+  let visualViewportRefreshRaf = 0;
   let cachedCrackUiViewportWidth = null;
   let cachedTouchLikeDevice = null;
   let initScheduled = false;
@@ -7847,6 +7848,22 @@
     invalidateCrackUiViewportMetrics();
     if (viewportRefreshRaf) return;
     viewportRefreshRaf = requestAnimationFrame(runCrackUiViewportRefresh);
+  }
+
+  function runCrackUiVisualViewportRefresh() {
+    visualViewportRefreshRaf = 0;
+
+    /* Android opens the software keyboard through several visualViewport frames.
+       Keep those frames free from Max-only chat-width/background layout work so
+       Crack can finish positioning its native editor and modal by itself. */
+    invalidateCrackUiViewportMetrics();
+    updateDeviceViewportClasses();
+    scheduleMenuSwipeZonePosition();
+  }
+
+  function scheduleCrackUiVisualViewportRefresh() {
+    if (visualViewportRefreshRaf) return;
+    visualViewportRefreshRaf = requestAnimationFrame(runCrackUiVisualViewportRefresh);
   }
 
   updateDeviceViewportClasses();
@@ -19607,19 +19624,20 @@ ${error?.message || error}`);
       '[data-radix-dialog-content][data-state="open"]'
     );
 
-    return [...candidates].some((element) => {
-      if (!element?.isConnected) return false;
+    for (const element of candidates) {
+      if (!element?.isConnected) continue;
 
       try {
         const rect = element.getBoundingClientRect();
-        if (rect.width <= 1 || rect.height <= 1) return false;
+        if (rect.width <= 1 || rect.height <= 1) continue;
 
         const style = getComputedStyle(element);
-        return style.display !== 'none' && style.visibility !== 'hidden';
+        if (style.display !== 'none' && style.visibility !== 'hidden') return true;
       } catch {
-        return false;
       }
-    });
+    }
+
+    return false;
   }
 
   function isCrackUiAntiScrollUiGestureTarget(target) {
@@ -19634,9 +19652,12 @@ ${error?.message || error}`);
 
     if (!interactive) return false;
 
-    /* Sending a message must not create a bypass window that could cover a very short response. */
-    const sendButton = findBottomSendButton();
-    if (sendButton && (interactive === sendButton || sendButton.contains?.(interactive))) return false;
+    /* Sending a message must not create a bypass window that could cover a very short response.
+       Check only the clicked control instead of rescanning every button in the page. */
+    const interactiveButton = interactive.matches?.('button')
+      ? interactive
+      : interactive.closest?.('button');
+    if (interactiveButton && isChatComposerSendButton(interactiveButton)) return false;
 
     return true;
   }
@@ -19667,10 +19688,8 @@ ${error?.message || error}`);
 
   function findCrackUiAntiScrollScroller() {
     if (!crackUiIsConversationRoute()) return null;
-    const cacheHasConversation = !!cachedAntiScrollScroller?.querySelector?.('[data-message-group-id], .wrtn-markdown');
     if (
       cachedAntiScrollHref === location.href &&
-      cacheHasConversation &&
       isCrackUiAntiScrollScrollable(cachedAntiScrollScroller)
     ) {
       return cachedAntiScrollScroller;
@@ -19712,8 +19731,8 @@ ${error?.message || error}`);
       !antiScrollJacking ||
       !crackUiIsConversationRoute() ||
       isCrackUiUserUiScrollAllowed() ||
-      isCrackUiAntiScrollOverlayOpen() ||
-      !isCrackUiAntiScrollScrollable(scroller)
+      !isCrackUiAntiScrollScrollable(scroller) ||
+      isCrackUiAntiScrollOverlayOpen()
     ) {
       return false;
     }
@@ -19799,7 +19818,13 @@ ${error?.message || error}`);
     };
 
     const markManualBottomClick = (event) => {
-      if (!antiScrollJacking || event?.isTrusted === false) return;
+      if (
+        !antiScrollJacking ||
+        event?.isTrusted === false ||
+        isCrackUiManualScrollToBottomAllowed()
+      ) {
+        return;
+      }
       if (isCrackUiScrollToBottomButton(event?.target)) {
         allowCrackUiManualScrollToBottom(2000);
       }
@@ -19819,8 +19844,10 @@ ${error?.message || error}`);
     const markKeyboardViewportChange = () => {
       if (!antiScrollJacking || !isTouchLikeDevice()) return;
 
+      // Keyboard viewport changes are relevant only while a real editor owns focus.
+      // A merely open modal should not extend the auto-scroll bypass on every resize.
       const active = document.activeElement;
-      if (!isCrackUiAntiScrollEditableElement(active) && !isCrackUiAntiScrollOverlayOpen()) return;
+      if (!isCrackUiAntiScrollEditableElement(active)) return;
 
       /* Every resize/offset step extends from the latest keyboard animation frame,
          rather than relying on one fixed delay from the original tap. */
@@ -19849,16 +19876,27 @@ ${error?.message || error}`);
   function shouldCrackUiBlockElementScrollMethod(method, target, args) {
     if (!antiScrollJacking || !crackUiIsConversationRoute()) return false;
     if (isCrackUiManualScrollToBottomAllowed()) return false;
-    if (isCrackUiAntiScrollOverlayElement(target)) return false;
-    const scroller = findCrackUiAntiScrollScroller();
-    if (!isCrackUiUserReadingUp(scroller)) return false;
 
-    if (method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded') {
-      if (!target || !(scroller === document.scrollingElement || scroller.contains?.(target))) return false;
+    const scroller = findCrackUiAntiScrollScroller();
+    const intoView = method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded';
+
+    if (intoView) {
+      if (
+        !target ||
+        !(scroller === document.scrollingElement || scroller?.contains?.(target))
+      ) {
+        return false;
+      }
+      if (isCrackUiAntiScrollOverlayElement(target)) return false;
+      if (!isCrackUiUserReadingUp(scroller)) return false;
+
       try {
         const targetRect = target.getBoundingClientRect();
         const scrollerRect = scroller === document.scrollingElement
-          ? { top: 0, bottom: window.innerHeight || document.documentElement.clientHeight || 0 }
+          ? {
+              top: 0,
+              bottom: window.innerHeight || document.documentElement.clientHeight || 0,
+            }
           : scroller.getBoundingClientRect();
         return targetRect.bottom > scrollerRect.bottom + 1;
       } catch {
@@ -19866,7 +19904,10 @@ ${error?.message || error}`);
       }
     }
 
-    if (target !== scroller) return false;
+    // Direct scroll/scrollTo/scrollBy calls matter only on the cached chat scroller.
+    // Reject other elements before doing overlay/style or reading-up work.
+    if (target !== scroller || !isCrackUiUserReadingUp(scroller)) return false;
+
     const requestedTop = getCrackUiRequestedScrollTop(method, args, scroller.scrollTop);
     return requestedTop != null && requestedTop > scroller.scrollTop + 0.5;
   }
@@ -21178,7 +21219,7 @@ ${error?.message || error}`);
     document.addEventListener('fullscreenchange', updateFullscreenButtonUi);
     document.addEventListener('webkitfullscreenchange', updateFullscreenButtonUi);
     window.addEventListener('resize', scheduleCrackUiViewportRefresh, { passive: true });
-    window.visualViewport?.addEventListener?.('resize', scheduleCrackUiViewportRefresh, { passive: true });
+    window.visualViewport?.addEventListener?.('resize', scheduleCrackUiVisualViewportRefresh, { passive: true });
 
     const touchViewportMedia = window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)');
     touchViewportMedia.addEventListener?.('change', scheduleCrackUiViewportRefresh);
@@ -21229,6 +21270,7 @@ ${error?.message || error}`);
       if (chatContentRefreshTimer) clearTimeout(chatContentRefreshTimer);
       if (chatContentRefreshRaf) cancelAnimationFrame(chatContentRefreshRaf);
       if (viewportRefreshRaf) cancelAnimationFrame(viewportRefreshRaf);
+      if (visualViewportRefreshRaf) cancelAnimationFrame(visualViewportRefreshRaf);
       // Object URLs are released automatically with the document. Do not revoke
       // here because some mobile browsers emit pagehide during native file picking.
     });
