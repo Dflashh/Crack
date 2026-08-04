@@ -2,8 +2,10 @@
 
 > 버그는 해당 확프 게시글 or 본인이 버그 픽스 후 **꼭 뤼튼 여성향 갤러리에 올려주셈**
 ***
-## Crack UI Plus <v2.6.1> <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js"><img src="https://img.shields.io/badge/➕-Plus-blue?style=for-the-badge" alt="UIplus" /></a> <a href="Guide/UIplus.md"><img src="https://img.shields.io/badge/🔧-UI Plus 가이드-e9a01e?style=for-the-badge" alt="P가이드" /></a>
-## Crack UI Max <v3.0.0> <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/UImax.user.js"><img src="https://img.shields.io/badge/🌐-Max-blue?style=for-the-badge" alt="UImax" /></a> <a href="Guide/UImax.md"><img src="https://img.shields.io/badge/🔧-UI Max 가이드-e9a01e?style=for-the-badge" alt="M가이드" /></a>
+## Crack UI Plus <v2.6.1>  
+<a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js"><img src="https://img.shields.io/badge/➕-Plus-blue?style=for-the-badge" alt="UIplus" /></a> <a href="Guide/UIplus.md"><img src="https://img.shields.io/badge/🔧-UI Plus 가이드-e9a01e?style=for-the-badge" alt="P가이드" /></a>
+## Crack UI Max <v3.0.0>  
+<a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/UImax.user.js"><img src="https://img.shields.io/badge/🌐-Max-blue?style=for-the-badge" alt="UImax" /></a> <a href="Guide/UImax.md"><img src="https://img.shields.io/badge/🔧-UI Max 가이드-e9a01e?style=for-the-badge" alt="M가이드" /></a>
 <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=229006"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 
 **기능**
