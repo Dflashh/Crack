@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.23
+// @version      2.7.24
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.23';
+  const CRACK_UI_VERSION = '2.7.24';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2118,6 +2118,11 @@
   let antiScrollGuardInstalled = false;
   let antiScrollGuardBlockedCount = 0;
   let antiScrollGuardLastBlockedAt = 0;
+  let antiScrollManualBottomUntil = 0;
+  let antiScrollUserUiUntil = 0;
+  let antiScrollBottomButtonListenerInstalled = false;
+  let antiScrollManualBottomBypassCount = 0;
+  let antiScrollUserUiBypassCount = 0;
   let cachedChatBackgroundComposerShell = null;
   let appliedChatBackgroundTarget = null;
   let appliedNovelBackdropTarget = null;
@@ -2525,8 +2530,10 @@
         width: 100% !important;
       }
 
-      html.${CLS.antiScrollJacking} body main,
-      html.${CLS.antiScrollJacking} body main * {
+      /* Limit anchoring changes to the actual chat viewport.
+         Applying them to every element under main can interfere with mobile dialogs and keyboard resizing. */
+      html.${CLS.antiScrollJacking} body main .stick-to-bottom,
+      html.${CLS.antiScrollJacking} body main .stick-to-bottom * {
         scroll-behavior: auto !important;
         overflow-anchor: none !important;
       }
@@ -18913,6 +18920,101 @@ ${error?.message || error}`);
     );
   }
 
+  function isCrackUiAntiScrollOverlayElement(element) {
+    if (!element?.closest) return false;
+
+    if (element.closest(
+      '[role="dialog"], [aria-modal="true"], [data-radix-dialog-content], ' +
+      '[data-radix-popper-content-wrapper]'
+    )) {
+      return true;
+    }
+
+    /* Some Crack mobile sheets do not expose a stable dialog attribute.
+       Treat a large fixed ancestor of the focused control as an overlay. */
+    let current = element;
+    const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      const className = String(current.className || '');
+      const inlinePosition = String(current.style?.position || '');
+      const looksFixed =
+        inlinePosition === 'fixed' ||
+        /(?:^|\s)fixed(?:\s|$)/.test(className);
+
+      if (looksFixed) {
+        try {
+          const rect = current.getBoundingClientRect();
+          if (rect.width >= viewportWidth * 0.62 && rect.height >= viewportHeight * 0.24) {
+            return true;
+          }
+        } catch {
+        }
+      }
+
+      current = current.parentElement;
+    }
+
+    return false;
+  }
+
+  function isCrackUiAntiScrollOverlayOpen() {
+    const active = document.activeElement;
+    if (isCrackUiAntiScrollOverlayElement(active)) return true;
+
+    const candidates = document.querySelectorAll(
+      '[role="dialog"][data-state="open"], [role="dialog"][aria-modal="true"], ' +
+      '[aria-modal="true"]:not([data-state="closed"]), ' +
+      '[data-radix-dialog-content][data-state="open"]'
+    );
+
+    return [...candidates].some((element) => {
+      if (!element?.isConnected) return false;
+
+      try {
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 1 || rect.height <= 1) return false;
+
+        const style = getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  function isCrackUiAntiScrollUiGestureTarget(target) {
+    if (!target?.closest) return false;
+
+    const interactive = target.closest(
+      'button, a[href], label, input, textarea, select, ' +
+      '[contenteditable]:not([contenteditable="false"]), ' +
+      '[role="button"], [role="textbox"], [role="menuitem"], [role="tab"], ' +
+      '[role="switch"], [role="checkbox"], [role="combobox"]'
+    );
+
+    if (!interactive) return false;
+
+    /* Sending a message must not create a bypass window that could cover a very short response. */
+    const sendButton = findBottomSendButton();
+    if (sendButton && (interactive === sendButton || sendButton.contains?.(interactive))) return false;
+
+    return true;
+  }
+
+  function allowCrackUiUserUiScroll(durationMs = 1500) {
+    antiScrollUserUiUntil = Math.max(
+      antiScrollUserUiUntil,
+      Date.now() + Math.max(300, Number(durationMs) || 0)
+    );
+    antiScrollUserUiBypassCount += 1;
+  }
+
+  function isCrackUiUserUiScrollAllowed() {
+    return Date.now() < antiScrollUserUiUntil;
+  }
+
   function findCrackUiAntiScrollScroller() {
     if (!crackUiIsConversationRoute()) return null;
     const cacheHasConversation = !!cachedAntiScrollScroller?.querySelector?.('[data-message-group-id], .wrtn-markdown');
@@ -18956,7 +19058,16 @@ ${error?.message || error}`);
   }
 
   function isCrackUiUserReadingUp(scroller = findCrackUiAntiScrollScroller()) {
-    if (!antiScrollJacking || !crackUiIsConversationRoute() || !isCrackUiAntiScrollScrollable(scroller)) return false;
+    if (
+      !antiScrollJacking ||
+      !crackUiIsConversationRoute() ||
+      isCrackUiUserUiScrollAllowed() ||
+      isCrackUiAntiScrollOverlayOpen() ||
+      !isCrackUiAntiScrollScrollable(scroller)
+    ) {
+      return false;
+    }
+
     const distanceToBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
     return distanceToBottom > 2;
   }
@@ -18964,6 +19075,79 @@ ${error?.message || error}`);
   function recordCrackUiBlockedAutoScroll() {
     antiScrollGuardBlockedCount += 1;
     antiScrollGuardLastBlockedAt = Date.now();
+  }
+
+  function isCrackUiScrollToBottomButton(target) {
+    const button = target?.closest?.('button');
+    if (!button || isCrackUiAntiScrollOwnedElement(button)) return false;
+
+    const toolbar = button.closest?.('div.absolute');
+    const toolbarClassName = String(toolbar?.className || '');
+    const hasExpectedToolbar =
+      toolbarClassName.includes('bottom-[145px]') &&
+      toolbarClassName.includes('flex-col') &&
+      toolbarClassName.includes('pointer-events-none');
+
+    if (!hasExpectedToolbar) return false;
+
+    const accessibleName = `${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''}`
+      .trim()
+      .toLowerCase();
+
+    if (/맨\s*아래|아래로|scroll\s*(?:to\s*)?bottom|go\s*(?:to\s*)?bottom/.test(accessibleName)) {
+      return true;
+    }
+
+    const arrowPath = button.querySelector?.('svg path[d]');
+    const arrowPathData = String(arrowPath?.getAttribute('d') || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return arrowPathData.startsWith('M20.09 8.3 12 16.4 3.91 8.3');
+  }
+
+  function allowCrackUiManualScrollToBottom(durationMs = 2000) {
+    antiScrollManualBottomUntil = Math.max(
+      antiScrollManualBottomUntil,
+      Date.now() + Math.max(250, Number(durationMs) || 0)
+    );
+    antiScrollManualBottomBypassCount += 1;
+  }
+
+  function isCrackUiManualScrollToBottomAllowed() {
+    return Date.now() < antiScrollManualBottomUntil;
+  }
+
+  function installCrackUiBottomButtonBypass() {
+    if (antiScrollBottomButtonListenerInstalled) return;
+
+    const markPointerRequest = (event) => {
+      if (!antiScrollJacking || event?.isTrusted === false) return;
+
+      /* Mobile dialogs and editable fields need their normal focus/viewport adjustment
+         while the software keyboard is opening. This short window is only created by
+         an actual user interaction and does not apply to output-completion calls. */
+      if (isCrackUiAntiScrollUiGestureTarget(event?.target)) {
+        allowCrackUiUserUiScroll(1500);
+      }
+
+      if (!isCrackUiScrollToBottomButton(event?.target)) return;
+
+      /* Crack's manual bottom button and output completion can share the same scroll API.
+         Allow only the short window immediately following a trusted button gesture. */
+      allowCrackUiManualScrollToBottom(2000);
+    };
+
+    const markManualBottomClick = (event) => {
+      if (!antiScrollJacking || event?.isTrusted === false) return;
+      if (isCrackUiScrollToBottomButton(event?.target)) {
+        allowCrackUiManualScrollToBottom(2000);
+      }
+    };
+
+    document.addEventListener('pointerdown', markPointerRequest, true);
+    document.addEventListener('click', markManualBottomClick, true);
+    antiScrollBottomButtonListenerInstalled = true;
   }
 
   function getCrackUiRequestedScrollTop(method, args, currentTop) {
@@ -18978,6 +19162,8 @@ ${error?.message || error}`);
 
   function shouldCrackUiBlockElementScrollMethod(method, target, args) {
     if (!antiScrollJacking || !crackUiIsConversationRoute()) return false;
+    if (isCrackUiManualScrollToBottomAllowed()) return false;
+    if (isCrackUiAntiScrollOverlayElement(target)) return false;
     const scroller = findCrackUiAntiScrollScroller();
     if (!isCrackUiUserReadingUp(scroller)) return false;
 
@@ -19033,7 +19219,11 @@ ${error?.message || error}`);
             return descriptor.get.call(this);
           },
           set(value) {
-            if (!antiScrollJacking || !crackUiIsConversationRoute()) {
+            if (
+              !antiScrollJacking ||
+              !crackUiIsConversationRoute() ||
+              isCrackUiManualScrollToBottomAllowed()
+            ) {
               return descriptor.set.call(this, value);
             }
             const current = descriptor.get.call(this);
@@ -19070,9 +19260,20 @@ ${error?.message || error}`);
       const originalFocus = htmlPrototype.focus;
       if (typeof originalFocus === 'function') {
         htmlPrototype.focus = function (options) {
-          if (!antiScrollJacking || !crackUiIsConversationRoute()) {
+          if (
+            !antiScrollJacking ||
+            !crackUiIsConversationRoute() ||
+            isCrackUiManualScrollToBottomAllowed()
+          ) {
             return originalFocus.apply(this, arguments);
           }
+
+          /* Never force preventScroll inside a modal/bottom sheet. On Android this can
+             stop the visual viewport from lifting the editor above the software keyboard. */
+          if (isCrackUiAntiScrollOverlayElement(this)) {
+            return originalFocus.apply(this, arguments);
+          }
+
           const scroller = findCrackUiAntiScrollScroller();
           if (isCrackUiUserReadingUp(scroller)) {
             const nextOptions = options && typeof options === 'object'
@@ -19092,7 +19293,11 @@ ${error?.message || error}`);
         const original = pageWindow[method];
         if (typeof original !== 'function') return;
         pageWindow[method] = function (...args) {
-          if (!antiScrollJacking || !crackUiIsConversationRoute()) {
+          if (
+            !antiScrollJacking ||
+            !crackUiIsConversationRoute() ||
+            isCrackUiManualScrollToBottomAllowed()
+          ) {
             return original.apply(this, args);
           }
           const scroller = findCrackUiAntiScrollScroller();
@@ -19117,7 +19322,10 @@ ${error?.message || error}`);
 
   function applyCrackUiAntiScrollState() {
     document.documentElement.classList.toggle(CLS.antiScrollJacking, antiScrollJacking && crackUiIsConversationRoute());
-    if (antiScrollJacking) installCrackUiAntiScrollGuard();
+    if (antiScrollJacking) {
+      installCrackUiBottomButtonBypass();
+      installCrackUiAntiScrollGuard();
+    }
     if (!antiScrollJacking || !crackUiIsConversationRoute()) {
       cachedAntiScrollScroller = null;
       cachedAntiScrollHref = '';
@@ -20370,6 +20578,13 @@ ${error?.message || error}`);
         antiScrollGuardInstalled,
         antiScrollGuardBlockedCount,
         antiScrollGuardLastBlockedAt,
+        antiScrollManualBottomUntil,
+        antiScrollManualBottomBypassCount,
+        antiScrollManualBottomAllowed: isCrackUiManualScrollToBottomAllowed(),
+        antiScrollUserUiUntil,
+        antiScrollUserUiBypassCount,
+        antiScrollUserUiAllowed: isCrackUiUserUiScrollAllowed(),
+        antiScrollOverlayOpen: isCrackUiAntiScrollOverlayOpen(),
         antiScrollReadingUp: antiScrollJacking ? isCrackUiUserReadingUp() : false,
         pauseAnimatedThumbs,
         hideStatBar,
@@ -20808,7 +21023,10 @@ ${error?.message || error}`);
   }
 
   if (novelModelIndicator) installNovelModelNetworkCapture();
-  if (antiScrollJacking) installCrackUiAntiScrollGuard();
+  if (antiScrollJacking) {
+    installCrackUiBottomButtonBypass();
+    installCrackUiAntiScrollGuard();
+  }
 
   ready(() => {
     installCrackUiDebugApi();
