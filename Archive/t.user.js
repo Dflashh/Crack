@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      3.0.1
+// @version      2.7.25
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -11,7 +11,7 @@
 // @grant        unsafeWindow
 // @connect      crack-api.wrtn.ai
 // @connect      *
-// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UImax.webp
+// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UI.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // ==/UserScript==
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '3.0.1';
+  const CRACK_UI_VERSION = '2.7.25';
 
   function getCrackUiPublicWindow() {
     try {
@@ -112,10 +112,6 @@
     fontBodySelect: 'crack-ui-font-body-select',
     fontCodeSelect: 'crack-ui-font-code-select',
     fontTitleSelect: 'crack-ui-font-title-select',
-    fontAssignmentPicker: 'crack-ui-font-assignment-picker',
-    fontAssignmentPickerTitle: 'crack-ui-font-assignment-picker-title',
-    fontAssignmentPickerList: 'crack-ui-font-assignment-picker-list',
-    fontAssignmentPickerClose: 'crack-ui-font-assignment-picker-close',
     fontSavedList: 'crack-ui-font-saved-list',
     fontSaveButton: 'crack-ui-font-save-button',
     fontFileButton: 'crack-ui-font-file-button',
@@ -2056,9 +2052,6 @@
   let fontPresetMenuOpen = false;
   let fontDialogueQuoteMenuOpen = false;
   let fontCodeOpacityMenuOpen = false;
-  let fontAssignmentPickerOpen = false;
-  let fontAssignmentPickerKey = '';
-  let fontAssignmentPickerTrigger = null;
   let fontRecentColors = loadCrackUiFontRecentColors();
   let chatBackgroundSettings = loadCrackUiChatBackgroundSettings();
   let fontColorPickerOpen = false;
@@ -2071,7 +2064,6 @@
   let fontColorPickerValue = 0;
   let fontColorPickerPendingHex = '';
   let fontColorPickerApplyRaf = 0;
-  let fontColorPickerPositionRaf = 0;
   let roomMenuHandle = readStorage(LS.roomMenuHandle) === '1';
   let roomMenuAssistMode = normalizeMenuAssistMode(readStorage(LS.roomMenuAssistMode, 'handle'));
   let chatListAutoHide = readStorage(LS.chatListAutoHide) === '1';
@@ -2147,7 +2139,6 @@
   let chatContentRefreshRaf = 0;
   let chatContentRefreshLastAt = 0;
   let viewportRefreshRaf = 0;
-  let visualViewportRefreshRaf = 0;
   let cachedCrackUiViewportWidth = null;
   let cachedTouchLikeDevice = null;
   let initScheduled = false;
@@ -2202,7 +2193,6 @@
   let fontQuoteScanRaf = 0;
   let fontQuoteLastScanAt = 0;
   let fontQuoteMutationObserver = null;
-  let fontQuoteMutationObserverActive = false;
   const fontQuoteDirtyRoots = new Set();
   let fontQuoteFullScanPending = true;
   let fontQuoteWrapSeq = 0;
@@ -2411,15 +2401,15 @@
         width: 3px;
         height: 30px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, .28);
-        box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
+        background: rgba(165, 165, 175, .62);
+        box-shadow: none;
         transform: translateY(-50%);
       }
 
       html[data-theme="light"].${CLS.chatListEnabled}.${CLS.phoneViewport} #${ID.chatListHandle}::after,
       body[data-theme="light"] #${ID.chatListHandle}::after {
-        background: rgba(255, 255, 255, .28);
-        box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
+        background: rgba(120, 120, 128, .44);
+        box-shadow: none;
       }
 
       html.${CLS.chatListMobilePopoverOpen} #${ID.chatListZone},
@@ -4549,16 +4539,12 @@
       }
 
 
-      #${ID.panel} .crack-ui-font-assignment-trigger {
-        display: flex;
+      #${ID.panel} .crack-ui-font-select-field select {
         width: 100%;
         height: 34px;
         min-width: 0;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
         box-sizing: border-box;
-        padding: 0 10px;
+        padding: 0 32px 0 10px;
         border: 1px solid rgba(255, 255, 255, .09);
         border-radius: 11px;
         outline: none;
@@ -4567,220 +4553,6 @@
         font: inherit;
         font-size: 11px;
         font-weight: 700;
-        text-align: left;
-        cursor: pointer;
-        transition: border-color 130ms ease, background-color 130ms ease, opacity 130ms ease;
-      }
-
-      #${ID.panel} .crack-ui-font-assignment-trigger:hover:not(:disabled),
-      #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"] {
-        border-color: rgba(254, 69, 50, .42);
-        background: rgba(254, 69, 50, .09);
-      }
-
-      #${ID.panel} .crack-ui-font-assignment-trigger:focus-visible {
-        border-color: rgba(254, 69, 50, .58);
-        box-shadow: 0 0 0 3px rgba(254, 69, 50, .12);
-      }
-
-      #${ID.panel} .crack-ui-font-assignment-trigger:disabled {
-        cursor: default;
-        opacity: .42;
-      }
-
-      #${ID.panel} .crack-ui-font-assignment-current {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      #${ID.panel} .crack-ui-font-assignment-arrow {
-        flex: 0 0 auto;
-        font-size: 9px;
-        transition: transform 150ms ease;
-      }
-
-      #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"] .crack-ui-font-assignment-arrow {
-        transform: rotate(180deg);
-      }
-
-      #${ID.fontAssignmentPicker} {
-        position: absolute;
-        z-index: 80;
-        inset: 0;
-        display: flex;
-        align-items: flex-end;
-        justify-content: center;
-        box-sizing: border-box;
-        padding: 10px;
-        overflow: hidden;
-        border-radius: inherit;
-      }
-
-      #${ID.fontAssignmentPicker}[hidden] {
-        display: none !important;
-      }
-
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-picker-backdrop {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: rgba(0, 0, 0, .42);
-        cursor: default;
-      }
-
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet {
-        position: relative;
-        z-index: 1;
-        display: flex;
-        width: min(560px, 100%);
-        max-height: min(72%, 520px);
-        flex-direction: column;
-        box-sizing: border-box;
-        overflow: hidden;
-        border: 1px solid rgba(255, 255, 255, .12);
-        border-radius: 20px;
-        background: rgb(31, 31, 34);
-        color: rgba(255, 255, 255, .94);
-        box-shadow: 0 18px 48px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .06);
-        animation: crackUiFontAssignmentSheetIn 160ms ease-out;
-      }
-
-      @keyframes crackUiFontAssignmentSheetIn {
-        from { opacity: 0; transform: translateY(18px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head {
-        display: flex;
-        min-height: 48px;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 4px 10px 8px 16px;
-        border-bottom: 1px solid rgba(255, 255, 255, .08);
-      }
-
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-title {
-        min-width: 0;
-        overflow: hidden;
-        font-size: 14px;
-        font-weight: 900;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close {
-        display: inline-flex;
-        width: 34px;
-        height: 34px;
-        flex: 0 0 auto;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-        border: 0;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, .06);
-        color: rgba(255, 255, 255, .70);
-        font: inherit;
-        font-size: 22px;
-        line-height: 1;
-        cursor: pointer;
-      }
-
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close:hover,
-      #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close:focus-visible {
-        outline: none;
-        background: rgba(255, 255, 255, .11);
-        color: rgba(255, 255, 255, .96);
-      }
-
-      #${ID.fontAssignmentPickerList} {
-        display: flex;
-        min-height: 0;
-        flex: 1 1 auto;
-        flex-direction: column;
-        gap: 7px;
-        padding: 10px;
-        overflow-x: hidden;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        scrollbar-width: thin;
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option {
-        display: flex;
-        width: 100%;
-        min-height: 56px;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        box-sizing: border-box;
-        padding: 9px 12px;
-        border: 1px solid rgba(255, 255, 255, .075);
-        border-radius: 14px;
-        outline: none;
-        background: rgba(255, 255, 255, .035);
-        color: rgba(255, 255, 255, .90);
-        font: inherit;
-        text-align: left;
-        cursor: pointer;
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:hover,
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:focus-visible {
-        border-color: rgba(254, 69, 50, .40);
-        background: rgba(254, 69, 50, .08);
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"] {
-        border-color: rgba(254, 69, 50, .58);
-        background: rgba(254, 69, 50, .13);
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-copy {
-        display: flex;
-        min-width: 0;
-        flex: 1 1 auto;
-        flex-direction: column;
-        gap: 3px;
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-name,
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample {
-        display: block;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-name {
-        font-size: 12px;
-        font-weight: 850;
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample {
-        color: rgba(255, 255, 255, .52);
-        font-size: 13px;
-        font-weight: 500;
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-check {
-        flex: 0 0 auto;
-        color: #FE4532;
-        font-size: 16px;
-        font-weight: 900;
-        opacity: 0;
-      }
-
-      #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"] .crack-ui-font-assignment-option-check {
-        opacity: 1;
       }
 
       #${ID.panel} .crack-ui-font-preview {
@@ -4827,7 +4599,7 @@
         white-space: nowrap;
       }
 
-      #${ID.panel} .crack-ui-font-assignment-trigger:disabled + .crack-ui-font-preview {
+      #${ID.panel} .crack-ui-font-select-field select:disabled + .crack-ui-font-preview {
         opacity: .38;
       }
 
@@ -5586,65 +5358,11 @@
         color: rgba(17, 24, 39, .90);
       }
 
-      body[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger,
-      html[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger {
+      body[data-theme="light"] #${ID.panel} .crack-ui-font-select-field select,
+      html[data-theme="light"] #${ID.panel} .crack-ui-font-select-field select {
         border-color: rgba(17, 24, 39, .09);
         background: rgba(17, 24, 39, .035);
         color: rgba(17, 24, 39, .90);
-      }
-
-      body[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger:hover:not(:disabled),
-      html[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger:hover:not(:disabled),
-      body[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"],
-      html[data-theme="light"] #${ID.panel} .crack-ui-font-assignment-trigger[data-open="1"] {
-        border-color: rgba(254, 69, 50, .42);
-        background: rgba(254, 69, 50, .08);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-picker-backdrop,
-      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-picker-backdrop {
-        background: rgba(15, 23, 42, .24);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet,
-      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet {
-        border-color: rgba(17, 24, 39, .10);
-        background: rgb(255, 255, 255);
-        color: rgba(17, 24, 39, .94);
-        box-shadow: 0 18px 48px rgba(15, 23, 42, .22), inset 0 1px 0 rgba(255, 255, 255, .92);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head,
-      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-head {
-        border-bottom-color: rgba(17, 24, 39, .08);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close,
-      html[data-theme="light"] #${ID.fontAssignmentPicker} .crack-ui-font-assignment-sheet-close {
-        background: rgba(17, 24, 39, .055);
-        color: rgba(17, 24, 39, .58);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option,
-      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option {
-        border-color: rgba(17, 24, 39, .075);
-        background: rgba(17, 24, 39, .025);
-        color: rgba(17, 24, 39, .90);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:hover,
-      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:hover,
-      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:focus-visible,
-      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option:focus-visible,
-      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"],
-      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option[data-selected="1"] {
-        border-color: rgba(254, 69, 50, .42);
-        background: rgba(254, 69, 50, .08);
-      }
-
-      body[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample,
-      html[data-theme="light"] #${ID.fontAssignmentPickerList} .crack-ui-font-assignment-option-sample {
-        color: rgba(17, 24, 39, .50);
       }
 
 
@@ -6664,8 +6382,8 @@
           width: 3px;
           height: 30px;
           border-radius: 999px;
-          background: rgba(255, 255, 255, .28);
-          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
+          background: rgba(165, 165, 175, .62);
+          box-shadow: none;
           transform: translateY(-50%);
         }
 
@@ -6711,15 +6429,15 @@
           width: 3px;
           height: 30px;
           border-radius: 999px;
-          background: rgba(255, 255, 255, .28);
-          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
+          background: rgba(165, 165, 175, .62);
+          box-shadow: none;
           transform: translateY(-50%);
         }
 
         html[data-theme="light"].${CLS.roomMenuEnabled} #${ID.roomMenuHandle}::after,
         body[data-theme="light"] #${ID.roomMenuHandle}::after {
-          background: rgba(255, 255, 255, .28);
-          box-shadow: 0 1px 6px rgba(0, 0, 0, .22);
+          background: rgba(120, 120, 128, .44);
+          box-shadow: none;
         }
 
         html.${CLS.roomMenuEnabled} #${ID.roomMenuHandle}[data-has-dot="1"]::before {
@@ -7830,41 +7548,8 @@
     root.classList.toggle(CLS.androidFirefox, isAndroidFirefoxBrowser());
   }
 
-  function isCrackUiViewportEditableElement(element) {
-    return !!element?.closest?.(
-      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
-      '[role="textbox"], [role="combobox"], [role="searchbox"]'
-    );
-  }
-
-  function shouldUseCrackUiFirefoxKeyboardViewportRefresh() {
-    return (
-      isAndroidFirefoxBrowser() &&
-      isCrackUiViewportEditableElement(document.activeElement)
-    );
-  }
-
-  function applyCrackUiLightViewportRefresh() {
-    invalidateCrackUiViewportMetrics();
-    updateDeviceViewportClasses();
-    scheduleMenuSwipeZonePosition();
-  }
-
   function runCrackUiViewportRefresh() {
     viewportRefreshRaf = 0;
-
-    /*
-     * Firefox for Android emits a normal window.resize while the software keyboard
-     * is opening. Max's full resize path also refreshes font/background layout and
-     * can interrupt Firefox's native pan that lifts the focused editor above the
-     * keyboard. While a real editor owns focus, use the same light path as
-     * visualViewport.resize and leave the native input/modal positioning untouched.
-     */
-    if (shouldUseCrackUiFirefoxKeyboardViewportRefresh()) {
-      applyCrackUiLightViewportRefresh();
-      return;
-    }
-
     invalidateCrackUiViewportMetrics();
     updateDeviceViewportClasses();
     applyChatWidth();
@@ -7879,28 +7564,8 @@
 
   function scheduleCrackUiViewportRefresh() {
     invalidateCrackUiViewportMetrics();
-
-    if (shouldUseCrackUiFirefoxKeyboardViewportRefresh()) {
-      scheduleCrackUiVisualViewportRefresh();
-      return;
-    }
-
     if (viewportRefreshRaf) return;
     viewportRefreshRaf = requestAnimationFrame(runCrackUiViewportRefresh);
-  }
-
-  function runCrackUiVisualViewportRefresh() {
-    visualViewportRefreshRaf = 0;
-
-    /* Android opens the software keyboard through several visualViewport frames.
-       Keep those frames free from Max-only chat-width/background layout work so
-       Crack can finish positioning its native editor and modal by itself. */
-    applyCrackUiLightViewportRefresh();
-  }
-
-  function scheduleCrackUiVisualViewportRefresh() {
-    if (visualViewportRefreshRaf) return;
-    visualViewportRefreshRaf = requestAnimationFrame(runCrackUiVisualViewportRefresh);
   }
 
   updateDeviceViewportClasses();
@@ -8872,7 +8537,7 @@
   }
 
 
-  function updateThemeUi(options = {}) {
+  function updateThemeUi() {
     document.querySelectorAll('[data-crack-ui-theme-mode]').forEach((button) => {
       const selected = normalizeThemeMode(button.dataset.crackUiThemeMode) === themeMode;
       button.dataset.selected = selected ? '1' : '0';
@@ -8885,9 +8550,7 @@
       button.setAttribute('aria-checked', selected ? 'true' : 'false');
     });
 
-    if (options.syncBackground !== false) {
-      syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
-    }
+    syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
 
   function setImageSize(nextValue) {
@@ -10370,17 +10033,10 @@ ${record.css}`)}`
         injectCrackUiCustomFontStyle();
       }
       if (isCrackUiFontInlineDecorationEnabled(settings)) {
-        connectCrackUiFontQuoteMutationObserver();
         if (options.scheduleQuotes !== false) {
           scheduleCrackUiFontQuoteScan({ immediate: options.immediateQuotes === true });
         }
-      } else if (
-        fontQuoteMutationObserverActive ||
-        fontQuoteWraps.size ||
-        document.querySelector('[data-crack-ui-font-base="1"]') ||
-        fontQuoteScanTimer ||
-        fontQuoteScanRaf
-      ) {
+      } else if (fontQuoteWraps.size || document.querySelector('[data-crack-ui-font-base="1"]') || fontQuoteScanTimer || fontQuoteScanRaf) {
         disableCrackUiFontQuoteDecorations();
       }
       return;
@@ -10500,7 +10156,6 @@ ${record.css}`)}`
     crackUiFontRuntimeSignature = getCrackUiFontRuntimeSignature(settings, `${bodyFamily}|${codeFamily}|${titleFamily}`);
 
     if (isCrackUiFontInlineDecorationEnabled(settings)) {
-      connectCrackUiFontQuoteMutationObserver();
       if (options.scheduleQuotes !== false) {
         scheduleCrackUiFontQuoteScan({ immediate: options.immediateQuotes === true });
       }
@@ -10811,33 +10466,7 @@ ${record.css}`)}`
     });
   }
 
-  function disconnectCrackUiFontQuoteMutationObserver() {
-    if (!fontQuoteMutationObserver) return;
-    fontQuoteMutationObserver.disconnect();
-    fontQuoteMutationObserverActive = false;
-  }
-
-  function connectCrackUiFontQuoteMutationObserver() {
-    if (
-      !fontQuoteMutationObserver ||
-      fontQuoteMutationObserverActive ||
-      !document.body ||
-      !fontSettings.masterEnabled ||
-      !isCrackUiFontInlineDecorationEnabled()
-    ) {
-      return;
-    }
-
-    fontQuoteMutationObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    fontQuoteMutationObserverActive = true;
-  }
-
   function disableCrackUiFontQuoteDecorations() {
-    disconnectCrackUiFontQuoteMutationObserver();
     clearTimeout(fontQuoteScanTimer);
     fontQuoteScanTimer = null;
     if (fontQuoteScanRaf) cancelAnimationFrame(fontQuoteScanRaf);
@@ -10889,60 +10518,60 @@ ${record.css}`)}`
   }
 
   function observeCrackUiFontQuoteMutations() {
-    if (!document.body) return;
+    if (fontQuoteMutationObserver || !document.body) return;
 
-    if (!fontQuoteMutationObserver) {
-      fontQuoteMutationObserver = new MutationObserver((mutations) => {
-        if (!fontSettings.masterEnabled || !isCrackUiFontInlineDecorationEnabled()) return;
+    fontQuoteMutationObserver = new MutationObserver((mutations) => {
+      if (!fontSettings.masterEnabled || !isCrackUiFontInlineDecorationEnabled()) return;
 
-        const changedRoots = new Set();
-        const addDirectRoot = (node) => {
-          const directRoot = getCrackUiFontMarkdownRootFromNode(node);
-          if (directRoot) changedRoots.add(directRoot);
-        };
-        const addAddedRoot = (node) => {
-          addDirectRoot(node);
-          if (!(node instanceof Element)) return;
-          if (node.closest(`#${ID.panelRoot}, #${ID.panel}, #${ID.bottomModelPopup}, .not-wrtn-markdown`)) return;
-          node.querySelectorAll?.('.wrtn-markdown').forEach((markdown) => {
-            const root = getCrackUiFontMarkdownRootFromNode(markdown);
-            if (root) changedRoots.add(root);
-          });
-        };
+      const changedRoots = new Set();
+      const addDirectRoot = (node) => {
+        const directRoot = getCrackUiFontMarkdownRootFromNode(node);
+        if (directRoot) changedRoots.add(directRoot);
+      };
+      const addAddedRoot = (node) => {
+        addDirectRoot(node);
+        if (!(node instanceof Element)) return;
+        if (node.closest(`#${ID.panelRoot}, #${ID.panel}, #${ID.bottomModelPopup}, .not-wrtn-markdown`)) return;
+        node.querySelectorAll?.('.wrtn-markdown').forEach((markdown) => {
+          const root = getCrackUiFontMarkdownRootFromNode(markdown);
+          if (root) changedRoots.add(root);
+        });
+      };
 
-        mutations.forEach((mutation) => {
-          if (mutation.type === 'characterData') {
-            addDirectRoot(mutation.target);
-            return;
-          }
-          if (mutation.type !== 'childList') return;
-          // mutation.target may be <body>. Descendant-scanning it would mark every old log
-          // dirty whenever an unrelated overlay/button is inserted. Only scan added subtrees.
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'characterData') {
           addDirectRoot(mutation.target);
-          mutation.addedNodes.forEach(addAddedRoot);
-        });
-
-        if (!changedRoots.size) return;
-        changedRoots.forEach((markdown) => {
-          clearCrackUiFontQuoteRootScanState(markdown);
-          fontQuoteDirtyRoots.add(markdown);
-        });
-        scheduleCrackUiFontQuoteScan();
+          return;
+        }
+        if (mutation.type !== 'childList') return;
+        // mutation.target may be <body>. Descendant-scanning it would mark every old log
+        // dirty whenever an unrelated overlay/button is inserted. Only scan added subtrees.
+        addDirectRoot(mutation.target);
+        mutation.addedNodes.forEach(addAddedRoot);
       });
-    }
 
-    connectCrackUiFontQuoteMutationObserver();
-    if (fontQuoteMutationObserverActive) {
-      scheduleCrackUiFontQuoteScan({ immediate: true, full: true });
-    }
+      if (!changedRoots.size) return;
+      changedRoots.forEach((markdown) => {
+        clearCrackUiFontQuoteRootScanState(markdown);
+        fontQuoteDirtyRoots.add(markdown);
+      });
+      scheduleCrackUiFontQuoteScan();
+    });
+
+    fontQuoteMutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    scheduleCrackUiFontQuoteScan({ immediate: true, full: true });
   }
 
   function scanCrackUiFontQuotes() {
     fontQuoteLastScanAt = Date.now();
     if (!fontSettings.masterEnabled || !isCrackUiFontInlineDecorationEnabled()) return;
 
-    const observerWasActive = fontQuoteMutationObserverActive;
-    disconnectCrackUiFontQuoteMutationObserver();
+    const observer = fontQuoteMutationObserver;
+    observer?.disconnect();
     try {
       const fullScan = fontQuoteFullScanPending || fontQuoteDirtyRoots.size === 0;
       fontQuoteFullScanPending = false;
@@ -10978,6 +10607,7 @@ ${record.css}`)}`
         if (!recent && markdown.dataset.crackUiFontQuotedKey !== undefined) return;
 
         const content = markdown.textContent || '';
+        const length = content.length;
         const textKey = getCrackUiFontQuoteTextKey(content);
         const previousTextKey = markdown.dataset.crackUiFontTextKey || '';
         const decoratedTextKey = markdown.dataset.crackUiFontQuotedKey || '';
@@ -11035,12 +10665,12 @@ ${record.css}`)}`
 
       if (needsFollowUp) scheduleCrackUiFontQuoteScan();
     } finally {
-      if (
-        observerWasActive &&
-        fontSettings.masterEnabled &&
-        isCrackUiFontInlineDecorationEnabled()
-      ) {
-        connectCrackUiFontQuoteMutationObserver();
+      if (observer && document.body) {
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
       }
     }
   }
@@ -11074,12 +10704,6 @@ ${record.css}`)}`
     return count ? `저장된 폰트 ${count}개` : '저장된 폰트 없음';
   }
 
-  const CRACK_UI_FONT_ASSIGNMENT_META = Object.freeze({
-    bodyFontId: Object.freeze({ id: ID.fontBodySelect, label: '본문' }),
-    codeFontId: Object.freeze({ id: ID.fontCodeSelect, label: '코드블럭' }),
-    titleFontId: Object.freeze({ id: ID.fontTitleSelect, label: '타이틀' }),
-  });
-
   function getCrackUiFontSelectOptionEntries(records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
     return [
       ['', 'Crack 기본 폰트'],
@@ -11087,194 +10711,83 @@ ${record.css}`)}`
     ];
   }
 
-  function getCrackUiFontAssignmentSelectedId(settingKey, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
+  function getCrackUiFontSelectOptionSignature(entries = getCrackUiFontSelectOptionEntries()) {
+    return JSON.stringify(entries);
+  }
+
+  function getCrackUiFontSelectCurrentSignature(select) {
+    if (!(select instanceof HTMLSelectElement)) return '';
+    return JSON.stringify([...select.options].map((option) => [option.value, option.textContent || '']));
+  }
+
+  const CRACK_UI_FONT_PICKER_TOUCH_HOLD_MS = 15000;
+
+  function markCrackUiFontAssignmentPickerActive(select, { touchLike = false } = {}) {
+    if (!(select instanceof HTMLSelectElement)) return;
+    select.dataset.crackUiFontPickerActive = '1';
+    if (touchLike) {
+      select.dataset.crackUiFontPickerTouch = '1';
+      select.dataset.crackUiFontPickerActiveUntil = String(Date.now() + CRACK_UI_FONT_PICKER_TOUCH_HOLD_MS);
+    }
+  }
+
+  function releaseCrackUiFontAssignmentPickerActive(select, { delay = 0, force = false } = {}) {
+    if (!(select instanceof HTMLSelectElement)) return;
+    const release = () => {
+      if (!select.isConnected) return;
+      const activeUntil = Number(select.dataset.crackUiFontPickerActiveUntil || 0);
+      if (!force && select.dataset.crackUiFontPickerTouch === '1' && activeUntil > Date.now()) return;
+      delete select.dataset.crackUiFontPickerActive;
+      delete select.dataset.crackUiFontPickerTouch;
+      delete select.dataset.crackUiFontPickerActiveUntil;
+      const panel = select.closest(`#${ID.panel}`);
+      if (panel) syncCrackUiFontSettingsUi(panel);
+    };
+    if (delay > 0) setTimeout(release, delay);
+    else release();
+  }
+
+  function isCrackUiFontAssignmentPickerActive(select) {
+    if (!(select instanceof HTMLSelectElement)) return false;
+    const touchHoldActive = select.dataset.crackUiFontPickerTouch === '1'
+      && Number(select.dataset.crackUiFontPickerActiveUntil || 0) > Date.now();
+    return select.dataset.crackUiFontPickerActive === '1'
+      || touchHoldActive
+      || document.activeElement === select;
+  }
+
+  function syncCrackUiFontAssignmentSelect(select, settingKey, masterEnabled, entries = getCrackUiFontSelectOptionEntries()) {
+    if (!(select instanceof HTMLSelectElement)) return;
+
+    const optionsSignature = getCrackUiFontSelectOptionSignature(entries);
+    const pickerActive = isCrackUiFontAssignmentPickerActive(select);
     const storedId = String(fontSettings[settingKey] || '');
-    return records.some((record) => record.id === storedId) ? storedId : '';
-  }
+    const selectedId = getCrackUiSavedFontById(storedId) ? storedId : '';
 
-  function getCrackUiFontAssignmentDisplayLabel(settingKey, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
-    const selectedId = getCrackUiFontAssignmentSelectedId(settingKey, records);
-    const entry = getCrackUiFontSelectOptionEntries(records).find(([value]) => value === selectedId);
-    return entry?.[1] || 'Crack 기본 폰트';
-  }
-
-  function getCrackUiFontAssignmentOptionStyle(fontId, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
-    if (!fontId) return '';
-    const record = records.find((item) => item.id === fontId);
-    const runtimeFamily = getCrackUiSavedFontRuntimeFamily(record);
-    const stack = crackUiFontCssStack(runtimeFamily);
-    return stack ? ` style="font-family:${crackUiFontEscapeHtml(stack)}"` : '';
-  }
-
-  function renderCrackUiFontAssignmentButton(id, settingKey, label) {
-    const current = getCrackUiFontAssignmentDisplayLabel(settingKey);
-    const open = fontAssignmentPickerOpen && fontAssignmentPickerKey === settingKey;
-    return `
-      <button
-        id="${id}"
-        type="button"
-        class="crack-ui-font-assignment-trigger"
-        data-crack-ui-font-assignment-trigger="${settingKey}"
-        data-open="${open ? '1' : '0'}"
-        aria-haspopup="listbox"
-        aria-expanded="${open ? 'true' : 'false'}"
-        aria-controls="${ID.fontAssignmentPickerList}"
-        aria-label="${crackUiFontEscapeHtml(label)} 폰트 선택"
-        title="${crackUiFontEscapeHtml(label)} 폰트 선택"
-      >
-        <span class="crack-ui-font-assignment-current" data-crack-ui-font-assignment-current="${settingKey}">${crackUiFontEscapeHtml(current)}</span>
-        <span class="crack-ui-font-assignment-arrow" aria-hidden="true">▾</span>
-      </button>`;
-  }
-
-  function renderCrackUiFontAssignmentPickerOptions(settingKey = fontAssignmentPickerKey, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
-    if (!CRACK_UI_FONT_ASSIGNMENT_META[settingKey]) return '';
-    const selectedId = getCrackUiFontAssignmentSelectedId(settingKey, records);
-    return getCrackUiFontSelectOptionEntries(records).map(([value, label]) => {
-      const selected = value === selectedId;
-      const sampleStyle = getCrackUiFontAssignmentOptionStyle(value, records);
-      return `
-        <button
-          type="button"
-          class="crack-ui-font-assignment-option"
-          data-crack-ui-font-assignment-option="${crackUiFontEscapeHtml(value)}"
-          data-selected="${selected ? '1' : '0'}"
-          role="option"
-          aria-selected="${selected ? 'true' : 'false'}"
-        >
-          <span class="crack-ui-font-assignment-option-copy">
-            <span class="crack-ui-font-assignment-option-name"${sampleStyle}>${crackUiFontEscapeHtml(label)}</span>
-            <span class="crack-ui-font-assignment-option-sample"${sampleStyle}>가나다 Aa 123</span>
-          </span>
-          <span class="crack-ui-font-assignment-option-check" aria-hidden="true">✓</span>
-        </button>`;
-    }).join('');
-  }
-
-  function renderCrackUiFontAssignmentPicker() {
-    const meta = CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey];
-    const title = meta ? `${meta.label} 폰트 선택` : '폰트 선택';
-    return `
-      <div
-        id="${ID.fontAssignmentPicker}"
-        class="crack-ui-font-assignment-picker"
-        data-open="${fontAssignmentPickerOpen ? '1' : '0'}"
-        ${fontAssignmentPickerOpen ? '' : 'hidden'}
-      >
-        <button
-          type="button"
-          class="crack-ui-font-assignment-picker-backdrop"
-          data-crack-ui-font-assignment-picker-close="1"
-          aria-label="폰트 선택창 닫기"
-          tabindex="-1"
-        ></button>
-        <div class="crack-ui-font-assignment-sheet">
-          <div class="crack-ui-font-assignment-sheet-head">
-            <span id="${ID.fontAssignmentPickerTitle}" class="crack-ui-font-assignment-sheet-title">${crackUiFontEscapeHtml(title)}</span>
-            <button
-              id="${ID.fontAssignmentPickerClose}"
-              type="button"
-              class="crack-ui-font-assignment-sheet-close"
-              data-crack-ui-font-assignment-picker-close="1"
-              aria-label="폰트 선택창 닫기"
-            >×</button>
-          </div>
-          <div
-            id="${ID.fontAssignmentPickerList}"
-            class="crack-ui-font-assignment-list"
-            role="listbox"
-            aria-labelledby="${ID.fontAssignmentPickerTitle}"
-          >${renderCrackUiFontAssignmentPickerOptions()}</div>
-        </div>
-      </div>`;
-  }
-
-  function syncCrackUiFontAssignmentTrigger(button, settingKey, masterEnabled, records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
-    if (!(button instanceof HTMLButtonElement)) return;
-    const meta = CRACK_UI_FONT_ASSIGNMENT_META[settingKey];
-    if (!meta) return;
-    const open = fontAssignmentPickerOpen && fontAssignmentPickerKey === settingKey;
-    const current = button.querySelector('[data-crack-ui-font-assignment-current]');
-    if (current) current.textContent = getCrackUiFontAssignmentDisplayLabel(settingKey, records);
-    button.disabled = !masterEnabled;
-    button.dataset.open = open ? '1' : '0';
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
-    button.title = open ? `${meta.label} 폰트 선택창 닫기` : `${meta.label} 폰트 선택`;
-  }
-
-  function syncCrackUiFontAssignmentPicker(panel = document.getElementById(ID.panel), records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
-    if (!panel) return;
-    const validKey = !!CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey];
-    const open = fontAssignmentPickerOpen && validKey && fontSettings.masterEnabled === true && activePanelSection === 'font';
-    if (fontAssignmentPickerOpen && !open) {
-      fontAssignmentPickerOpen = false;
-      fontAssignmentPickerKey = '';
-      fontAssignmentPickerTrigger = null;
-    }
-
-    Object.entries(CRACK_UI_FONT_ASSIGNMENT_META).forEach(([settingKey, meta]) => {
-      syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${meta.id}`), settingKey, fontSettings.masterEnabled === true, records);
-    });
-
-    const picker = panel.querySelector(`#${ID.fontAssignmentPicker}`);
-    if (!picker) return;
-    picker.hidden = !open;
-    picker.dataset.open = open ? '1' : '0';
-    panel.dataset.crackUiFontAssignmentPickerOpen = open ? '1' : '0';
-
-    const meta = CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey];
-    const title = picker.querySelector(`#${ID.fontAssignmentPickerTitle}`);
-    if (title) title.textContent = meta ? `${meta.label} 폰트 선택` : '폰트 선택';
-
-    const list = picker.querySelector(`#${ID.fontAssignmentPickerList}`);
-    if (list) {
-      const signature = JSON.stringify([
-        fontAssignmentPickerKey,
-        getCrackUiFontAssignmentSelectedId(fontAssignmentPickerKey, records),
-        getCrackUiFontSelectOptionEntries(records),
-      ]);
-      if (list.dataset.crackUiFontAssignmentSignature !== signature) {
-        list.innerHTML = renderCrackUiFontAssignmentPickerOptions(fontAssignmentPickerKey, records);
-        list.dataset.crackUiFontAssignmentSignature = signature;
-      }
-    }
-  }
-
-  function setCrackUiFontAssignmentPickerOpen(nextOpen, settingKey = fontAssignmentPickerKey, panel = document.getElementById(ID.panel), options = {}) {
-    if (!panel) return;
-    const shouldOpen = nextOpen === true &&
-      !!CRACK_UI_FONT_ASSIGNMENT_META[settingKey] &&
-      fontSettings.masterEnabled === true &&
-      activePanelSection === 'font';
-    const previousTrigger = fontAssignmentPickerTrigger;
-
-    if (shouldOpen) {
-      setCrackUiFontPresetMenuOpen(false, panel);
-      setCrackUiDialogueQuoteMenuOpen(false, panel);
-      setCrackUiFontCodeOpacityMenuOpen(false, panel);
-      closeCrackUiFontColorPicker({ commit: true, sync: false });
-    }
-
-    fontAssignmentPickerOpen = shouldOpen;
-    fontAssignmentPickerKey = shouldOpen ? settingKey : '';
-    fontAssignmentPickerTrigger = shouldOpen
-      ? panel.querySelector(`[data-crack-ui-font-assignment-trigger="${settingKey}"]`)
-      : null;
-    syncCrackUiFontAssignmentPicker(panel);
-
-    if (shouldOpen) {
-      requestAnimationFrame(() => {
-        const selected = panel.querySelector(`#${ID.fontAssignmentPickerList} [data-selected="1"]`);
-        const first = panel.querySelector(`#${ID.fontAssignmentPickerList} [data-crack-ui-font-assignment-option]`);
-        try { (selected || first)?.focus?.({ preventScroll: true }); }
-        catch { (selected || first)?.focus?.(); }
+    // Replacing <option> nodes while iOS/Android's native select sheet is open can
+    // close and immediately reopen the sheet in a loop. Keep the live select DOM
+    // completely untouched until the picker loses focus.
+    if (!pickerActive && getCrackUiFontSelectCurrentSignature(select) !== optionsSignature) {
+      const fragment = document.createDocumentFragment();
+      entries.forEach(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        fragment.appendChild(option);
       });
-    } else if (options.restoreFocus === true && previousTrigger?.isConnected) {
-      requestAnimationFrame(() => {
-        try { previousTrigger.focus({ preventScroll: true }); }
-        catch { previousTrigger.focus(); }
-      });
+      select.replaceChildren(fragment);
     }
+
+    if (!pickerActive && select.value !== selectedId) select.value = selectedId;
+    // Some Android WebViews close and reopen the native picker when even a same-value
+    // property write lands while the sheet is opening. Leave the live select untouched.
+    if (!pickerActive) select.disabled = !masterEnabled;
+  }
+
+  function renderCrackUiFontSelectOptions(selectedId = '') {
+    return getCrackUiFontSelectOptionEntries()
+      .map(([value, label]) => `<option value="${crackUiFontEscapeHtml(value)}"${value === selectedId ? ' selected' : ''}>${crackUiFontEscapeHtml(label)}</option>`)
+      .join('');
   }
 
   function getCrackUiSavedFontListSignature(records = normalizeCrackUiSavedFonts(fontSettings.savedFonts)) {
@@ -11667,30 +11180,30 @@ ${record.css}`)}`
               </span>
             </div>
             <div class="crack-ui-font-select-grid">
-              <div class="crack-ui-font-select-field">
+              <label class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">본문</span>
-                ${renderCrackUiFontAssignmentButton(ID.fontBodySelect, 'bodyFontId', '본문')}
+                <select id="${ID.fontBodySelect}" data-crack-ui-font-assignment="bodyFontId">${renderCrackUiFontSelectOptions(fontSettings.bodyFontId)}</select>
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="body" aria-label="본문 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">가나다라마바사 아자차카타파하</span>
                   <span class="crack-ui-font-preview-line">The quick brown fox · 1234567890</span>
                 </span>
-              </div>
-              <div class="crack-ui-font-select-field">
+              </label>
+              <label class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">코드블럭</span>
-                ${renderCrackUiFontAssignmentButton(ID.fontCodeSelect, 'codeFontId', '코드블럭')}
+                <select id="${ID.fontCodeSelect}" data-crack-ui-font-assignment="codeFontId">${renderCrackUiFontSelectOptions(fontSettings.codeFontId)}</select>
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="code" aria-label="코드블럭 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">const message = "안녕하세요";</span>
                   <span class="crack-ui-font-preview-line">console.log(message); // 123</span>
                 </span>
-              </div>
-              <div class="crack-ui-font-select-field">
+              </label>
+              <label class="crack-ui-font-select-field">
                 <span class="crack-ui-font-control-label">타이틀</span>
-                ${renderCrackUiFontAssignmentButton(ID.fontTitleSelect, 'titleFontId', '타이틀')}
+                <select id="${ID.fontTitleSelect}" data-crack-ui-font-assignment="titleFontId">${renderCrackUiFontSelectOptions(fontSettings.titleFontId)}</select>
                 <span class="crack-ui-font-preview" data-crack-ui-font-preview="title" aria-label="타이틀 폰트 미리보기">
                   <span class="crack-ui-font-preview-line">가나다라마바사 타이틀 미리보기</span>
                   <span class="crack-ui-font-preview-line">Sample title · 1234567890</span>
                 </span>
-              </div>
+              </label>
             </div>
           </div>
 
@@ -11872,15 +11385,7 @@ ${record.css}`)}`
   }
 
   function syncCrackUiChatBackgroundUi(panel = document.getElementById(ID.panel)) {
-    if (
-      !panel ||
-      !panelOpen ||
-      panel.dataset.open !== '1' ||
-      activePanelSection !== 'background'
-    ) {
-      return;
-    }
-
+    if (!panel) return;
     const enabled = chatBackgroundSettings.enabled === true;
     const colorEnabled = enabled && chatBackgroundSettings.imageEnabled !== true;
     const imageEnabled = enabled && chatBackgroundSettings.imageEnabled === true;
@@ -11960,12 +11465,9 @@ ${record.css}`)}`
   }
 
   function updateCrackUiChatBackgroundColor(value, options = {}) {
-    const normalized = normalizeCrackUiFontHex(
-      value,
-      chatBackgroundSettings.color || CHAT_BACKGROUND_SETTINGS_DEFAULT.color
-    );
+    const normalized = normalizeCrackUiFontHex(value, chatBackgroundSettings.color || CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
     chatBackgroundSettings.color = normalized;
-    applyCrackUiChatBackgroundPaintVariables();
+    applyCrackUiChatBackground();
     if (options.persist !== false) persistCrackUiChatBackgroundSettings();
     if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
@@ -11973,25 +11475,18 @@ ${record.css}`)}`
   function updateCrackUiNovelBackdropColor(value, options = {}) {
     const normalized = normalizeCrackUiFontHex(
       value,
-      chatBackgroundSettings.novelBackdropColor ||
-      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+      chatBackgroundSettings.novelBackdropColor || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
     );
     chatBackgroundSettings.novelBackdropColor = normalized;
-    applyCrackUiNovelBackdropPaintVariables();
+    applyCrackUiChatBackground();
     if (options.persist !== false) persistCrackUiChatBackgroundSettings();
     if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
 
   function updateCrackUiNovelBackdropOpacity(value, options = {}) {
-    const normalized = Math.max(5, Math.min(
-      100,
-      Math.round(
-        Number(value) ||
-        CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
-      )
-    ));
+    const normalized = Math.max(5, Math.min(100, Math.round(Number(value) || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity)));
     chatBackgroundSettings.novelBackdropOpacity = normalized;
-    applyCrackUiNovelBackdropPaintVariables();
+    applyCrackUiChatBackground();
     if (options.persist !== false) persistCrackUiChatBackgroundSettings();
     if (options.sync !== false) syncCrackUiChatBackgroundUi(document.getElementById(ID.panel));
   }
@@ -12243,13 +11738,9 @@ ${record.css}`)}`
         ? CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
         : CHAT_BACKGROUND_SETTINGS_DEFAULT.color;
       const normalized = normalizeCrackUiFontHex(value, current || fallback);
-      if (isNovelBackdrop) {
-        chatBackgroundSettings.novelBackdropColor = normalized;
-        applyCrackUiNovelBackdropPaintVariables();
-      } else {
-        chatBackgroundSettings.color = normalized;
-        applyCrackUiChatBackgroundPaintVariables();
-      }
+      if (isNovelBackdrop) chatBackgroundSettings.novelBackdropColor = normalized;
+      else chatBackgroundSettings.color = normalized;
+      applyCrackUiChatBackground();
       const trigger = panel?.querySelector?.(`[data-crack-ui-font-color-picker="${key}"]`);
       if (trigger) trigger.style.setProperty('--crack-ui-font-swatch', normalized);
       const code = panel?.querySelector?.(isNovelBackdrop
@@ -12337,14 +11828,6 @@ ${record.css}`)}`
     syncCrackUiFontColorPickerUi({ preview: false, forceHex: true });
   }
 
-  function scheduleCrackUiFontColorPickerPosition() {
-    if (!fontColorPickerOpen || fontColorPickerPositionRaf) return;
-    fontColorPickerPositionRaf = requestAnimationFrame(() => {
-      fontColorPickerPositionRaf = 0;
-      positionCrackUiFontColorPicker();
-    });
-  }
-
   function positionCrackUiFontColorPicker() {
     const popover = document.getElementById(ID.fontColorPickerPopover);
     const trigger = fontColorPickerTrigger;
@@ -12367,7 +11850,6 @@ ${record.css}`)}`
     const key = trigger?.dataset?.crackUiFontColorPicker || '';
     if (!isCrackUiColorPickerKey(key) || trigger.disabled) return;
     closeCrackUiFontColorPicker({ commit: true });
-    setCrackUiFontAssignmentPickerOpen(false, '', panel);
     setCrackUiFontPresetMenuOpen(false, panel);
     setCrackUiDialogueQuoteMenuOpen(false, panel);
     setCrackUiFontCodeOpacityMenuOpen(false, panel);
@@ -12411,7 +11893,7 @@ ${record.css}`)}`
     trigger.setAttribute('aria-expanded', 'true');
     syncCrackUiFontColorPickerRecentUi(popover);
     syncCrackUiFontColorPickerUi({ preview: false, forceHex: true });
-    scheduleCrackUiFontColorPickerPosition();
+    requestAnimationFrame(positionCrackUiFontColorPicker);
   }
 
   function closeCrackUiFontColorPicker(options = {}) {
@@ -12420,10 +11902,6 @@ ${record.css}`)}`
     const trigger = fontColorPickerTrigger;
     const snapshot = fontColorPickerSnapshot;
     if (wasOpen) flushCrackUiFontColorPreview();
-    if (fontColorPickerPositionRaf) {
-      cancelAnimationFrame(fontColorPickerPositionRaf);
-      fontColorPickerPositionRaf = 0;
-    }
 
     if (wasOpen && options.commit === false && snapshot?.key === key && isCrackUiColorPickerKey(key)) {
       if (snapshot.background === true) {
@@ -12435,11 +11913,7 @@ ${record.css}`)}`
         } else {
           chatBackgroundSettings.color = normalizeCrackUiFontHex(snapshot.storedValue, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
         }
-        if (key === NOVEL_BACKDROP_COLOR_PICKER_KEY) {
-          applyCrackUiNovelBackdropPaintVariables();
-        } else {
-          applyCrackUiChatBackgroundPaintVariables();
-        }
+        applyCrackUiChatBackground();
         persistCrackUiChatBackgroundSettings();
       } else {
         fontSettings[key] = snapshot.storedValue;
@@ -12600,12 +12074,12 @@ ${record.css}`)}`
       trigger?.focus?.({ preventScroll: true });
     }, true);
 
-    window.addEventListener('resize', scheduleCrackUiFontColorPickerPosition, { passive: true });
-    panel.querySelector('.crack-ui-panel-body')?.addEventListener(
-      'scroll',
-      scheduleCrackUiFontColorPickerPosition,
-      { passive: true }
-    );
+    window.addEventListener('resize', () => {
+      if (fontColorPickerOpen) requestAnimationFrame(positionCrackUiFontColorPicker);
+    }, { passive: true });
+    panel.querySelector('.crack-ui-panel-body')?.addEventListener('scroll', () => {
+      if (fontColorPickerOpen) requestAnimationFrame(positionCrackUiFontColorPicker);
+    }, { passive: true });
   }
 
   function setCrackUiFontPresetMenuOpen(nextOpen, panel = document.getElementById(ID.panel)) {
@@ -12849,10 +12323,25 @@ ${record.css}`)}`
     if (sourceInput) sourceInput.disabled = !masterEnabled;
 
     const savedFontRecords = normalizeCrackUiSavedFonts(fontSettings.savedFonts);
-    syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${ID.fontBodySelect}`), 'bodyFontId', masterEnabled, savedFontRecords);
-    syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${ID.fontCodeSelect}`), 'codeFontId', masterEnabled, savedFontRecords);
-    syncCrackUiFontAssignmentTrigger(panel.querySelector(`#${ID.fontTitleSelect}`), 'titleFontId', masterEnabled, savedFontRecords);
-    syncCrackUiFontAssignmentPicker(panel, savedFontRecords);
+    const fontSelectEntries = getCrackUiFontSelectOptionEntries(savedFontRecords);
+    syncCrackUiFontAssignmentSelect(
+      panel.querySelector(`#${ID.fontBodySelect}`),
+      'bodyFontId',
+      masterEnabled,
+      fontSelectEntries
+    );
+    syncCrackUiFontAssignmentSelect(
+      panel.querySelector(`#${ID.fontCodeSelect}`),
+      'codeFontId',
+      masterEnabled,
+      fontSelectEntries
+    );
+    syncCrackUiFontAssignmentSelect(
+      panel.querySelector(`#${ID.fontTitleSelect}`),
+      'titleFontId',
+      masterEnabled,
+      fontSelectEntries
+    );
     const savedList = panel.querySelector(`#${ID.fontSavedList}`);
     if (savedList) {
       const signature = getCrackUiSavedFontListSignature(savedFontRecords);
@@ -12893,11 +12382,7 @@ ${record.css}`)}`
     const panel = document.getElementById(ID.panel);
     const isRangeUpdate = Object.prototype.hasOwnProperty.call(FONT_SETTING_RANGE, key);
     const isLiveRangeUpdate = isRangeUpdate && options.flush !== true && !!activePanelRangePreviewInput;
-    const preserveScroll = options.preserveScroll !== false;
-    const syncUi = options.syncUi !== false;
-    const scrollSnapshot = isLiveRangeUpdate || !preserveScroll
-      ? null
-      : getCrackUiFontScrollSnapshot(panel);
+    const scrollSnapshot = isLiveRangeUpdate ? null : getCrackUiFontScrollSnapshot(panel);
 
     // Do not cancel the live preview on every range input event. Pointer/input delegation
     // starts it, and change/blur ends it exactly like the original image/chat-width sliders.
@@ -12956,10 +12441,10 @@ ${record.css}`)}`
       return;
     }
 
-    if (syncUi) syncCrackUiFontSettingsUi(panel);
+    syncCrackUiFontSettingsUi(panel);
     if (options.flush) persistCrackUiFontSettings();
     else saveCrackUiFontSettingsSoon();
-    if (scrollSnapshot) restoreCrackUiFontScrollSnapshot(scrollSnapshot);
+    restoreCrackUiFontScrollSnapshot(scrollSnapshot);
   }
 
   function resetCrackUiFontRangeSettings(keys, panel = document.getElementById(ID.panel)) {
@@ -13007,58 +12492,63 @@ ${record.css}`)}`
     // #panel has overflow clipping, but browsers may still try to scroll an overflow-hidden
     // ancestor when a deep checkbox receives focus. Keep the outer panel pinned at zero.
     panel.addEventListener('scroll', () => resetCrackUiPanelOuterScroll(panel), { passive: true });
-    panel.addEventListener('focusin', () => {
+    const markFontAssignmentPickerFromEvent = (event) => {
+      const select = event.target instanceof HTMLSelectElement &&
+        event.target.matches('[data-crack-ui-font-assignment]')
+        ? event.target
+        : null;
+      if (!select) return;
+      const touchLike = event.type === 'touchstart'
+        || (event instanceof PointerEvent && event.pointerType !== 'mouse');
+      markCrackUiFontAssignmentPickerActive(select, { touchLike });
+    };
+    if ('PointerEvent' in window) {
+      panel.addEventListener('pointerdown', markFontAssignmentPickerFromEvent, true);
+    } else {
+      panel.addEventListener('touchstart', markFontAssignmentPickerFromEvent, { capture: true, passive: true });
+    }
+    panel.addEventListener('focusin', (event) => {
+      const select = event.target instanceof HTMLSelectElement &&
+        event.target.matches('[data-crack-ui-font-assignment]')
+        ? event.target
+        : null;
+      if (select) {
+        markCrackUiFontAssignmentPickerActive(select, {
+          touchLike: select.dataset.crackUiFontPickerTouch === '1',
+        });
+        return;
+      }
       resetCrackUiPanelOuterScroll(panel);
       requestAnimationFrame(() => resetCrackUiPanelOuterScroll(panel));
     });
+    panel.addEventListener('focusout', (event) => {
+      const select = event.target instanceof HTMLSelectElement &&
+        event.target.matches('[data-crack-ui-font-assignment]')
+        ? event.target
+        : null;
+      if (!select) return;
+      // Android may blur the <select> while its native sheet is still opening. Mouse
+      // pickers can release immediately; touch pickers stay locked until change/cancel.
+      if (select.dataset.crackUiFontPickerTouch === '1') return;
+      requestAnimationFrame(() => releaseCrackUiFontAssignmentPickerActive(select, { force: true }));
+    });
+
+    panel.addEventListener('pointerdown', (event) => {
+      const touchedSelect = event.target instanceof HTMLSelectElement
+        && event.target.matches('[data-crack-ui-font-assignment]');
+      if (touchedSelect) return;
+      panel.querySelectorAll('select[data-crack-ui-font-assignment][data-crack-ui-font-picker-touch="1"]')
+        .forEach((select) => releaseCrackUiFontAssignmentPickerActive(select, { force: true }));
+    }, true);
 
     // Font toggles are handled manually. Preventing the label's native default click avoids
     // Chromium scrolling the outer settings panel to the focused hidden checkbox.
     panel.addEventListener('click', (event) => {
-      const assignmentClose = event.target?.closest?.('[data-crack-ui-font-assignment-picker-close]');
-      if (assignmentClose && panel.contains(assignmentClose)) {
-        event.preventDefault();
-        event.stopPropagation();
-        setCrackUiFontAssignmentPickerOpen(false, '', panel, { restoreFocus: true });
-        return;
-      }
-
-      const assignmentOption = event.target?.closest?.('[data-crack-ui-font-assignment-option]');
-      if (assignmentOption && panel.contains(assignmentOption)) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!fontAssignmentPickerOpen || !CRACK_UI_FONT_ASSIGNMENT_META[fontAssignmentPickerKey]) return;
-        const settingKey = fontAssignmentPickerKey;
-        const value = assignmentOption.dataset.crackUiFontAssignmentOption || '';
-        const trigger = fontAssignmentPickerTrigger;
-        setCrackUiFontAssignmentPickerOpen(false, '', panel);
-        updateCrackUiFontSetting(settingKey, value, { flush: true });
-        if (trigger?.isConnected) {
-          requestAnimationFrame(() => {
-            try { trigger.focus({ preventScroll: true }); }
-            catch { trigger.focus(); }
-          });
-        }
-        return;
-      }
-
-      const assignmentTrigger = event.target?.closest?.('[data-crack-ui-font-assignment-trigger]');
-      if (assignmentTrigger && panel.contains(assignmentTrigger)) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (assignmentTrigger.disabled) return;
-        const settingKey = assignmentTrigger.dataset.crackUiFontAssignmentTrigger || '';
-        const sameOpen = fontAssignmentPickerOpen && fontAssignmentPickerKey === settingKey;
-        setCrackUiFontAssignmentPickerOpen(!sameOpen, settingKey, panel, { restoreFocus: sameOpen });
-        return;
-      }
-
       const codeOpacityToggle = event.target?.closest?.('[data-crack-ui-font-code-opacity-toggle]');
       if (codeOpacityToggle && panel.contains(codeOpacityToggle)) {
         event.preventDefault();
         event.stopPropagation();
         if (codeOpacityToggle.disabled) return;
-        setCrackUiFontAssignmentPickerOpen(false, '', panel);
         setCrackUiDialogueQuoteMenuOpen(false, panel);
         setCrackUiFontPresetMenuOpen(false, panel);
         closeCrackUiFontColorPicker({ commit: true });
@@ -13071,7 +12561,6 @@ ${record.css}`)}`
         event.preventDefault();
         event.stopPropagation();
         if (quoteToggle.disabled) return;
-        setCrackUiFontAssignmentPickerOpen(false, '', panel);
         setCrackUiFontCodeOpacityMenuOpen(false, panel);
         setCrackUiFontPresetMenuOpen(false, panel);
         closeCrackUiFontColorPicker({ commit: true });
@@ -13176,6 +12665,12 @@ ${record.css}`)}`
 
     panel.addEventListener('change', (event) => {
       const target = event.target;
+      if (target instanceof HTMLSelectElement && target.matches('[data-crack-ui-font-assignment]')) {
+        updateCrackUiFontSetting(target.dataset.crackUiFontAssignment, target.value, { flush: true });
+        // Let the native sheet finish closing before normal select synchronization resumes.
+        releaseCrackUiFontAssignmentPickerActive(target, { delay: 250, force: true });
+        return;
+      }
       if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
       if (target.matches('[data-crack-ui-font-italic-style-toggle]')) {
         updateCrackUiFontSetting('italicStyleEnabled', target.checked, { flush: true });
@@ -13253,12 +12748,6 @@ ${record.css}`)}`
 
     panel.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
-      if (fontAssignmentPickerOpen) {
-        event.preventDefault();
-        event.stopPropagation();
-        setCrackUiFontAssignmentPickerOpen(false, '', panel, { restoreFocus: true });
-        return;
-      }
       if (fontDialogueQuoteMenuOpen) setCrackUiDialogueQuoteMenuOpen(false, panel);
       if (fontCodeOpacityMenuOpen) setCrackUiFontCodeOpacityMenuOpen(false, panel);
     });
@@ -13266,7 +12755,6 @@ ${record.css}`)}`
     panel.querySelector(`#${ID.fontPresetToggleButton}`)?.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      setCrackUiFontAssignmentPickerOpen(false, '', panel);
       setCrackUiDialogueQuoteMenuOpen(false, panel);
       setCrackUiFontCodeOpacityMenuOpen(false, panel);
       closeCrackUiFontColorPicker({ commit: true });
@@ -13455,7 +12943,6 @@ ${record.css}`)}`
     const fontPresetDock = panel.querySelector(`#${ID.fontPresetDock}`);
     if (fontPresetDock) fontPresetDock.hidden = activePanelSection !== 'font';
     if (activePanelSection !== 'font') {
-      setCrackUiFontAssignmentPickerOpen(false, '', panel);
       setCrackUiFontPresetMenuOpen(false, panel);
       setCrackUiDialogueQuoteMenuOpen(false, panel);
       setCrackUiFontCodeOpacityMenuOpen(false, panel);
@@ -13532,11 +13019,10 @@ ${record.css}`)}`
   function bindPanelThemeStripScroll(panel) {
     const scroller = panel.querySelector('.crack-ui-panel-body');
     const themeStrip = panel.querySelector('.crack-ui-panel-theme-strip');
-    if (!scroller || !themeStrip || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
+    if (!scroller || scroller.dataset.crackUiThemeStripScrollBound === '1') return;
 
     scroller.dataset.crackUiThemeStripScrollBound = '1';
     let restoreCleanupRaf = 0;
-    let visibilityRaf = 0;
     let expandedThemeStripHeight = 0;
     let lastScrollTop = Math.max(0, scroller.scrollTop);
     let collapseGuardUntil = 0;
@@ -13554,12 +13040,9 @@ ${record.css}`)}`
     };
 
     const measureExpandedThemeStripHeight = () => {
-      if (
-        expandedThemeStripHeight <= 0 &&
-        panel.dataset.crackUiThemeStripHidden !== '1'
-      ) {
+      if (themeStrip && panel.dataset.crackUiThemeStripHidden !== '1') {
         expandedThemeStripHeight = Math.max(
-          0,
+          expandedThemeStripHeight,
           Math.ceil(themeStrip.getBoundingClientRect().height)
         );
       }
@@ -13571,7 +13054,6 @@ ${record.css}`)}`
     };
 
     const updateThemeStripVisibility = () => {
-      visibilityRaf = 0;
       const scrollTop = Math.max(0, scroller.scrollTop);
       const hidden = panel.dataset.crackUiThemeStripHidden === '1';
       const now = performance.now();
@@ -13585,8 +13067,8 @@ ${record.css}`)}`
 
       if (!hidden) {
         const stripHeight = measureExpandedThemeStripHeight();
-        // Measure once per panel instance. Re-reading layout on every scroll event caused
-        // avoidable forced-layout work on mobile while the strip was still visible.
+        // The previous fixed 12px threshold was smaller than the strip itself. Collapsing the
+        // strip could therefore clamp scrollTop back to zero and immediately reopen it.
         const hideThreshold = Math.max(32, stripHeight + 12);
         if (scrollTop > hideThreshold) {
           delete panel.dataset.crackUiThemeStripRestoring;
@@ -13608,11 +13090,6 @@ ${record.css}`)}`
       }
 
       lastScrollTop = scrollTop;
-    };
-
-    const scheduleThemeStripVisibilityUpdate = () => {
-      if (visibilityRaf) return;
-      visibilityRaf = requestAnimationFrame(updateThemeStripVisibility);
     };
 
     scroller.addEventListener('wheel', (event) => {
@@ -13640,8 +13117,11 @@ ${record.css}`)}`
       }
     });
 
-    scroller.addEventListener('scroll', scheduleThemeStripVisibilityUpdate, { passive: true });
-    scheduleThemeStripVisibilityUpdate();
+    scroller.addEventListener('scroll', updateThemeStripVisibility, { passive: true });
+    requestAnimationFrame(() => {
+      measureExpandedThemeStripHeight();
+      updateThemeStripVisibility();
+    });
   }
 
   function bindCheckbox(panel, id, checked, onChange) {
@@ -13944,9 +13424,6 @@ ${record.css}`)}`
     const existingPanel = document.getElementById(ID.panel);
     if (existingPanel) {
       if (existingPanel.parentElement !== panelRoot) panelRoot.appendChild(existingPanel);
-      if (!existingPanel.querySelector(`#${ID.fontAssignmentPicker}`)) {
-        existingPanel.insertAdjacentHTML('beforeend', renderCrackUiFontAssignmentPicker());
-      }
       if (!document.getElementById(ID.fontColorPickerPopover)) {
         panelRoot.insertAdjacentHTML('beforeend', renderCrackUiFontColorPickerPopover());
       }
@@ -14254,7 +13731,6 @@ ${record.css}`)}`
           </div>
         </div>
       </div>
-      ${renderCrackUiFontAssignmentPicker()}
     `;
     panel.addEventListener('click', (e) => e.stopPropagation());
     panel.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
@@ -14549,12 +14025,7 @@ ${error?.message || error}`);
 
     const novelBackdropOpacityInput = panel.querySelector('[data-crack-ui-novel-backdrop-opacity]');
     novelBackdropOpacityInput?.addEventListener('input', () => {
-      updateCrackUiNovelBackdropOpacity(
-        novelBackdropOpacityInput.value,
-        { persist: false, sync: false }
-      );
-      const output = panel.querySelector('[data-crack-ui-novel-backdrop-opacity-value]');
-      if (output) output.textContent = `${chatBackgroundSettings.novelBackdropOpacity}%`;
+      updateCrackUiNovelBackdropOpacity(novelBackdropOpacityInput.value, { persist: false, sync: true });
     });
     novelBackdropOpacityInput?.addEventListener('change', () => {
       updateCrackUiNovelBackdropOpacity(novelBackdropOpacityInput.value);
@@ -14589,28 +14060,35 @@ ${error?.message || error}`);
     syncCheckbox(ID.toggleRoomMenuHandle, roomMenuHandle);
     syncCheckbox(ID.toggleChatListAutoHide, chatListAutoHide);
     syncCheckbox(ID.toggleFullscreenButton, fullscreenButtonEnabled);
-    // Background controls are synchronized only when that tab is visible.
-    // This avoids updating hidden controls every time the panel opens.
+    syncCheckbox(
+      ID.toggleChatBackground,
+      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled !== true
+    );
+    syncCheckbox(
+      ID.toggleChatBackgroundImage,
+      chatBackgroundSettings.enabled === true && chatBackgroundSettings.imageEnabled === true
+    );
+    syncCheckbox(ID.toggleNovelBackdrop, chatBackgroundSettings.novelBackdropEnabled);
     closeMenuAssistModePanels(panel);
     updateVisibleModelChoicesUi();
     syncVisibleModelListOpenUi();
 
     syncThemeStateFromOriginalSettings();
     syncPanelSections();
-    // The active background tab was already synchronized by syncPanelSections().
-    updateThemeUi({ syncBackground: false });
+    updateThemeUi();
     updateImageSizeUi();
     updateChatWidthUi();
     crackUiPanelLifecycleToken += 1;
     if (activePanelSection === 'font') {
       measureCrackUiFontNativeSnapshot({ force: true });
       syncCrackUiFontSettingsUi(panel);
+    } else if (activePanelSection === 'background') {
+      syncCrackUiChatBackgroundUi(panel);
     }
     applyState();
   }
 
   function clearPanelInteractionState(panel = document.getElementById(ID.panel)) {
-    setCrackUiFontAssignmentPickerOpen(false, '', panel);
     closeCrackUiFontColorPicker({ commit: true, sync: false });
     crackUiPanelLifecycleToken += 1;
     cancelCrackUiFontScrollRestore();
@@ -14783,141 +14261,49 @@ ${error?.message || error}`);
     return layer;
   }
 
-  function setCrackUiBackgroundStyleProperty(element, name, value) {
-    if (!element) return;
-    const next = String(value);
-    if (element.style.getPropertyValue(name) !== next) {
-      element.style.setProperty(name, next);
-    }
-  }
-
-  function setCrackUiBackgroundAttribute(element, name, value) {
-    if (!element) return;
-    const next = String(value);
-    if (element.getAttribute(name) !== next) element.setAttribute(name, next);
-  }
-
-  function applyCrackUiChatBackgroundPaintVariables() {
-    const root = document.documentElement;
-    const enabled = chatBackgroundSettings.enabled === true && crackUiIsChatRoute();
-    const color = normalizeCrackUiFontHex(
-      chatBackgroundSettings.color,
-      CHAT_BACKGROUND_SETTINGS_DEFAULT.color
-    );
-    const imageMode = enabled && chatBackgroundSettings.imageEnabled === true;
-    const imageReady = imageMode && !!chatBackgroundImageObjectUrl;
-
-    setCrackUiBackgroundStyleProperty(
-      root,
-      '--crack-ui-chat-background-color',
-      imageMode ? 'transparent' : color
-    );
-    setCrackUiBackgroundStyleProperty(
-      root,
-      '--crack-ui-chat-background-image',
-      imageReady
-        ? crackUiChatBackgroundEscapeCssUrl(chatBackgroundImageObjectUrl)
-        : 'none'
-    );
-  }
-
-  function applyCrackUiNovelBackdropPaintVariables() {
-    const root = document.documentElement;
-    const novelColor = normalizeCrackUiFontHex(
-      chatBackgroundSettings.novelBackdropColor,
-      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
-    );
-    const novelOpacityPercent = Math.max(5, Math.min(100, Math.round(
-      Number(chatBackgroundSettings.novelBackdropOpacity) ||
-      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
-    )));
-    const novelOpacity = novelOpacityPercent / 100;
-
-    setCrackUiBackgroundStyleProperty(
-      root,
-      '--crack-ui-novel-backdrop-rgb',
-      crackUiFontHexToRgb(novelColor)
-    );
-    setCrackUiBackgroundStyleProperty(
-      root,
-      '--crack-ui-novel-backdrop-alpha',
-      novelOpacity.toFixed(3)
-    );
-    setCrackUiBackgroundStyleProperty(
-      root,
-      '--crack-ui-novel-backdrop-soft-alpha',
-      Math.max(0, novelOpacity * 0.36).toFixed(3)
-    );
-  }
-
   function isCrackUiNovelBackdropLayout(viewport) {
-    return (
-      normalizeEpisodeUiMode(episodeUiMode) === 'novel' &&
-      viewport instanceof HTMLElement
-    );
-  }
-
-  function shouldObserveCrackUiWeatherRoot() {
-    if (!crackUiIsChatRoute()) return false;
-    const chatEnabled = chatBackgroundSettings.enabled === true;
-    const novelEnabled =
-      chatBackgroundSettings.novelBackdropEnabled === true &&
-      normalizeEpisodeUiMode(episodeUiMode) === 'novel';
-    return chatEnabled || novelEnabled;
-  }
-
-  function clearCrackUiChatBackgroundTargets() {
-    if (appliedChatBackgroundTarget) {
-      appliedChatBackgroundTarget.removeAttribute('data-crack-ui-chat-background-target');
-      appliedChatBackgroundTarget = null;
-    }
-    if (appliedNovelBackdropTarget) {
-      appliedNovelBackdropTarget.removeAttribute('data-crack-ui-novel-backdrop-target');
-      appliedNovelBackdropTarget = null;
-    }
-    if (appliedChatBackgroundComposerShell) {
-      appliedChatBackgroundComposerShell.removeAttribute('data-crack-ui-chat-background-composer-shell');
-      appliedChatBackgroundComposerShell = null;
-    }
+    if (normalizeEpisodeUiMode(episodeUiMode) !== 'novel') return false;
+    if (!(viewport instanceof HTMLElement)) return false;
+    if (viewport.querySelector('[data-message-group-id] .rounded-none.bg-transparent .wrtn-markdown')) return true;
+    return true;
   }
 
   function applyCrackUiChatBackground() {
     const root = document.documentElement;
     const routeEnabled = crackUiIsChatRoute();
     const enabled = chatBackgroundSettings.enabled === true && routeEnabled;
-    const novelCandidate =
-      chatBackgroundSettings.novelBackdropEnabled === true &&
-      routeEnabled &&
-      normalizeEpisodeUiMode(episodeUiMode) === 'novel';
+    const color = normalizeCrackUiFontHex(chatBackgroundSettings.color, CHAT_BACKGROUND_SETTINGS_DEFAULT.color);
+    const imageMode = enabled && chatBackgroundSettings.imageEnabled === true;
+    const imageReady = imageMode && !!chatBackgroundImageObjectUrl;
 
-    // Keep paint-only updates separate from target discovery. Color picker and opacity
-    // dragging can now update CSS variables without rescanning the chat DOM.
-    applyCrackUiChatBackgroundPaintVariables();
-    applyCrackUiNovelBackdropPaintVariables();
+    // Color and image are exclusive modes. Do not keep the previously selected
+    // color (for example black) painted underneath image mode on mobile.
+    root.style.setProperty('--crack-ui-chat-background-color', imageMode ? 'transparent' : color);
+    root.style.setProperty(
+      '--crack-ui-chat-background-image',
+      imageReady ? crackUiChatBackgroundEscapeCssUrl(chatBackgroundImageObjectUrl) : 'none'
+    );
 
-    // Default/off state is the common path. Do not search the chat viewport or composer
-    // when neither background feature can render on the current route.
-    if (!enabled && !novelCandidate) {
-      clearCrackUiChatBackgroundTargets();
-      removeCrackUiChatBackgroundWeatherLayer();
-      removeCrackUiNovelBackdropWeatherLayer();
-      refreshCrackUiWeatherRootObserver();
-      setCrackUiBackgroundAttribute(root, 'data-crack-ui-novel-backdrop', 'off');
-      setCrackUiBackgroundAttribute(root, 'data-crack-ui-novel-backdrop-weather', 'off');
-      setCrackUiBackgroundAttribute(root, 'data-crack-ui-chat-background', 'off');
-      return;
-    }
-
-    refreshCrackUiWeatherRootObserver();
-
-    const viewport = DOM.chatBackgroundViewport();
-    const novelEnabled = novelCandidate && isCrackUiNovelBackdropLayout(viewport);
-    const weather = findCrackUiActiveWeatherLayer();
+    const viewport = routeEnabled ? DOM.chatBackgroundViewport() : null;
+    const novelColor = normalizeCrackUiFontHex(
+      chatBackgroundSettings.novelBackdropColor,
+      CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropColor
+    );
+    const novelOpacityPercent = Math.max(5, Math.min(100, Math.round(
+      Number(chatBackgroundSettings.novelBackdropOpacity) || CHAT_BACKGROUND_SETTINGS_DEFAULT.novelBackdropOpacity
+    )));
+    const novelOpacity = novelOpacityPercent / 100;
+    const novelEnabled = chatBackgroundSettings.novelBackdropEnabled === true
+      && routeEnabled
+      && isCrackUiNovelBackdropLayout(viewport);
+    const weather = routeEnabled && (enabled || novelEnabled) ? findCrackUiActiveWeatherLayer() : null;
     const nextTarget = enabled && !weather ? viewport : null;
     const nextNovelTarget = novelEnabled && !weather ? viewport : null;
-    const nextComposerShell = (enabled || novelEnabled)
-      ? DOM.chatBackgroundComposerShell()
-      : null;
+    const nextComposerShell = (enabled || novelEnabled) ? DOM.chatBackgroundComposerShell() : null;
+
+    root.style.setProperty('--crack-ui-novel-backdrop-rgb', crackUiFontHexToRgb(novelColor));
+    root.style.setProperty('--crack-ui-novel-backdrop-alpha', novelOpacity.toFixed(3));
+    root.style.setProperty('--crack-ui-novel-backdrop-soft-alpha', Math.max(0, novelOpacity * 0.36).toFixed(3));
 
     if (appliedChatBackgroundTarget && appliedChatBackgroundTarget !== nextTarget) {
       appliedChatBackgroundTarget.removeAttribute('data-crack-ui-chat-background-target');
@@ -14929,13 +14315,8 @@ ${error?.message || error}`);
     }
     appliedNovelBackdropTarget = nextNovelTarget;
 
-    if (
-      appliedChatBackgroundComposerShell &&
-      appliedChatBackgroundComposerShell !== nextComposerShell
-    ) {
-      appliedChatBackgroundComposerShell.removeAttribute(
-        'data-crack-ui-chat-background-composer-shell'
-      );
+    if (appliedChatBackgroundComposerShell && appliedChatBackgroundComposerShell !== nextComposerShell) {
+      appliedChatBackgroundComposerShell.removeAttribute('data-crack-ui-chat-background-composer-shell');
     }
     appliedChatBackgroundComposerShell = nextComposerShell;
 
@@ -14945,47 +14326,18 @@ ${error?.message || error}`);
     } else {
       removeCrackUiChatBackgroundWeatherLayer();
     }
-
     if (weather && novelEnabled) {
       weatherNovelLayer = ensureCrackUiNovelBackdropWeatherLayer(weather);
     } else {
       removeCrackUiNovelBackdropWeatherLayer();
     }
 
-    if (nextTarget) {
-      setCrackUiBackgroundAttribute(
-        nextTarget,
-        'data-crack-ui-chat-background-target',
-        '1'
-      );
-    }
-    if (nextNovelTarget) {
-      setCrackUiBackgroundAttribute(
-        nextNovelTarget,
-        'data-crack-ui-novel-backdrop-target',
-        '1'
-      );
-    }
-    if (nextComposerShell) {
-      setCrackUiBackgroundAttribute(
-        nextComposerShell,
-        'data-crack-ui-chat-background-composer-shell',
-        '1'
-      );
-    }
-
-    setCrackUiBackgroundAttribute(
-      root,
-      'data-crack-ui-novel-backdrop',
-      nextNovelTarget || weatherNovelLayer ? 'on' : 'off'
-    );
-    setCrackUiBackgroundAttribute(
-      root,
-      'data-crack-ui-novel-backdrop-weather',
-      weatherNovelLayer ? 'on' : 'off'
-    );
-    setCrackUiBackgroundAttribute(
-      root,
+    if (nextTarget) nextTarget.setAttribute('data-crack-ui-chat-background-target', '1');
+    if (nextNovelTarget) nextNovelTarget.setAttribute('data-crack-ui-novel-backdrop-target', '1');
+    if (nextComposerShell) nextComposerShell.setAttribute('data-crack-ui-chat-background-composer-shell', '1');
+    root.setAttribute('data-crack-ui-novel-backdrop', nextNovelTarget || weatherNovelLayer ? 'on' : 'off');
+    root.setAttribute('data-crack-ui-novel-backdrop-weather', weatherNovelLayer ? 'on' : 'off');
+    root.setAttribute(
       'data-crack-ui-chat-background',
       weather ? 'weather-underlay' : (nextTarget ? 'viewport' : 'off')
     );
@@ -15006,13 +14358,6 @@ ${error?.message || error}`);
   }
 
   function refreshCrackUiWeatherRootObserver() {
-    if (!shouldObserveCrackUiWeatherRoot()) {
-      chatBackgroundWeatherRootObserver?.disconnect();
-      chatBackgroundWeatherRootObserver = null;
-      observedChatBackgroundWeatherRoot = null;
-      return null;
-    }
-
     const nextRoot = document.getElementById('cawf-root');
     if (observedChatBackgroundWeatherRoot === nextRoot && nextRoot?.isConnected) return nextRoot;
 
@@ -15044,9 +14389,8 @@ ${error?.message || error}`);
   function observeCrackUiChatBackgroundCompatibility() {
     if (chatBackgroundCompatibilityObserver) return;
     chatBackgroundCompatibilityObserver = new MutationObserver(() => {
-      const compatibilityActive = shouldObserveCrackUiWeatherRoot();
       refreshCrackUiWeatherRootObserver();
-      if (compatibilityActive) scheduleCrackUiChatBackgroundApply();
+      scheduleCrackUiChatBackgroundApply();
     });
     chatBackgroundCompatibilityObserver.observe(document.documentElement, {
       attributes: true,
@@ -19574,8 +18918,7 @@ ${error?.message || error}`);
   function isCrackUiAntiScrollOwnedElement(element) {
     return !!element?.closest?.(
       `#${ID.panelRoot}, #${ID.panel}, #${ID.panelBackdrop}, #${ID.bottomModelPopup}, ` +
-      '[data-crack-ui-chat-list-panel="1"], [data-crack-ui-room-panel="1"], ' +
-      '[data-radix-popper-content-wrapper]'
+      '[data-crack-ui-chat-list-panel="1"], [data-radix-popper-content-wrapper]'
     );
   }
 
@@ -19661,20 +19004,19 @@ ${error?.message || error}`);
       '[data-radix-dialog-content][data-state="open"]'
     );
 
-    for (const element of candidates) {
-      if (!element?.isConnected) continue;
+    return [...candidates].some((element) => {
+      if (!element?.isConnected) return false;
 
       try {
         const rect = element.getBoundingClientRect();
-        if (rect.width <= 1 || rect.height <= 1) continue;
+        if (rect.width <= 1 || rect.height <= 1) return false;
 
         const style = getComputedStyle(element);
-        if (style.display !== 'none' && style.visibility !== 'hidden') return true;
+        return style.display !== 'none' && style.visibility !== 'hidden';
       } catch {
+        return false;
       }
-    }
-
-    return false;
+    });
   }
 
   function isCrackUiAntiScrollUiGestureTarget(target) {
@@ -19689,12 +19031,9 @@ ${error?.message || error}`);
 
     if (!interactive) return false;
 
-    /* Sending a message must not create a bypass window that could cover a very short response.
-       Check only the clicked control instead of rescanning every button in the page. */
-    const interactiveButton = interactive.matches?.('button')
-      ? interactive
-      : interactive.closest?.('button');
-    if (interactiveButton && isChatComposerSendButton(interactiveButton)) return false;
+    /* Sending a message must not create a bypass window that could cover a very short response. */
+    const sendButton = findBottomSendButton();
+    if (sendButton && (interactive === sendButton || sendButton.contains?.(interactive))) return false;
 
     return true;
   }
@@ -19725,8 +19064,10 @@ ${error?.message || error}`);
 
   function findCrackUiAntiScrollScroller() {
     if (!crackUiIsConversationRoute()) return null;
+    const cacheHasConversation = !!cachedAntiScrollScroller?.querySelector?.('[data-message-group-id], .wrtn-markdown');
     if (
       cachedAntiScrollHref === location.href &&
+      cacheHasConversation &&
       isCrackUiAntiScrollScrollable(cachedAntiScrollScroller)
     ) {
       return cachedAntiScrollScroller;
@@ -19768,8 +19109,8 @@ ${error?.message || error}`);
       !antiScrollJacking ||
       !crackUiIsConversationRoute() ||
       isCrackUiUserUiScrollAllowed() ||
-      !isCrackUiAntiScrollScrollable(scroller) ||
-      isCrackUiAntiScrollOverlayOpen()
+      isCrackUiAntiScrollOverlayOpen() ||
+      !isCrackUiAntiScrollScrollable(scroller)
     ) {
       return false;
     }
@@ -19855,13 +19196,7 @@ ${error?.message || error}`);
     };
 
     const markManualBottomClick = (event) => {
-      if (
-        !antiScrollJacking ||
-        event?.isTrusted === false ||
-        isCrackUiManualScrollToBottomAllowed()
-      ) {
-        return;
-      }
+      if (!antiScrollJacking || event?.isTrusted === false) return;
       if (isCrackUiScrollToBottomButton(event?.target)) {
         allowCrackUiManualScrollToBottom(2000);
       }
@@ -19881,10 +19216,8 @@ ${error?.message || error}`);
     const markKeyboardViewportChange = () => {
       if (!antiScrollJacking || !isTouchLikeDevice()) return;
 
-      // Keyboard viewport changes are relevant only while a real editor owns focus.
-      // A merely open modal should not extend the auto-scroll bypass on every resize.
       const active = document.activeElement;
-      if (!isCrackUiAntiScrollEditableElement(active)) return;
+      if (!isCrackUiAntiScrollEditableElement(active) && !isCrackUiAntiScrollOverlayOpen()) return;
 
       /* Every resize/offset step extends from the latest keyboard animation frame,
          rather than relying on one fixed delay from the original tap. */
@@ -19913,27 +19246,16 @@ ${error?.message || error}`);
   function shouldCrackUiBlockElementScrollMethod(method, target, args) {
     if (!antiScrollJacking || !crackUiIsConversationRoute()) return false;
     if (isCrackUiManualScrollToBottomAllowed()) return false;
-
+    if (isCrackUiAntiScrollOverlayElement(target)) return false;
     const scroller = findCrackUiAntiScrollScroller();
-    const intoView = method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded';
+    if (!isCrackUiUserReadingUp(scroller)) return false;
 
-    if (intoView) {
-      if (
-        !target ||
-        !(scroller === document.scrollingElement || scroller?.contains?.(target))
-      ) {
-        return false;
-      }
-      if (isCrackUiAntiScrollOverlayElement(target)) return false;
-      if (!isCrackUiUserReadingUp(scroller)) return false;
-
+    if (method === 'scrollIntoView' || method === 'scrollIntoViewIfNeeded') {
+      if (!target || !(scroller === document.scrollingElement || scroller.contains?.(target))) return false;
       try {
         const targetRect = target.getBoundingClientRect();
         const scrollerRect = scroller === document.scrollingElement
-          ? {
-              top: 0,
-              bottom: window.innerHeight || document.documentElement.clientHeight || 0,
-            }
+          ? { top: 0, bottom: window.innerHeight || document.documentElement.clientHeight || 0 }
           : scroller.getBoundingClientRect();
         return targetRect.bottom > scrollerRect.bottom + 1;
       } catch {
@@ -19941,10 +19263,7 @@ ${error?.message || error}`);
       }
     }
 
-    // Direct scroll/scrollTo/scrollBy calls matter only on the cached chat scroller.
-    // Reject other elements before doing overlay/style or reading-up work.
-    if (target !== scroller || !isCrackUiUserReadingUp(scroller)) return false;
-
+    if (target !== scroller) return false;
     const requestedTop = getCrackUiRequestedScrollTop(method, args, scroller.scrollTop);
     return requestedTop != null && requestedTop > scroller.scrollTop + 0.5;
   }
@@ -21256,21 +20575,7 @@ ${error?.message || error}`);
     document.addEventListener('fullscreenchange', updateFullscreenButtonUi);
     document.addEventListener('webkitfullscreenchange', updateFullscreenButtonUi);
     window.addEventListener('resize', scheduleCrackUiViewportRefresh, { passive: true });
-    window.visualViewport?.addEventListener?.('resize', scheduleCrackUiVisualViewportRefresh, { passive: true });
-
-    /*
-     * After Firefox closes the keyboard and focus leaves the editor, run one normal
-     * refresh so deferred width/background state can catch up outside the native
-     * keyboard-pan window.
-     */
-    document.addEventListener('focusout', () => {
-      if (!isAndroidFirefoxBrowser()) return;
-
-      setTimeout(() => {
-        if (isCrackUiViewportEditableElement(document.activeElement)) return;
-        scheduleCrackUiViewportRefresh();
-      }, 220);
-    }, true);
+    window.visualViewport?.addEventListener?.('resize', scheduleCrackUiViewportRefresh, { passive: true });
 
     const touchViewportMedia = window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)');
     touchViewportMedia.addEventListener?.('change', scheduleCrackUiViewportRefresh);
@@ -21321,7 +20626,6 @@ ${error?.message || error}`);
       if (chatContentRefreshTimer) clearTimeout(chatContentRefreshTimer);
       if (chatContentRefreshRaf) cancelAnimationFrame(chatContentRefreshRaf);
       if (viewportRefreshRaf) cancelAnimationFrame(viewportRefreshRaf);
-      if (visualViewportRefreshRaf) cancelAnimationFrame(visualViewportRefreshRaf);
       // Object URLs are released automatically with the document. Do not revoke
       // here because some mobile browsers emit pagehide during native file picking.
     });
@@ -21398,9 +20702,7 @@ ${error?.message || error}`);
         fontResolvedFamilyCount: fontResolvedFamilies.length,
         fontQuoteRenderedCount: document.querySelectorAll('[data-crack-ui-font-quote]').length,
         fontQuoteTrackedCount: fontQuoteWraps.size,
-        fontQuoteObserverActive: fontQuoteMutationObserverActive,
         fontQuoteScanScheduled: !!fontQuoteScanTimer || !!fontQuoteScanRaf,
-        fontColorPickerPositionScheduled: !!fontColorPickerPositionRaf,
         novelModelIndicatorCacheCount: Object.keys(novelModelMessageCache).length,
         novelModelIndicatorCatalogCount: novelModelCatalogById.size,
         novelModelIndicatorRetiredCatalogCount: [...novelModelCatalogById.values()].filter((entry) => entry.retired).length,
@@ -21761,9 +21063,8 @@ ${error?.message || error}`);
 
       const weatherStructureChanged = mutations.some(mutationTouchesCrackUiWeatherRoot);
       if (weatherStructureChanged) {
-        const weatherCompatibilityActive = shouldObserveCrackUiWeatherRoot();
         refreshCrackUiWeatherRootObserver();
-        if (weatherCompatibilityActive) scheduleCrackUiChatBackgroundApply();
+        scheduleCrackUiChatBackgroundApply();
         const onlyWeatherStructureChanges = mutations.every((mutation) =>
           mutationTouchesCrackUiWeatherRoot(mutation) || isCrackUiOwnMutationNode(mutation.target)
         );
