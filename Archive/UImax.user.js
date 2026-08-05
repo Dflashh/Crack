@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.7.26
+// @version      3.0.0
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -11,7 +11,7 @@
 // @grant        unsafeWindow
 // @connect      crack-api.wrtn.ai
 // @connect      *
-// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UI.webp
+// @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UImax.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
 // ==/UserScript==
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.7.26';
+  const CRACK_UI_VERSION = '3.0.0';
 
   function getCrackUiPublicWindow() {
     try {
