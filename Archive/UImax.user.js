@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      3.0.0
+// @version      3.0.1
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '3.0.0';
+  const CRACK_UI_VERSION = '3.0.1';
 
   function getCrackUiPublicWindow() {
     try {
@@ -7830,8 +7830,41 @@
     root.classList.toggle(CLS.androidFirefox, isAndroidFirefoxBrowser());
   }
 
+  function isCrackUiViewportEditableElement(element) {
+    return !!element?.closest?.(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), ' +
+      '[role="textbox"], [role="combobox"], [role="searchbox"]'
+    );
+  }
+
+  function shouldUseCrackUiFirefoxKeyboardViewportRefresh() {
+    return (
+      isAndroidFirefoxBrowser() &&
+      isCrackUiViewportEditableElement(document.activeElement)
+    );
+  }
+
+  function applyCrackUiLightViewportRefresh() {
+    invalidateCrackUiViewportMetrics();
+    updateDeviceViewportClasses();
+    scheduleMenuSwipeZonePosition();
+  }
+
   function runCrackUiViewportRefresh() {
     viewportRefreshRaf = 0;
+
+    /*
+     * Firefox for Android emits a normal window.resize while the software keyboard
+     * is opening. Max's full resize path also refreshes font/background layout and
+     * can interrupt Firefox's native pan that lifts the focused editor above the
+     * keyboard. While a real editor owns focus, use the same light path as
+     * visualViewport.resize and leave the native input/modal positioning untouched.
+     */
+    if (shouldUseCrackUiFirefoxKeyboardViewportRefresh()) {
+      applyCrackUiLightViewportRefresh();
+      return;
+    }
+
     invalidateCrackUiViewportMetrics();
     updateDeviceViewportClasses();
     applyChatWidth();
@@ -7846,6 +7879,12 @@
 
   function scheduleCrackUiViewportRefresh() {
     invalidateCrackUiViewportMetrics();
+
+    if (shouldUseCrackUiFirefoxKeyboardViewportRefresh()) {
+      scheduleCrackUiVisualViewportRefresh();
+      return;
+    }
+
     if (viewportRefreshRaf) return;
     viewportRefreshRaf = requestAnimationFrame(runCrackUiViewportRefresh);
   }
@@ -7856,9 +7895,7 @@
     /* Android opens the software keyboard through several visualViewport frames.
        Keep those frames free from Max-only chat-width/background layout work so
        Crack can finish positioning its native editor and modal by itself. */
-    invalidateCrackUiViewportMetrics();
-    updateDeviceViewportClasses();
-    scheduleMenuSwipeZonePosition();
+    applyCrackUiLightViewportRefresh();
   }
 
   function scheduleCrackUiVisualViewportRefresh() {
@@ -21220,6 +21257,20 @@ ${error?.message || error}`);
     document.addEventListener('webkitfullscreenchange', updateFullscreenButtonUi);
     window.addEventListener('resize', scheduleCrackUiViewportRefresh, { passive: true });
     window.visualViewport?.addEventListener?.('resize', scheduleCrackUiVisualViewportRefresh, { passive: true });
+
+    /*
+     * After Firefox closes the keyboard and focus leaves the editor, run one normal
+     * refresh so deferred width/background state can catch up outside the native
+     * keyboard-pan window.
+     */
+    document.addEventListener('focusout', () => {
+      if (!isAndroidFirefoxBrowser()) return;
+
+      setTimeout(() => {
+        if (isCrackUiViewportEditableElement(document.activeElement)) return;
+        scheduleCrackUiViewportRefresh();
+      }, 220);
+    }, true);
 
     const touchViewportMedia = window.matchMedia('(max-width: 767px), (hover: none), (pointer: coarse)');
     touchViewportMedia.addEventListener?.('change', scheduleCrackUiViewportRefresh);
