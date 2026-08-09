@@ -1,6 +1,4 @@
 # Crack 확장 프로그램
-
-> 버그는 해당 확프 게시글 or 본인이 버그 픽스 후 **꼭 뤼튼 여성향 갤러리에 올려주셈**
 ***
 ## Crack UI Plus <v2.6.1>  
 <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js"><img src="https://img.shields.io/badge/➕-Plus-blue?style=for-the-badge" alt="UIplus" /></a> <a href="Guide/UIplus.md"><img src="https://img.shields.io/badge/🔧-UI Plus 가이드-e9a01e?style=for-the-badge" alt="P가이드" /></a>
