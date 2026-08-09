@@ -7,20 +7,9 @@
 ## Crack UI Max <v3.0.0>  
 <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/UImax.user.js"><img src="https://img.shields.io/badge/🌐-Max-blue?style=for-the-badge" alt="UImax" /></a> <a href="Guide/UImax.md"><img src="https://img.shields.io/badge/🔧-UI Max 가이드-e9a01e?style=for-the-badge" alt="M가이드" /></a>  
 
-<a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=248591"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
+<a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=248591"><img src="https://img.shields.io/badge/📜-버그제보는 여기 댓글로-f52887?style=for-the-badge" alt="게시글" /></a>
 
-**기능**
-> **[ 테마 ]**
-> 
-> 색상 ( 라이트모드 / 다크모드 ) | 작품 ( 소설형 / 채팅형 )
-
-> **[ 채팅 ]**
-> 
-> 채팅 폭 조절 (PC/태블릿 전용) | 이미지 사이즈 조절 | 입력창 모델 변경 | 스토리 자동 재생 끄기 | 채팅방 설정 자동 숨김 | 스탯창 숨김 | 줄바꿈 최적화 | 상황 이미지 끄기 | 소설형에서 모델 확인
-
-> **[ 화면 ]**
-> 
-> 상단바 자동 숨김 | 채팅 목록 자동 숨김 | 썸네일 움짤 정지
+**크랙 UI를 더 넓고 편하게!**
 ***
 ## Crack Shortcut Customizer <v1.0.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Shortcut.user.js)
 크랙 채팅방에서 사용 가능한 단축키를 유저마음대로 커스텀
