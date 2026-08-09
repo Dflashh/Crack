@@ -1,5 +1,5 @@
 # Crack 확장 프로그램
-***
+
 ## Crack UI Plus <v2.6.1>  
 <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js"><img src="https://img.shields.io/badge/➕-Plus-blue?style=for-the-badge" alt="UIplus" /></a> <a href="Guide/UIplus.md"><img src="https://img.shields.io/badge/🔧-UI Plus 가이드-e9a01e?style=for-the-badge" alt="P가이드" /></a>
 ## Crack UI Max <v3.0.0>  
