@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Plus
 // @namespace    https://github.com/Dflashh/Crack
-// @version      2.6.1
+// @version      2.6.2
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '2.6.1';
+  const CRACK_UI_VERSION = '2.6.2';
 
   function getCrackUiPublicWindow() {
     try {
@@ -1790,12 +1790,15 @@
         object-fit: cover !important;
       }
 
-      [role="menuitem"][data-crack-ui-official-model-hidden="1"] {
+      [role="menuitem"][data-crack-ui-official-model-hidden="1"],
+      [role="option"][data-crack-ui-official-model-hidden="1"] {
         display: none !important;
       }
 
-      /* Crack 원본 모델 메뉴의 모델별 설명문은 UI+ 활성화 시 항상 숨김. */
-      [data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[src*="model-icon"]) > div:first-child > div[class*="text-text_secondary"] {
+      /* Crack 원본 모델 메뉴의 모델별 설명문은 UI+ 활성화 시 항상 숨김.
+         구형 Radix menu/menuitem과 신형 Select combobox/listbox/option을 모두 지원한다. */
+      [data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"]):has(img[src*="model-icon"], img[srcset*="model-icon"]) > div:first-child > div[class*="text-text_secondary"],
+      [data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"]):has(img[src*="model-icon"], img[srcset*="model-icon"]) [class*="text-text_secondary"] {
         display: none !important;
       }
 
@@ -6655,7 +6658,7 @@
 
     const icons = [...document.querySelectorAll('img[src*="model-icon"], img[srcset*="model-icon"]')];
     for (const icon of icons) {
-      if (icon.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}, [role="menuitem"], [role="dialog"]`)) continue;
+      if (icon.closest(`#${ID.bottomModelButton}, #${ID.bottomModelPopup}, #${ID.panel}, [role="menuitem"], [role="option"], [role="listbox"], [role="dialog"]`)) continue;
 
       const alt = normalizeText(icon.getAttribute('alt'));
       if (alt) return alt;
@@ -6695,8 +6698,9 @@
       return cachedOriginalModelButton;
     }
 
-    const found = [...document.querySelectorAll('button[aria-haspopup="menu"], button[id^="radix-"]')]
-      .find((button) => isOriginalModelButtonCandidate(button, panel, popup)) || null;
+    const found = [...document.querySelectorAll(
+      'button[aria-haspopup="menu"], button[id^="radix-"], button[role="combobox"][aria-controls]'
+    )].find((button) => isOriginalModelButtonCandidate(button, panel, popup)) || null;
 
     cachedOriginalModelButton = found;
     return found;
@@ -6704,7 +6708,7 @@
 
   function getOfficialModelMenu() {
     const popup = document.getElementById(ID.bottomModelPopup);
-    return [...document.querySelectorAll('[role="menu"]')].find((menu) => {
+    return [...document.querySelectorAll('[role="menu"], [role="listbox"], [data-radix-select-content]')].find((menu) => {
       if (popup?.contains(menu) || menu.closest?.(`#${ID.panel}`)) return false;
       if (
         menu.classList?.contains('crack-ui-novel-model-menu') ||
@@ -6712,7 +6716,7 @@
       ) {
         return false;
       }
-      const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
+      const modelItems = [...menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
         .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
       return modelItems.length >= 2;
     }) || null;
@@ -6727,7 +6731,7 @@
       return [];
     }
 
-    const modelItems = [...menu.querySelectorAll('[role="menuitem"]')]
+    const modelItems = [...menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
       .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
     if (modelItems.length < 2) return [];
 
@@ -6967,12 +6971,12 @@
       const file = getChatModelIconFile(name);
       const escapedName = String(name).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
       const next = [
-        `[data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[alt="${escapedName}"])`,
+        `[data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"], [data-radix-select-item]):has(img[alt="${escapedName}"])`,
       ];
 
       if (file) {
         const escapedFile = String(file).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
-        next.push(`[data-radix-popper-content-wrapper] [role="menu"] [role="menuitem"]:has(img[src*="${escapedFile}"])`);
+        next.push(`[data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"], [data-radix-select-item]):has(img[src*="${escapedFile}"])`);
       }
 
       return next;
@@ -6997,7 +7001,7 @@
     const visible = new Set(getVisibleChatModelNames());
     let hiddenCount = 0;
 
-    menu.querySelectorAll('[role="menuitem"]').forEach((item) => {
+    menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]').forEach((item) => {
       const name = getModelNameFromNode(item);
       if (!isKnownChatModelName(name)) {
         delete item.dataset.crackUiOfficialModelHidden;
@@ -7030,7 +7034,7 @@
       if (!(wrapper instanceof HTMLElement)) return;
       if (document.getElementById(ID.bottomModelPopup)?.contains(wrapper)) return;
 
-      const menu = wrapper.querySelector('[role="menu"]');
+      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-content]');
       if (!menu) return;
 
       const hasModelText = CHAT_MODEL_ORDER.some((model) => normalizeText(wrapper.textContent).includes(model));
@@ -7162,7 +7166,7 @@
     const shouldBlur =
       active === officialBtn ||
       officialBtn?.contains?.(active) ||
-      !!active.closest?.('[data-radix-popper-content-wrapper], [role="menu"], [role="menuitem"]');
+      !!active.closest?.('[data-radix-popper-content-wrapper], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]');
 
     if (shouldBlur) {
       try {
@@ -7238,7 +7242,7 @@
           return false;
         }
 
-        const targetItem = [...modelMenu.querySelectorAll('div[role="menuitem"], [role="menuitem"]')]
+        const targetItem = [...modelMenu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
           .find((item) => {
             const itemName = getModelNameFromNode(item);
             return itemName === targetName || normalizeText(item.textContent).includes(targetName);
