@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Shortcut Customizer
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.3.0
+// @version      1.3.1
 // @description  Crack 단축키 커스텀 + 로어/프로필/플레이 가이드/공식 모델 자동 동기화
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -486,7 +486,7 @@
 
   function isOfficialModelButtonCandidate(button) {
     if (!button || !button.isConnected) return false;
-    if (button.closest?.('#' + ID.panel + ', [role="menu"], [role="listbox"], [role="menuitem"], [role="option"]')) return false;
+    if (button.closest?.('#' + ID.panel + ', [role="menu"], [role="listbox"], [role="menuitem"], [role="option"], [data-radix-select-content], [data-radix-select-item]')) return false;
 
     const image = button.querySelector?.('img[alt], img[src*="model-icon"], img[srcset*="model-icon"]');
     if (!image) return false;
@@ -497,8 +497,9 @@
   }
 
   function findOfficialModelButton() {
+    // 구형 menu 버튼 + 신형 Radix Select combobox 버튼을 모두 지원.
     const candidates = [...document.querySelectorAll(
-      'button[aria-haspopup="menu"], button[aria-haspopup="listbox"], button[id^="radix-"]'
+      'button[aria-haspopup="menu"], button[aria-haspopup="listbox"], button[id^="radix-"], button[role="combobox"][aria-controls]'
     )]
       .filter(isOfficialModelButtonCandidate)
       .sort((a, b) => {
@@ -551,7 +552,7 @@
 
   function getOfficialModelMenu() {
     const candidates = [...document.querySelectorAll(
-      '[role="menu"], [role="listbox"], [data-radix-select-viewport]'
+      '[role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport]'
     )].filter((menu) => !menu.closest?.('#' + ID.panel));
 
     return candidates.find((menu) => scanOfficialModelMenuEntries(menu).length >= 2) || null;
@@ -636,7 +637,7 @@
       if (!(wrapper instanceof HTMLElement)) return;
       if (wrapper.closest?.('#' + ID.panel)) return;
 
-      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-viewport]');
+      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport]');
       if (!menu || scanOfficialModelMenuEntries(menu).length < 2) return;
 
       if (!hiddenWrappers.has(wrapper)) {
@@ -709,7 +710,7 @@
     const shouldBlur =
       active === officialButton ||
       officialButton?.contains?.(active) ||
-      Boolean(active.closest?.('[data-radix-popper-content-wrapper], [role="menu"], [role="menuitem"]'));
+      Boolean(active.closest?.('[data-radix-popper-content-wrapper], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [data-radix-select-content], [data-radix-select-item]'));
 
     if (shouldBlur) {
       try {
@@ -2426,7 +2427,7 @@
     panel.innerHTML = `
       <div class="crack-sc-panel-head">
         <div class="crack-sc-title-wrap">
-          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.3.0</span></div>
+          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.3.1</span></div>
           <div class="crack-sc-panel-subtitle"><span class="crack-sc-desktop-hint">커스텀 창 열기: ${escapeHtml(humanCombo(PANEL_SHORTCUT))}</span></div>
         </div>
         <button type="button" class="crack-sc-panel-close" data-crack-sc-close aria-label="닫기">×</button>
@@ -2674,8 +2675,8 @@
       if (isCustomizerUiNode(node)) continue;
 
       if (
-        node.matches?.('[role="dialog"], [role="menu"], [role="listbox"], [data-radix-select-viewport], [data-crack-ui-room-panel="1"], code') ||
-        node.querySelector?.('[role="dialog"], [role="menu"], [role="listbox"], [data-radix-select-viewport], [data-crack-ui-room-panel="1"], code, img[src*="model-icon"], img[srcset*="model-icon"]')
+        node.matches?.('[role="dialog"], [role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport], [data-radix-select-item], [data-crack-ui-room-panel="1"], code') ||
+        node.querySelector?.('[role="dialog"], [role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport], [data-radix-select-item], [data-crack-ui-room-panel="1"], code, img[src*="model-icon"], img[srcset*="model-icon"]')
       ) {
         return true;
       }
