@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Crack Shortcut Customizer
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.2.1
-// @description  Crack 단축키를 내 마음대로 커스텀 + 로어 인젝터/대화 프로필/플레이 가이드/모델 선택
+// @version      1.3.0
+// @description  Crack 단축키 커스텀 + 로어/프로필/플레이 가이드/공식 모델 자동 동기화
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Shortcut.webp
@@ -11,6 +11,7 @@
 // @run-at       document-start
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (() => {
@@ -28,6 +29,7 @@
     sectionGeneralOpen: 'crack_shortcut_customizer_section_general_open',
     sectionChatOpen: 'crack_shortcut_customizer_section_chat_open',
     sectionModelOpen: 'crack_shortcut_customizer_section_model_open',
+    modelRegistry: 'crack_shortcut_customizer_model_registry_v1',
   };
 
   const CLS = {
@@ -38,7 +40,7 @@
   const PANEL_SHORTCUT = 'ctrl+shift+,';
   const BLOCK_ORIGINAL_AFTER_REMAP = true;
 
-  const ACTIONS = [
+  const BASE_ACTIONS = [
     { id: 'history', group: '일반', name: '대화 내역 열기/닫기', original: 'ctrl+shift+s' },
     { id: 'help', group: '일반', name: '도움말', original: 'ctrl+shift+/' },
     { id: 'lore_injector', group: '일반', name: '로어 인젝터', original: '', customAction: 'toggle_lore', targetSelector: '#lore-inj-entry-button, button[title="로어 인젝터 열기"], button[aria-label="로어 인젝터 열기"]' },
@@ -58,25 +60,38 @@
     { id: 'room_settings', group: '채팅방', name: '채팅방 설정 열기/닫기', original: 'ctrl+0' },
     { id: 'conversation_profile', group: '채팅방', name: '대화 프로필', original: '', customAction: 'toggle_native_text', targetText: '대화 프로필' },
     { id: 'play_guide', group: '채팅방', name: '플레이 가이드', original: '', customAction: 'toggle_native_text', targetText: '플레이 가이드' },
-
-    { id: 'model_fablechat_10', group: '모델 선택', name: '페이블챗 1.0', original: '', customAction: 'select_model', modelName: '페이블챗 1.0' },
-    { id: 'model_hyperchat_20', group: '모델 선택', name: '하이퍼챗 2.0', original: '', customAction: 'select_model', modelName: '하이퍼챗 2.0' },
-    { id: 'model_hyperchat_15', group: '모델 선택', name: '하이퍼챗 1.5', original: '', customAction: 'select_model', modelName: '하이퍼챗 1.5' },
-    { id: 'model_hyperchat_10', group: '모델 선택', name: '하이퍼챗 1.0', original: '', customAction: 'select_model', modelName: '하이퍼챗 1.0' },
-    { id: 'model_prochat_25', group: '모델 선택', name: '프로챗 2.5', original: '', customAction: 'select_model', modelName: '프로챗 2.5' },
-    { id: 'model_prochat_10', group: '모델 선택', name: '프로챗 1.0', original: '', customAction: 'select_model', modelName: '프로챗 1.0' },
-    { id: 'model_superchat_30', group: '모델 선택', name: '슈퍼챗 3.0', original: '', customAction: 'select_model', modelName: '슈퍼챗 3.0' },
-    { id: 'model_superchat_25', group: '모델 선택', name: '슈퍼챗 2.5', original: '', customAction: 'select_model', modelName: '슈퍼챗 2.5' },
-    { id: 'model_superchat_20', group: '모델 선택', name: '슈퍼챗 2.0', original: '', customAction: 'select_model', modelName: '슈퍼챗 2.0' },
-    { id: 'model_powerchat', group: '모델 선택', name: '파워챗', original: '', customAction: 'select_model', modelName: '파워챗' },
   ];
 
-  const KNOWN_MODEL_NAMES = Object.freeze(
-    ACTIONS
-      .filter((action) => action.customAction === 'select_model')
-      .map((action) => action.modelName)
-  );
-  const KNOWN_MODEL_NAME_SET = new Set(KNOWN_MODEL_NAMES);
+  const DEFAULT_MODEL_REGISTRY = [
+    { name: '페이블챗 1.0', image: '' },
+    { name: '하이퍼챗 2.0', image: '' },
+    { name: '하이퍼챗 1.5', image: '' },
+    { name: '하이퍼챗 1.0', image: '' },
+    { name: '프로챗 2.5', image: '' },
+    { name: '프로챗 1.0', image: '' },
+    { name: '슈퍼챗 3.0', image: '' },
+    { name: '슈퍼챗 2.5', image: '' },
+    { name: '슈퍼챗 2.0', image: '' },
+    { name: '파워챗', image: '' },
+  ];
+
+  const LEGACY_MODEL_ACTION_IDS = Object.freeze({
+    '페이블챗 1.0': 'model_fablechat_10',
+    '하이퍼챗 2.0': 'model_hyperchat_20',
+    '하이퍼챗 1.5': 'model_hyperchat_15',
+    '하이퍼챗 1.0': 'model_hyperchat_10',
+    '프로챗 2.5': 'model_prochat_25',
+    '프로챗 1.0': 'model_prochat_10',
+    '슈퍼챗 3.0': 'model_superchat_30',
+    '슈퍼챗 2.5': 'model_superchat_25',
+    '슈퍼챗 2.0': 'model_superchat_20',
+    '파워챗': 'model_powerchat',
+  });
+
+  let modelRegistry = loadModelRegistry();
+  let ACTIONS = [];
+  let KNOWN_MODEL_NAMES = [];
+  let KNOWN_MODEL_NAME_SET = new Set();
 
   const GROUP_STORAGE = {
     일반: LS.sectionGeneralOpen,
@@ -93,8 +108,13 @@
   let modelSelectionSeq = 0;
   let modelSelectionGuard = null;
   const modelSelectionTimers = new Set();
+  let officialApiRegistrySeen = false;
+  let officialModelRegistryScanTimers = [];
+  let modelRegistryNetworkHooksInstalled = false;
 
+  rebuildActionRegistry({ render: false });
   sanitizeReservedShortcutAssignments();
+  installOfficialModelRegistryNetworkHooks();
   addStyle();
 
   if (typeof GM_registerMenuCommand === 'function') {
@@ -109,6 +129,8 @@
 
   ready(() => {
     ensurePanel();
+    bindOfficialModelRegistryScan();
+    syncModelRegistryFromOfficialMenu();
     scheduleDomEnhance(0);
     observeDom();
   });
@@ -406,61 +428,205 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  function getModelNameFromNode(node) {
+  function isPlausibleRawModelName(value) {
+    const text = normalizeText(value);
+    if (!text || text.length > 60) return false;
+    if (/^(model|model icon|icon|모델|모델 아이콘)$/i.test(text)) return false;
+    if (/^(new|beta|추천|무료|유료|premium|선택됨|현재 모델)$/i.test(text)) return false;
+    return true;
+  }
+
+  function getModelIconSourceFromNode(node) {
     if (!node) return '';
 
-    const imgAlt = normalizeText(node.querySelector?.('img[alt]')?.getAttribute('alt'));
-    if (isKnownModelName(imgAlt)) return imgAlt;
+    const image = node.matches?.('img') ? node : node.querySelector?.('img[src], img[srcset]');
+    if (!image) return '';
 
-    const src = String(node.querySelector?.('img[src*="model-icon"]')?.getAttribute('src') || '');
+    const src = String(image.getAttribute('src') || '').trim();
+    if (src) return normalizeModelIconUrl(src);
+
+    const srcset = String(image.getAttribute('srcset') || '').trim();
+    if (!srcset) return '';
+    return normalizeModelIconUrl(srcset.split(',')[0]?.trim().split(/\s+/)[0] || '');
+  }
+
+  function getRawModelNameFromNode(node) {
+    if (!node) return '';
+
+    // 새 모델명이 기존 모델명의 접두/부분 문자열이어도 alt가 있으면 새 이름을 우선한다.
+    const imgAlt = normalizeText(node.querySelector?.('img[alt]')?.getAttribute('alt'));
+    if (isPlausibleRawModelName(imgAlt)) return imgAlt;
+
+    const wholeText = normalizeText(node.textContent || '');
+    const knownFromText = [...KNOWN_MODEL_NAMES]
+      .sort((a, b) => b.length - a.length)
+      .find((name) => wholeText === name || wholeText.includes(name));
+    if (knownFromText) return knownFromText;
+
+    const src = getModelIconSourceFromNode(node);
     const fromSrc = Object.entries(MODEL_ICON_NAME_MAP).find(([file]) => src.includes(file));
     if (fromSrc?.[1]) return fromSrc[1];
 
-    const spanText = [...(node.querySelectorAll?.('span') || [])]
-      .map((span) => normalizeText(span.textContent))
-      .find(isKnownModelName);
-    if (spanText) return spanText;
+    const textCandidates = [...(node.querySelectorAll?.('span, p') || [])]
+      .filter((element) => !element.querySelector?.('span, p'))
+      .map((element) => normalizeText(element.textContent || ''))
+      .filter(isPlausibleRawModelName)
+      .filter((text) => !/^\d+(?:\.\d+)?$/.test(text));
 
-    const text = normalizeText(node.textContent);
-    return KNOWN_MODEL_NAMES.find((name) => text.includes(name)) || '';
+    if (textCandidates.length) {
+      return textCandidates.sort((a, b) => b.length - a.length)[0];
+    }
+
+    return isPlausibleRawModelName(wholeText) ? wholeText : '';
+  }
+
+  function getModelNameFromNode(node) {
+    return normalizeText(getRawModelNameFromNode(node));
   }
 
   function isOfficialModelButtonCandidate(button) {
     if (!button || !button.isConnected) return false;
-    if (button.closest?.('#' + ID.panel + ', [role="menu"], [role="menuitem"]')) return false;
+    if (button.closest?.('#' + ID.panel + ', [role="menu"], [role="listbox"], [role="menuitem"], [role="option"]')) return false;
 
-    const image = button.querySelector?.('img[alt], img[src*="model-icon"]');
+    const image = button.querySelector?.('img[alt], img[src*="model-icon"], img[srcset*="model-icon"]');
     if (!image) return false;
 
     const modelName = getModelNameFromNode(button);
-    const imageSrc = String(image.getAttribute('src') || image.src || '');
+    const imageSrc = String(image.getAttribute('src') || image.getAttribute('srcset') || image.src || '');
     return Boolean(modelName || imageSrc.includes('model-icon'));
   }
 
   function findOfficialModelButton() {
-    const candidates = [...document.querySelectorAll('button[aria-haspopup="menu"], button[id^="radix-"]')]
+    const candidates = [...document.querySelectorAll(
+      'button[aria-haspopup="menu"], button[aria-haspopup="listbox"], button[id^="radix-"]'
+    )]
       .filter(isOfficialModelButtonCandidate)
       .sort((a, b) => {
         const aName = getModelNameFromNode(a);
         const bName = getModelNameFromNode(b);
-        const aScore = (aName ? 0 : 10) + (a.getAttribute('aria-haspopup') === 'menu' ? 0 : 2);
-        const bScore = (bName ? 0 : 10) + (b.getAttribute('aria-haspopup') === 'menu' ? 0 : 2);
+        const aScore = (aName ? 0 : 10) + (a.hasAttribute('aria-haspopup') ? 0 : 2);
+        const bScore = (bName ? 0 : 10) + (b.hasAttribute('aria-haspopup') ? 0 : 2);
         return aScore - bScore;
       });
 
     return candidates[0] || null;
   }
 
+  function getOfficialModelItemNodes(menu) {
+    if (!menu) return [];
+
+    return [
+      ...menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]'),
+    ].filter((item) => {
+      if (item.closest?.('#' + ID.panel)) return false;
+      return Boolean(item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
+    });
+  }
+
+  function scanOfficialModelMenuEntries(menu) {
+    if (!menu) return [];
+    if (menu.closest?.('#' + ID.panel)) return [];
+    if (menu.classList?.contains('crack-ui-novel-model-menu')) return [];
+    if (menu.dataset?.crackUiMenuOwner === 'novel-model-indicator') return [];
+
+    const modelItems = getOfficialModelItemNodes(menu);
+    if (modelItems.length < 2) return [];
+
+    const entries = [];
+    const seenNames = new Set();
+
+    for (const item of modelItems) {
+      const name = getModelNameFromNode(item);
+      const image = getModelIconSourceFromNode(item);
+      if (!name || !image || seenNames.has(name)) continue;
+
+      seenNames.add(name);
+      entries.push({ name, image });
+    }
+
+    // 부분 렌더된 순간은 모델 목록으로 인정하지 않는다.
+    if (entries.length !== modelItems.length) return [];
+    return entries;
+  }
+
   function getOfficialModelMenu() {
-    return [...document.querySelectorAll('[role="menu"]')].find((menu) => {
-      if (menu.closest?.('#' + ID.panel)) return false;
-      const text = normalizeText(menu.textContent || '');
-      const matchedCount = KNOWN_MODEL_NAMES.reduce(
-        (count, model) => count + (text.includes(model) ? 1 : 0),
-        0
-      );
-      return matchedCount >= 2;
-    }) || null;
+    const candidates = [...document.querySelectorAll(
+      '[role="menu"], [role="listbox"], [data-radix-select-viewport]'
+    )].filter((menu) => !menu.closest?.('#' + ID.panel));
+
+    return candidates.find((menu) => scanOfficialModelMenuEntries(menu).length >= 2) || null;
+  }
+
+  function syncModelRegistryFromOfficialMenu(menu = getOfficialModelMenu()) {
+    const entries = scanOfficialModelMenuEntries(menu);
+    if (!entries.length) return false;
+
+    // 공식 API를 한 번이라도 잡은 세션에서는 API가 source of truth다.
+    // 다른 확장프로그램이 메뉴 DOM을 삭제/필터링해도 여기서 제거로 오인하지 않는다.
+    if (officialApiRegistrySeen) return false;
+
+    const byName = new Map(modelRegistry.map((entry) => [entry.name, { ...entry }]));
+    const added = [];
+    let changed = false;
+
+    for (const entry of entries) {
+      const previous = byName.get(entry.name);
+      if (!previous) {
+        byName.set(entry.name, entry);
+        added.push(entry.name);
+        changed = true;
+      } else if (entry.image && previous.image !== entry.image) {
+        previous.image = entry.image;
+        byName.set(entry.name, previous);
+        changed = true;
+      }
+    }
+
+    // 메뉴 fallback에서는 삭제를 절대 확정하지 않는다.
+    // CSS 숨김은 그대로 읽히고, DOM 삭제형 필터 확프가 있어도 기존 모델 단축키가 사라지지 않는다.
+    if (!changed) return false;
+
+    const existingOrder = modelRegistry.map((entry) => entry.name);
+    const appendedNames = entries.map((entry) => entry.name).filter((name) => !existingOrder.includes(name));
+    const nextOrder = [...existingOrder, ...appendedNames];
+    modelRegistry = nextOrder.map((name) => byName.get(name)).filter(Boolean);
+
+    saveModelRegistry();
+    rebuildActionRegistry();
+
+    if (added.length) {
+      console.log('[Crack Shortcut Customizer] 공식 모델 메뉴에서 신규 모델 감지', added);
+    }
+
+    return true;
+  }
+
+  function clearOfficialModelRegistryScanTimers() {
+    officialModelRegistryScanTimers.forEach((timer) => clearTimeout(timer));
+    officialModelRegistryScanTimers = [];
+  }
+
+  function scheduleOfficialModelRegistryScanBurst() {
+    clearOfficialModelRegistryScanTimers();
+
+    officialModelRegistryScanTimers = [80, 220, 520].map((delay) =>
+      setTimeout(() => {
+        const menu = getOfficialModelMenu();
+        if (menu) syncModelRegistryFromOfficialMenu(menu);
+      }, delay)
+    );
+  }
+
+  function bindOfficialModelRegistryScan(button = findOfficialModelButton()) {
+    if (!button || button.dataset.crackScModelRegistryBound === '1') return;
+
+    button.dataset.crackScModelRegistryBound = '1';
+    button.addEventListener('click', scheduleOfficialModelRegistryScanBurst, true);
+    button.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+        scheduleOfficialModelRegistryScanBurst();
+      }
+    }, true);
   }
 
   function createModelMenuAutoHider() {
@@ -470,11 +636,8 @@
       if (!(wrapper instanceof HTMLElement)) return;
       if (wrapper.closest?.('#' + ID.panel)) return;
 
-      const menu = wrapper.querySelector('[role="menu"]');
-      if (!menu) return;
-
-      const wrapperText = normalizeText(wrapper.textContent || '');
-      if (!KNOWN_MODEL_NAMES.some((model) => wrapperText.includes(model))) return;
+      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-viewport]');
+      if (!menu || scanOfficialModelMenuEntries(menu).length < 2) return;
 
       if (!hiddenWrappers.has(wrapper)) {
         hiddenWrappers.set(wrapper, {
@@ -495,7 +658,12 @@
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (!(node instanceof HTMLElement)) continue;
-          if (node.matches?.('[data-radix-popper-content-wrapper]')) hideWrapper(node);
+
+          const ownWrapper = node.matches?.('[data-radix-popper-content-wrapper]')
+            ? node
+            : node.closest?.('[data-radix-popper-content-wrapper]');
+          if (ownWrapper) hideWrapper(ownWrapper);
+
           node.querySelectorAll?.('[data-radix-popper-content-wrapper]').forEach(hideWrapper);
         }
       }
@@ -697,7 +865,7 @@
 
   async function selectModel(modelName) {
     const targetName = normalizeText(modelName);
-    if (!isKnownModelName(targetName)) return;
+    if (!targetName) return;
 
     const currentBefore = getCurrentModelName();
     if (!modelSelectionGuard && currentBefore === targetName) return;
@@ -741,7 +909,9 @@
       const modelMenu = await waitForOfficialModelMenu(1200, seq);
       if (!modelMenu || seq !== modelSelectionSeq) return false;
 
-      const targetItem = [...modelMenu.querySelectorAll('[role="menuitem"]')]
+      syncModelRegistryFromOfficialMenu(modelMenu);
+
+      const targetItem = [...modelMenu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
         .find((item) => {
           const itemName = getModelNameFromNode(item);
           return itemName === targetName || normalizeText(item.textContent || '').includes(targetName);
@@ -783,6 +953,283 @@
       if (seq === modelSelectionSeq) {
         scheduleModelSelectionTimer(seq, () => finalizeModelSelectionGuard(seq), 180);
       }
+    }
+  }
+
+  function stableModelNameHash(value) {
+    let hash = 2166136261;
+    const text = normalizeText(value);
+
+    for (let i = 0; i < text.length; i += 1) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+
+    return (hash >>> 0).toString(36);
+  }
+
+  function getModelActionId(modelName) {
+    const name = normalizeText(modelName);
+    return LEGACY_MODEL_ACTION_IDS[name] || `model_dynamic_${stableModelNameHash(name)}`;
+  }
+
+  function buildModelAction(entry) {
+    const name = normalizeText(entry?.name);
+    return {
+      id: getModelActionId(name),
+      group: '모델 선택',
+      name,
+      original: '',
+      customAction: 'select_model',
+      modelName: name,
+    };
+  }
+
+  function rebuildActionRegistry(options = {}) {
+    const seen = new Set();
+    modelRegistry = modelRegistry
+      .map((entry) => ({
+        name: normalizeText(entry?.name),
+        image: normalizeModelIconUrl(entry?.image),
+      }))
+      .filter((entry) => entry.name && !seen.has(entry.name) && seen.add(entry.name));
+
+    const modelActions = modelRegistry.map(buildModelAction);
+    ACTIONS = [...BASE_ACTIONS, ...modelActions];
+    KNOWN_MODEL_NAMES = modelRegistry.map((entry) => entry.name);
+    KNOWN_MODEL_NAME_SET = new Set(KNOWN_MODEL_NAMES);
+
+    if (recordingActionId && !ACTIONS.some((action) => action.id === recordingActionId)) {
+      recordingActionId = null;
+    }
+
+    if (options.render !== false && document.getElementById(ID.panel)) {
+      renderPanel();
+      scheduleHelpPatch();
+    }
+  }
+
+  function loadModelRegistry() {
+    try {
+      const raw = localStorage.getItem(LS.modelRegistry);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!Array.isArray(parsed) || !parsed.length) {
+        return DEFAULT_MODEL_REGISTRY.map((entry) => ({ ...entry }));
+      }
+
+      const seen = new Set();
+      const entries = parsed
+        .map((entry) => typeof entry === 'string' ? { name: entry, image: '' } : entry)
+        .map((entry) => ({
+          name: normalizeText(entry?.name),
+          image: normalizeModelIconUrl(entry?.image),
+        }))
+        .filter((entry) => entry.name && !seen.has(entry.name) && seen.add(entry.name));
+
+      return entries.length ? entries : DEFAULT_MODEL_REGISTRY.map((entry) => ({ ...entry }));
+    } catch (_) {
+      return DEFAULT_MODEL_REGISTRY.map((entry) => ({ ...entry }));
+    }
+  }
+
+  function saveModelRegistry() {
+    try {
+      localStorage.setItem(LS.modelRegistry, JSON.stringify(modelRegistry));
+    } catch (_) {}
+  }
+
+  function normalizeModelIconUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    try {
+      return new URL(raw, location.href).href;
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  function getActiveModelEntriesFromApiList(models) {
+    if (!Array.isArray(models)) return [];
+
+    const entries = [];
+    const seenNames = new Set();
+    let storyModelLikeCount = 0;
+
+    for (const item of models) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      if (item.serviceType && item.serviceType !== 'story') continue;
+
+      const image = normalizeModelIconUrl(
+        item.assets?.icon?.default ||
+        item.icon?.default ||
+        item.modelIcon ||
+        item.iconUrl
+      );
+
+      const name = normalizeText(
+        item.name ||
+        item.displayName ||
+        item.modelName
+      );
+
+      const id = String(item._id || item.id || '').trim();
+      if (!name || !image || !/^[a-f0-9]{24}$/i.test(id)) continue;
+
+      storyModelLikeCount += 1;
+      if (item.deletedAt || item.isBlock === true || seenNames.has(name)) continue;
+
+      seenNames.add(name);
+      entries.push({ name, image });
+    }
+
+    // 메시지/캐릭터 배열 등을 모델 API로 오인하지 않게 원본 지침과 같은 방어선을 둔다.
+    if (storyModelLikeCount < 4 || entries.length < 2) return [];
+    return entries;
+  }
+
+  function syncModelRegistryFromApiModelList(models) {
+    const entries = getActiveModelEntriesFromApiList(models);
+    if (!entries.length) return false;
+
+    officialApiRegistrySeen = true;
+
+    const previousNames = modelRegistry.map((entry) => entry.name);
+    const previousSet = new Set(previousNames);
+    const nextNames = entries.map((entry) => entry.name);
+    const nextSet = new Set(nextNames);
+
+    const changed =
+      modelRegistry.length !== entries.length ||
+      modelRegistry.some((entry, index) => {
+        const next = entries[index];
+        return !next || entry.name !== next.name || entry.image !== next.image;
+      });
+
+    if (!changed) return false;
+
+    const added = nextNames.filter((name) => !previousSet.has(name));
+    const removed = previousNames.filter((name) => !nextSet.has(name));
+
+    modelRegistry = entries;
+    saveModelRegistry();
+    rebuildActionRegistry();
+
+    console.log('[Crack Shortcut Customizer] 공식 API 모델 레지스트리 동기화', {
+      added,
+      removed,
+      count: modelRegistry.length,
+    });
+
+    return true;
+  }
+
+  function inspectJsonForOfficialModelRegistry(payload) {
+    if (!payload || typeof payload !== 'object') return false;
+
+    const seen = new WeakSet();
+    let matched = false;
+
+    const walk = (value, depth = 0) => {
+      if (matched || depth > 10 || !value || typeof value !== 'object') return;
+      if (seen.has(value)) return;
+      seen.add(value);
+
+      if (!Array.isArray(value) && Array.isArray(value.models)) {
+        if (syncModelRegistryFromApiModelList(value.models) || getActiveModelEntriesFromApiList(value.models).length) {
+          matched = true;
+          return;
+        }
+      }
+
+      if (Array.isArray(value)) {
+        for (const item of value) walk(item, depth + 1);
+      } else {
+        for (const child of Object.values(value)) walk(child, depth + 1);
+      }
+    };
+
+    walk(payload);
+    return matched;
+  }
+
+  function installOfficialModelRegistryNetworkHooks() {
+    if (modelRegistryNetworkHooksInstalled) return;
+    modelRegistryNetworkHooksInstalled = true;
+
+    let pageWindow;
+    try {
+      pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    } catch (_) {
+      pageWindow = window;
+    }
+
+    try {
+      const originalFetch = pageWindow.fetch;
+      if (typeof originalFetch === 'function' && !originalFetch.__crackScModelRegistryWrapped) {
+        const wrappedFetch = function (...args) {
+          const result = originalFetch.apply(this, args);
+
+          Promise.resolve(result).then((response) => {
+            try {
+              response?.clone?.().json?.()
+                .then(inspectJsonForOfficialModelRegistry)
+                .catch(() => {});
+            } catch (_) {}
+          }).catch(() => {});
+
+          return result;
+        };
+
+        try {
+          Object.defineProperty(wrappedFetch, '__crackScModelRegistryWrapped', { value: true });
+        } catch (_) {
+          wrappedFetch.__crackScModelRegistryWrapped = true;
+        }
+
+        pageWindow.fetch = wrappedFetch;
+      }
+    } catch (error) {
+      console.log('[Crack Shortcut Customizer] fetch 모델 감시 설치 실패', error);
+    }
+
+    try {
+      const XHR = pageWindow.XMLHttpRequest;
+      const proto = XHR?.prototype;
+      const originalSend = proto?.send;
+
+      if (typeof originalSend === 'function' && !originalSend.__crackScModelRegistryWrapped) {
+        const wrappedSend = function (...args) {
+          try {
+            this.addEventListener('load', () => {
+              try {
+                if (this.responseType === 'json' && this.response && typeof this.response === 'object') {
+                  inspectJsonForOfficialModelRegistry(this.response);
+                  return;
+                }
+
+                if (!this.responseType || this.responseType === 'text') {
+                  const text = String(this.responseText || '').trim();
+                  if (!text || (text[0] !== '{' && text[0] !== '[')) return;
+                  inspectJsonForOfficialModelRegistry(JSON.parse(text));
+                }
+              } catch (_) {}
+            }, { once: true });
+          } catch (_) {}
+
+          return originalSend.apply(this, args);
+        };
+
+        try {
+          Object.defineProperty(wrappedSend, '__crackScModelRegistryWrapped', { value: true });
+        } catch (_) {
+          wrappedSend.__crackScModelRegistryWrapped = true;
+        }
+
+        proto.send = wrappedSend;
+      }
+    } catch (error) {
+      console.log('[Crack Shortcut Customizer] XHR 모델 감시 설치 실패', error);
     }
   }
 
@@ -1979,7 +2426,7 @@
     panel.innerHTML = `
       <div class="crack-sc-panel-head">
         <div class="crack-sc-title-wrap">
-          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.2.1</span></div>
+          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.3.0</span></div>
           <div class="crack-sc-panel-subtitle"><span class="crack-sc-desktop-hint">커스텀 창 열기: ${escapeHtml(humanCombo(PANEL_SHORTCUT))}</span></div>
         </div>
         <button type="button" class="crack-sc-panel-close" data-crack-sc-close aria-label="닫기">×</button>
@@ -2202,6 +2649,10 @@
         if (shouldPatchShortcutHelp()) {
           patchShortcutHelpLabels();
         }
+
+        bindOfficialModelRegistryScan();
+        const officialModelMenu = getOfficialModelMenu();
+        if (officialModelMenu) syncModelRegistryFromOfficialMenu(officialModelMenu);
       });
     }, delay);
   }
@@ -2223,8 +2674,8 @@
       if (isCustomizerUiNode(node)) continue;
 
       if (
-        node.matches?.('[role="dialog"], [data-crack-ui-room-panel="1"], code') ||
-        node.querySelector?.('[role="dialog"], [data-crack-ui-room-panel="1"], code')
+        node.matches?.('[role="dialog"], [role="menu"], [role="listbox"], [data-radix-select-viewport], [data-crack-ui-room-panel="1"], code') ||
+        node.querySelector?.('[role="dialog"], [role="menu"], [role="listbox"], [data-radix-select-viewport], [data-crack-ui-room-panel="1"], code, img[src*="model-icon"], img[srcset*="model-icon"]')
       ) {
         return true;
       }
