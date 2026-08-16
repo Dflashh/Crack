@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.5
+// @version      1.0.6
 // @description  Crack chat indicator UI with API-derived per-message turns and persistent per-message cost stats
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -76,9 +76,6 @@
   let activeChatId = null;
   let lastRoomDeductedAmount = null;
   let pendingMessageCost = null;
-  let pendingCostAttachTimerId = 0;
-  let pendingCostAttachDueAt = 0;
-  let pendingCostAllowReuseFallback = false;
   let lastGenerationStartedAt = 0;
   let lastGenerationChatId = null;
   const MOUNT_THROTTLE_MS = 120;
@@ -995,9 +992,10 @@
     document.querySelectorAll(MESSAGE_SELECTOR).forEach((group) => {
       const row = findChatIndicatorHost(group);
       const messageId = getMessageGroupId(group);
-      if (!row || !messageId) return;
+      const liveCost = Number(group.dataset?.ciLiveDiffCracker);
+      if (!row || (!messageId && !(Number.isFinite(liveCost) && liveCost > 0))) return;
 
-      liveGroups.add(messageId);
+      liveGroups.add(group);
 
       let indicator = group.querySelector(`.${CHAT_INDICATOR_CLASS}`);
       if (!visibleStats.length) {
@@ -1016,8 +1014,11 @@
       }
 
       const list = indicator.querySelector('.ci-list');
-      const messageRecord = normalizeMessageStatsRecord(messageStats[messageId]);
-      const cost = Number(messageRecord.cost);
+      const messageRecord = messageId
+        ? normalizeMessageStatsRecord(messageStats[messageId])
+        : normalizeMessageStatsRecord(null);
+      const storedCost = Number(messageRecord.cost);
+      const cost = Number.isFinite(liveCost) && liveCost > 0 ? liveCost : storedCost;
       const savedTurn = Number(messageRecord.turn);
       const signature = visibleStats.map((stat) => {
         let value = stat.value;
@@ -1065,8 +1066,7 @@
 
     document.querySelectorAll(`.${CHAT_INDICATOR_CLASS}`).forEach((indicator) => {
       const group = indicator.closest(MESSAGE_SELECTOR);
-      const messageId = getMessageGroupId(group);
-      if (!messageId || !liveGroups.has(messageId)) indicator.remove();
+      if (!group || !liveGroups.has(group)) indicator.remove();
     });
   }
 
@@ -1078,30 +1078,44 @@
     );
   }
 
-  function findNewestAssistantGroup(excludedIds = null) {
+  function captureAssistantGroups() {
+    return new Set(
+      [...document.querySelectorAll(MESSAGE_SELECTOR)]
+        .filter((group) => findChatIndicatorHost(group))
+    );
+  }
+
+  function findNewestAssistantGroup(excludedIds = null, excludedGroups = null) {
     const groups = [...document.querySelectorAll(MESSAGE_SELECTOR)]
       .filter((group) => findChatIndicatorHost(group));
 
+    if (excludedGroups) {
+      const freshByElement = groups.filter((group) => !excludedGroups.has(group));
+      if (freshByElement.length) return freshByElement[freshByElement.length - 1];
+    }
+
     if (excludedIds) {
-      const fresh = groups.filter((group) => {
+      const freshById = groups.filter((group) => {
         const id = getMessageGroupId(group);
         return id && !excludedIds.has(id);
       });
-      return fresh.length ? fresh[fresh.length - 1] : null;
+      if (freshById.length) return freshById[freshById.length - 1];
     }
 
+    if (excludedGroups || excludedIds) return null;
     return groups.length ? groups[groups.length - 1] : null;
   }
 
-  function clearPendingMessageCost() {
-    pendingMessageCost = null;
-    pendingCostAllowReuseFallback = false;
+  function clearLiveMessageCost(group) {
+    if (!group?.dataset) return;
+    delete group.dataset.ciLiveDiffCracker;
+  }
 
-    if (pendingCostAttachTimerId) {
-      clearTimeout(pendingCostAttachTimerId);
-      pendingCostAttachTimerId = 0;
-      pendingCostAttachDueAt = 0;
+  function clearPendingMessageCost() {
+    if (pendingMessageCost?.liveGroup) {
+      clearLiveMessageCost(pendingMessageCost.liveGroup);
     }
+    pendingMessageCost = null;
   }
 
   function tryAttachPendingMessageCost(allowReuseFallback = false) {
@@ -1116,46 +1130,40 @@
       return false;
     }
 
-    // 일반 생성은 시작 시점에 없던 새 assistant 그룹에만 붙인다.
-    // 응답이 오래 걸려도 MutationObserver가 새 그룹/툴바가 생기는 순간 다시 시도한다.
-    let group = findNewestAssistantGroup(pending.messageGroupIdsAtStart);
+    // 일반 생성은 시작 당시 없던 새 assistant DOM을 우선한다.
+    // element 자체를 비교하므로 messageId가 아직 확정되기 전 스트리밍 DOM에도 즉시 표시할 수 있다.
+    let group = findNewestAssistantGroup(
+      pending.messageGroupIdsAtStart,
+      pending.assistantGroupsAtStart
+    );
 
-    // 리롤은 같은 DOM message-group을 재사용할 수 있다.
-    // generate_done 이후 충분히 기다린 보조 시도에서만 최신 그룹 재사용을 허용한다.
+    // 리롤처럼 같은 DOM을 재사용하는 경우에만 완료 신호에서 최신 assistant 줄을 재사용한다.
     if (!group && allowReuseFallback) {
       group = findNewestAssistantGroup();
     }
 
-    const messageId = getMessageGroupId(group);
-    if (!group || !messageId) return false;
+    if (!group) return false;
 
-    saveMessageCost(pending.chatId, messageId, pending.amount);
-    scheduleMount(true);
-    clearPendingMessageCost();
-    return true;
-  }
-
-  function schedulePendingMessageCostAttach(delay = 0, allowReuseFallback = false) {
-    if (!pendingMessageCost) return;
-
-    const wait = Math.max(0, Number(delay) || 0);
-    const dueAt = Date.now() + wait;
-    pendingCostAllowReuseFallback = pendingCostAllowReuseFallback || Boolean(allowReuseFallback);
-
-    if (pendingCostAttachTimerId) {
-      // 이미 더 빠른 시도가 예약돼 있으면 그대로 두고 fallback 허용 여부만 승격한다.
-      if (pendingCostAttachDueAt <= dueAt) return;
-      clearTimeout(pendingCostAttachTimerId);
+    if (pending.liveGroup && pending.liveGroup !== group) {
+      clearLiveMessageCost(pending.liveGroup);
     }
 
-    pendingCostAttachDueAt = dueAt;
-    pendingCostAttachTimerId = setTimeout(() => {
-      pendingCostAttachTimerId = 0;
-      pendingCostAttachDueAt = 0;
-      const allowFallback = pendingCostAllowReuseFallback;
-      pendingCostAllowReuseFallback = false;
-      tryAttachPendingMessageCost(allowFallback);
-    }, Math.max(0, dueAt - Date.now()));
+    pending.liveGroup = group;
+    group.dataset.ciLiveDiffCracker = String(pending.amount);
+    scheduleMount(true);
+
+    const messageId = getMessageGroupId(group);
+    if (!messageId) {
+      // 화면에는 이미 즉시 표시됨. messageId가 붙는 순간 observer가 다시 들어와 영구 저장한다.
+      return true;
+    }
+
+    saveMessageCost(pending.chatId, messageId, pending.amount);
+    clearLiveMessageCost(group);
+    pending.liveGroup = null;
+    pendingMessageCost = null;
+    scheduleMount(true);
+    return true;
   }
 
   function queueMessageCostForGeneratedReply(session, amount) {
@@ -1167,11 +1175,13 @@
       amount: Math.max(0, Math.round(value)),
       queuedAt: Date.now(),
       messageGroupIdsAtStart: new Set(session.messageGroupIdsAtStart || []),
+      assistantGroupsAtStart: new Set(session.assistantGroupsAtStart || []),
+      liveGroup: null,
     };
 
-    // 이미 새 메시지가 만들어진 경우 즉시 붙이고, 아니면 DOM mutation을 기다린다.
-    if (tryAttachPendingMessageCost(false)) return true;
-    schedulePendingMessageCostAttach(250, false);
+    // 차감이 잡힌 그 순간 새 AI DOM이 이미 있으면 즉시 표시한다.
+    // 아직 DOM 자체가 없을 때만 MutationObserver가 생기는 순간 바로 이어 붙인다.
+    tryAttachPendingMessageCost(false);
     return true;
   }
 
@@ -1663,6 +1673,7 @@
       chatId,
       startedAt: now,
       messageGroupIdsAtStart: captureMessageGroupIds(),
+      assistantGroupsAtStart: captureAssistantGroups(),
       baselineBalance: Number.isFinite(lastObservedBalance)
         ? lastObservedBalance
         : (Number.isFinite(lastBalanceCache) ? lastBalanceCache : null),
@@ -1760,11 +1771,11 @@
           // 잔액 polling 쪽에서도 같은 타이머를 사용하므로 서로 겹치면 자동 병합된다.
           scheduleTurnRefresh(600, true);
 
-          // 차감이 응답 완료보다 먼저 잡힌 경우, 비용을 대기시켜 두었다가 새 메시지 DOM에 붙인다.
-          // 일반 생성은 새 group을 우선하고, 같은 group을 재사용하는 리롤만 늦은 fallback에서 허용한다.
-          schedulePendingMessageCostAttach(100, false);
-          setTimeout(() => schedulePendingMessageCostAttach(700, false), 700);
-          setTimeout(() => schedulePendingMessageCostAttach(2500, true), 2500);
+          // 일반 생성은 차감 순간 이미 새 DOM에 즉시 표시한다.
+          // 같은 DOM을 재사용하는 리롤만 완료 신호에서 최신 assistant 줄로 확정한다.
+          if (pendingMessageCost) {
+            tryAttachPendingMessageCost(true);
+          }
         }
       }
 
@@ -1999,9 +2010,9 @@
 
       scheduleMount();
 
-      // 차감값이 대기 중이면 API 호출 없이 DOM 변화만 보고 새 assistant 툴바에 연결을 재시도한다.
+      // 차감값이 대기 중이면 API 호출 없이 DOM 변화가 생긴 그 프레임에 바로 연결한다.
       if (pendingMessageCost) {
-        schedulePendingMessageCostAttach(60, false);
+        tryAttachPendingMessageCost(false);
       }
 
       // 가상 스크롤로 과거 메시지가 재마운트되는 것만으로 messages API를 다시 읽지 않는다.
