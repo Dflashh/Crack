@@ -9,7 +9,7 @@
 
 **크랙 UI를 더 넓고 편하게!**
 ***
-## Crack Shortcut Customizer <v1.0.2> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Shortcut.user.js)
+## Crack Shortcut Customizer <v1.3.1> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Shortcut.user.js)
 크랙 채팅방에서 사용 가능한 단축키를 유저마음대로 커스텀
 > Ctrl + Shift + , 또는 채팅방 설정에서 단축키 커스텀 버튼
 
