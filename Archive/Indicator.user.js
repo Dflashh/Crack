@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.4
+// @version      1.0.5
 // @description  Crack chat indicator UI with API-derived per-message turns and persistent per-message cost stats
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -47,6 +47,7 @@
   const TURN_CACHE_MS = 5000;
   const BALANCE_CACHE_MS = 2500;
   const BALANCE_POLL_CHECKPOINTS_MS = [300, 700, 1400, 2500, 4500, 7500, 12000];
+  const PENDING_COST_MAX_AGE_MS = 2 * 60 * 1000;
 
 
   const CRACKER_PATH = "M21.17 12.01c.52-.59.83-1.36.83-2.21s-.31-1.62-.83-2.21l.17-.21q0-.01.02-.02l.14-.21q0-.02.03-.05.06-.1.1-.2l.05-.08.09-.2q.01-.05.04-.11l.06-.18q0-.08.04-.14.01-.07.04-.16l.03-.19q0-.06.02-.13v-.33a3.37 3.37 0 0 0-3.36-3.37l-.33.01q-.06 0-.12.02-.1 0-.2.03-.07 0-.15.04l-.14.04-.18.06-.11.04-.2.09-.07.04-.2.11q-.03 0-.05.03l-.21.14-.02.02-.21.17a3.4 3.4 0 0 0-4.42 0 3.3 3.3 0 0 0-2.21-.83c-.85 0-1.62.31-2.21.83l-.21-.17-.02-.02-.21-.14q-.02 0-.05-.03l-.2-.11-.08-.04-.2-.09-.11-.04-.18-.06-.14-.04-.16-.04-.2-.03-.12-.02-.33-.01a3.37 3.37 0 0 0-3.34 3.82q0 .1.03.19 0 .07.04.16 0 .08.04.14l.06.18q0 .05.04.11.03.1.09.19l.04.08.1.2q.01.02.04.05l.16.23q.07.1.17.21a3.3 3.3 0 0 0-.83 2.21c0 .85.3 1.62.83 2.21a3.3 3.3 0 0 0-.83 2.21c0 .85.3 1.62.83 2.21l-.17.21-.02.02-.14.21q0 .02-.03.05l-.11.2-.04.08-.1.2-.03.11-.06.18-.04.14-.04.16-.03.19-.02.13-.01.33A3.4 3.4 0 0 0 3.02 21c.6.61 1.45.99 2.38.99l.33-.01q.06 0 .12-.02.1 0 .19-.03.07 0 .16-.04l.14-.04.18-.06.1-.04.2-.09.08-.04.2-.11q.03 0 .05-.03l.2-.14.03-.02.2-.17a3.4 3.4 0 0 0 4.43 0 3.32 3.32 0 0 0 4.42 0 3 3 0 0 0 .44.33q.03 0 .05.03l.2.11.08.04.2.09.10.04.19.06.14.04.16.04.19.03.13.02.33.01c.92 0 1.75-.37 2.36-.97l.02-.02c.6-.61.99-1.45.99-2.38l-.01-.33q0-.06-.02-.12 0-.1-.03-.19 0-.07-.04-.16l-.04-.14-.06-.18-.04-.11-.1-.19-.03-.08-.11-.2q0-.02-.03-.05l-.14-.21-.02-.02-.17-.21c.52-.59.83-1.36.83-2.21s-.31-1.62-.83-2.21M7.5 13.5 6 12l1.5-1.5L9 12zM12 6l1.5 1.5L12 9l-1.5-1.5zm0 12-1.5-1.5L12 15l1.5 1.5zm4.5-4.5L15 12l1.5-1.5L18 12z";
@@ -74,6 +75,12 @@
   let lastObservedBalance = null;
   let activeChatId = null;
   let lastRoomDeductedAmount = null;
+  let pendingMessageCost = null;
+  let pendingCostAttachTimerId = 0;
+  let pendingCostAttachDueAt = 0;
+  let pendingCostAllowReuseFallback = false;
+  let lastGenerationStartedAt = 0;
+  let lastGenerationChatId = null;
   const MOUNT_THROTTLE_MS = 120;
 
   function normalizePlacement(value) {
@@ -1086,40 +1093,86 @@
     return groups.length ? groups[groups.length - 1] : null;
   }
 
-  async function attachMessageCostToGeneratedReply(session, amount) {
-    if (!session?.chatId || !Number.isFinite(Number(amount)) || Number(amount) <= 0) return false;
+  function clearPendingMessageCost() {
+    pendingMessageCost = null;
+    pendingCostAllowReuseFallback = false;
 
-    const checkpoints = [0, 120, 300, 650, 1100, 1800, 2800, 4200];
-    let previous = 0;
+    if (pendingCostAttachTimerId) {
+      clearTimeout(pendingCostAttachTimerId);
+      pendingCostAttachTimerId = 0;
+      pendingCostAttachDueAt = 0;
+    }
+  }
 
-    for (const checkpoint of checkpoints) {
-      const delay = Math.max(0, checkpoint - previous);
-      previous = checkpoint;
-      if (delay) await sleep(delay);
+  function tryAttachPendingMessageCost(allowReuseFallback = false) {
+    const pending = pendingMessageCost;
+    if (!pending) return false;
 
-      if (getCurrentChatIdFromUrl() !== session.chatId) return false;
-
-      const group = findNewestAssistantGroup(session.messageGroupIdsAtStart);
-      const messageId = getMessageGroupId(group);
-      if (!group || !messageId) continue;
-
-      saveMessageCost(session.chatId, messageId, amount);
-      scheduleMount(true);
-      return true;
+    if (
+      getCurrentChatIdFromUrl() !== pending.chatId ||
+      Date.now() - pending.queuedAt > PENDING_COST_MAX_AGE_MS
+    ) {
+      clearPendingMessageCost();
+      return false;
     }
 
-    // 리롤처럼 같은 메시지 그룹을 재사용하는 UI도 있으므로 마지막에만 현재 최신 AI 그룹으로 fallback.
-    if (getCurrentChatIdFromUrl() === session.chatId) {
-      const group = findNewestAssistantGroup();
-      const messageId = getMessageGroupId(group);
-      if (group && messageId) {
-        saveMessageCost(session.chatId, messageId, amount);
-        scheduleMount(true);
-        return true;
-      }
+    // 일반 생성은 시작 시점에 없던 새 assistant 그룹에만 붙인다.
+    // 응답이 오래 걸려도 MutationObserver가 새 그룹/툴바가 생기는 순간 다시 시도한다.
+    let group = findNewestAssistantGroup(pending.messageGroupIdsAtStart);
+
+    // 리롤은 같은 DOM message-group을 재사용할 수 있다.
+    // generate_done 이후 충분히 기다린 보조 시도에서만 최신 그룹 재사용을 허용한다.
+    if (!group && allowReuseFallback) {
+      group = findNewestAssistantGroup();
     }
 
-    return false;
+    const messageId = getMessageGroupId(group);
+    if (!group || !messageId) return false;
+
+    saveMessageCost(pending.chatId, messageId, pending.amount);
+    scheduleMount(true);
+    clearPendingMessageCost();
+    return true;
+  }
+
+  function schedulePendingMessageCostAttach(delay = 0, allowReuseFallback = false) {
+    if (!pendingMessageCost) return;
+
+    const wait = Math.max(0, Number(delay) || 0);
+    const dueAt = Date.now() + wait;
+    pendingCostAllowReuseFallback = pendingCostAllowReuseFallback || Boolean(allowReuseFallback);
+
+    if (pendingCostAttachTimerId) {
+      // 이미 더 빠른 시도가 예약돼 있으면 그대로 두고 fallback 허용 여부만 승격한다.
+      if (pendingCostAttachDueAt <= dueAt) return;
+      clearTimeout(pendingCostAttachTimerId);
+    }
+
+    pendingCostAttachDueAt = dueAt;
+    pendingCostAttachTimerId = setTimeout(() => {
+      pendingCostAttachTimerId = 0;
+      pendingCostAttachDueAt = 0;
+      const allowFallback = pendingCostAllowReuseFallback;
+      pendingCostAllowReuseFallback = false;
+      tryAttachPendingMessageCost(allowFallback);
+    }, Math.max(0, dueAt - Date.now()));
+  }
+
+  function queueMessageCostForGeneratedReply(session, amount) {
+    const value = Number(amount);
+    if (!session?.chatId || !Number.isFinite(value) || value <= 0) return false;
+
+    pendingMessageCost = {
+      chatId: session.chatId,
+      amount: Math.max(0, Math.round(value)),
+      queuedAt: Date.now(),
+      messageGroupIdsAtStart: new Set(session.messageGroupIdsAtStart || []),
+    };
+
+    // 이미 새 메시지가 만들어진 경우 즉시 붙이고, 아니면 DOM mutation을 기다린다.
+    if (tryAttachPendingMessageCost(false)) return true;
+    schedulePendingMessageCostAttach(250, false);
+    return true;
   }
 
   function mount() {
@@ -1472,6 +1525,9 @@
 
     activeChatId = nextChatId;
     activeGeneration = null;
+    lastGenerationChatId = null;
+    lastGenerationStartedAt = 0;
+    clearPendingMessageCost();
     lastRoomDeductedAmount = null;
 
     // 턴 수는 방별 마지막 정상값을 localStorage에서 즉시 복구한다.
@@ -1556,9 +1612,7 @@
 
       if (balance < session.baselineBalance) {
         const deducted = showDeductedAmount(session.baselineBalance - balance);
-        attachMessageCostToGeneratedReply(session, deducted).catch((error) => {
-          console.warn('[CrackIndicator] 메시지별 차감 배지 연결 실패', error);
-        });
+        queueMessageCostForGeneratedReply(session, deducted);
         lastObservedBalance = balance;
         lastBalanceCache = balance;
         lastBalanceFetchAt = Date.now();
@@ -1581,7 +1635,22 @@
 
     const now = Date.now();
 
-    // Enter + 버튼 click + dataLayer start가 연달아 들어오는 경우 한 번만 시작한다.
+    // Enter + 버튼 click + dataLayer start가 연달아 들어오는 경우,
+    // 잔액 차감이 매우 빨라 activeGeneration이 먼저 끝났더라도 1.5초 안의 중복 신호는 무시한다.
+    if (lastGenerationChatId === chatId && now - lastGenerationStartedAt < 1500) {
+      return;
+    }
+
+    // 직전 생성의 차감값이 아직 대기 중이면, 정말 새 생성이 시작될 때만 최신 응답에 마지막 한 번 연결한다.
+    if (pendingMessageCost?.chatId === chatId) {
+      tryAttachPendingMessageCost(true);
+      if (pendingMessageCost) clearPendingMessageCost();
+    }
+
+    lastGenerationChatId = chatId;
+    lastGenerationStartedAt = now;
+
+    // activeGeneration 자체도 중복 방어로 유지한다.
     if (
       activeGeneration &&
       activeGeneration.chatId === chatId &&
@@ -1690,6 +1759,12 @@
           // 새 메시지가 API에 반영될 짧은 여유를 두고 한 번만 강제 갱신한다.
           // 잔액 polling 쪽에서도 같은 타이머를 사용하므로 서로 겹치면 자동 병합된다.
           scheduleTurnRefresh(600, true);
+
+          // 차감이 응답 완료보다 먼저 잡힌 경우, 비용을 대기시켜 두었다가 새 메시지 DOM에 붙인다.
+          // 일반 생성은 새 group을 우선하고, 같은 group을 재사용하는 리롤만 늦은 fallback에서 허용한다.
+          schedulePendingMessageCostAttach(100, false);
+          setTimeout(() => schedulePendingMessageCostAttach(700, false), 700);
+          setTimeout(() => schedulePendingMessageCostAttach(2500, true), 2500);
         }
       }
 
@@ -1923,6 +1998,11 @@
       if (mutations.every(isOwnMutation)) return;
 
       scheduleMount();
+
+      // 차감값이 대기 중이면 API 호출 없이 DOM 변화만 보고 새 assistant 툴바에 연결을 재시도한다.
+      if (pendingMessageCost) {
+        schedulePendingMessageCostAttach(60, false);
+      }
 
       // 가상 스크롤로 과거 메시지가 재마운트되는 것만으로 messages API를 다시 읽지 않는다.
       // 실제 생성 세션 중 새 메시지 그룹 변화가 보일 때만 fallback 턴 갱신을 예약한다.
