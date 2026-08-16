@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      3.0.1
+// @version      3.0.3
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '3.0.1';
+  const CRACK_UI_VERSION = '3.0.3';
 
   function getCrackUiPublicWindow() {
     try {
@@ -2551,26 +2551,45 @@
         word-break: keep-all !important;
       }
 
+      /* Keep layout/word wrapping global, but do not preserve structural whitespace on
+         the Markdown root or block containers. Markdown renderers leave formatting
+         newlines/indentation between <p>, <ul>, <li>, etc.; pre-wrap on the root turns
+         those invisible source separators into large visible gaps. */
       html.${CLS.lineBreak} .wrtn-markdown,
       html.${CLS.lineBreak} .wrtn-markdown *,
-      html.${CLS.lineBreak} .wrtn-markdown p,
-      html.${CLS.lineBreak} .wrtn-markdown em,
-      html.${CLS.lineBreak} .wrtn-markdown strong,
-      html.${CLS.lineBreak} .wrtn-markdown span,
       html.${CLS.lineBreak} [class*="wrtn-markdown"],
       html.${CLS.lineBreak} [class*="wrtn-markdown"] * {
         max-width: 100% !important;
         text-align: left !important;
         word-break: keep-all !important;
         overflow-wrap: break-word !important;
-        white-space: pre-wrap !important;
       }
 
-      /* Keep Markdown source-formatting whitespace from stretching blockquote borders.
-         Descendant text still uses the line-break optimization rules above. */
+      html.${CLS.lineBreak} .wrtn-markdown,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"],
+      html.${CLS.lineBreak} .wrtn-markdown ul,
+      html.${CLS.lineBreak} .wrtn-markdown ol,
+      html.${CLS.lineBreak} .wrtn-markdown li,
       html.${CLS.lineBreak} .wrtn-markdown blockquote,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] ul,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] ol,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] li,
       html.${CLS.lineBreak} [class*="wrtn-markdown"] blockquote {
         white-space: normal !important;
+      }
+
+      /* Preserve intentional line breaks only inside actual text-bearing nodes. */
+      html.${CLS.lineBreak} .wrtn-markdown p,
+      html.${CLS.lineBreak} .wrtn-markdown em,
+      html.${CLS.lineBreak} .wrtn-markdown strong,
+      html.${CLS.lineBreak} .wrtn-markdown span,
+      html.${CLS.lineBreak} .wrtn-markdown a,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] p,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] em,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] strong,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] span,
+      html.${CLS.lineBreak} [class*="wrtn-markdown"] a {
+        white-space: pre-wrap !important;
       }
 
       @media (min-width: 768px) {
@@ -6111,11 +6130,13 @@
         font-family: var(--crack-ui-title-font-stack), 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif !important;
       }
 
-      html[data-crack-ui-font-size="on"] body main .wrtn-markdown :is(p, li, blockquote, h1, h2, h3, h4, h5, h6) {
+      /* Scale normal Markdown prose without flattening Crack's native heading hierarchy.
+         h1~h6 keep their site-defined sizes so # / ## / ### / ... remain visually distinct. */
+      html[data-crack-ui-font-size="on"] body main .wrtn-markdown :is(p, li, blockquote) {
         font-size: calc(1em * var(--crack-ui-font-text-scale)) !important;
       }
 
-      html[data-crack-ui-font-size="on"] body main .wrtn-markdown :is(p, li, blockquote, h1, h2, h3, h4, h5, h6) :is(span, em, strong, a, code) {
+      html[data-crack-ui-font-size="on"] body main .wrtn-markdown :is(p, li, blockquote) :is(span, em, strong, a, code) {
         font-size: inherit !important;
       }
 
