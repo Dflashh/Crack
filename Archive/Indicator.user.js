@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.6
+// @version      1.0.7
 // @description  Crack chat indicator UI with API-derived per-message turns and persistent per-message cost stats
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -1179,9 +1179,23 @@
       liveGroup: null,
     };
 
-    // 차감이 잡힌 그 순간 새 AI DOM이 이미 있으면 즉시 표시한다.
-    // 아직 DOM 자체가 없을 때만 MutationObserver가 생기는 순간 바로 이어 붙인다.
-    tryAttachPendingMessageCost(false);
+    // 차감 감지는 입력창/채팅창이 완전히 같은 amount를 공유한다.
+    // generate_done이 이미 먼저 왔다면 최신 assistant 줄을 즉시 확정 저장하고,
+    // 아직 생성 중이면 새 DOM을 우선 찾는다.
+    const attached = tryAttachPendingMessageCost(Boolean(session.generateDoneAt));
+
+    // 크랙이 같은 assistant DOM을 스트리밍 중 재사용하는 경우에는
+    // "새 element" 판정이 실패할 수 있다. 그래도 화면 표시는 입력창처럼 즉시 보여야 하므로
+    // 현재 최신 assistant 줄에 live 값만 먼저 얹는다. 이 값은 새 DOM/ID가 확인되면 이동/영구 저장된다.
+    if (!attached && pendingMessageCost) {
+      const fallbackGroup = findNewestAssistantGroup();
+      if (fallbackGroup) {
+        pendingMessageCost.liveGroup = fallbackGroup;
+        fallbackGroup.dataset.ciLiveDiffCracker = String(pendingMessageCost.amount);
+        scheduleMount(true);
+      }
+    }
+
     return true;
   }
 
@@ -1579,10 +1593,30 @@
     const group = findNewestAssistantGroup();
     const messageId = getMessageGroupId(group);
 
-    if (!chatId || !group || !messageId || !Number.isFinite(value) || value <= 0) return false;
-    const saved = saveMessageCost(chatId, messageId, value);
-    if (saved) scheduleMount(true);
-    return saved;
+    if (!chatId || !group || !Number.isFinite(value) || value <= 0) return false;
+
+    const normalized = Math.max(0, Math.round(value));
+
+    // messageId가 이미 있으면 즉시 영구 저장한다.
+    if (messageId) {
+      const saved = saveMessageCost(chatId, messageId, normalized);
+      if (saved) scheduleMount(true);
+      return saved;
+    }
+
+    // 생성 시작 신호 자체를 놓친 특수 케이스에서도 입력창과 동일한 값을 즉시 표시한다.
+    // messageId가 나중에 붙으면 MutationObserver가 같은 pending 값을 영구 저장한다.
+    pendingMessageCost = {
+      chatId,
+      amount: normalized,
+      queuedAt: Date.now(),
+      messageGroupIdsAtStart: new Set(),
+      assistantGroupsAtStart: new Set(),
+      liveGroup: group,
+    };
+    group.dataset.ciLiveDiffCracker = String(normalized);
+    scheduleMount(true);
+    return true;
   }
 
   function handleBalanceDrop(previousBalance, currentBalance) {
@@ -1674,6 +1708,7 @@
       startedAt: now,
       messageGroupIdsAtStart: captureMessageGroupIds(),
       assistantGroupsAtStart: captureAssistantGroups(),
+      generateDoneAt: 0,
       baselineBalance: Number.isFinite(lastObservedBalance)
         ? lastObservedBalance
         : (Number.isFinite(lastBalanceCache) ? lastBalanceCache : null),
@@ -1767,12 +1802,17 @@
         }
 
         if (/^generate_done$/i.test(eventName)) {
+          // 차감 polling보다 generate_done이 먼저 오는 경우를 기억한다.
+          // 이후 차감이 잡혀도 "완료 신호를 놓친 pending" 상태가 되지 않게 한다.
+          if (activeGeneration) {
+            activeGeneration.generateDoneAt = Date.now();
+          }
+
           // 새 메시지가 API에 반영될 짧은 여유를 두고 한 번만 강제 갱신한다.
           // 잔액 polling 쪽에서도 같은 타이머를 사용하므로 서로 겹치면 자동 병합된다.
           scheduleTurnRefresh(600, true);
 
-          // 일반 생성은 차감 순간 이미 새 DOM에 즉시 표시한다.
-          // 같은 DOM을 재사용하는 리롤만 완료 신호에서 최신 assistant 줄로 확정한다.
+          // 차감이 먼저 잡힌 경우에는 완료 시점에 최신 assistant 줄로 확정 저장한다.
           if (pendingMessageCost) {
             tryAttachPendingMessageCost(true);
           }
