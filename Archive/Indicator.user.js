@@ -1,14 +1,17 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.0
-// @description  Crack chat indicator UI
+// @version      1.0.4
+// @description  Crack chat indicator UI with API-derived per-message turns and persistent per-message cost stats
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Indicator.webp
 // @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/Indicator.user.js
 // @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/Indicator.user.js
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -17,14 +20,33 @@
 
   const ROOT_ID = 'crack-indicator-root';
   const STYLE_ID = 'crack-indicator-style';
+  const MESSAGE_SELECTOR = 'div[data-message-group-id]';
+  const CHAT_INDICATOR_CLASS = 'crack-indicator-chat-stats';
+  const MESSAGE_STATS_STORAGE_PREFIX = 'crack-indicator-message-stats-v1:';
+  const LEGACY_MESSAGE_COST_SESSION_PREFIX = 'crack-indicator-message-costs-v1:';
+  const ROOM_TURN_STORAGE_PREFIX = 'crack-indicator-room-turn-v1:';
+  const SETTINGS_NS = 'crack-indicator';
+  const SETTINGS_OVERLAY_ID = 'crack-indicator-settings-overlay';
+  const SETTING_KEYS = {
+    showTurn: `${SETTINGS_NS}:showTurn`,
+    showRemainCracker: `${SETTINGS_NS}:showRemainCracker`,
+    showDiffCracker: `${SETTINGS_NS}:showDiffCracker`,
+    placement: `${SETTINGS_NS}:placement`,
+  };
+  const DEFAULT_SETTINGS = {
+    showTurn: true,
+    showRemainCracker: true,
+    showDiffCracker: true,
+    placement: 'composer',
+  };
   const CRACK_STATS_API = {
     balance: 'https://crack-api.wrtn.ai/crack-cash/crackers',
     rawMessages: 'https://contents-api.wrtn.ai/character-chat/v3/chats',
   };
   const TURN_REFRESH_DELAY_MS = 400;
-  const TURN_CACHE_MS = 1200;
-  const BALANCE_CACHE_MS = 700;
-  const BALANCE_POLL_CHECKPOINTS_MS = [250, 500, 900, 1400, 2200, 3200, 4800, 7000, 10000, 14000];
+  const TURN_CACHE_MS = 5000;
+  const BALANCE_CACHE_MS = 2500;
+  const BALANCE_POLL_CHECKPOINTS_MS = [300, 700, 1400, 2500, 4500, 7500, 12000];
 
 
   const CRACKER_PATH = "M21.17 12.01c.52-.59.83-1.36.83-2.21s-.31-1.62-.83-2.21l.17-.21q0-.01.02-.02l.14-.21q0-.02.03-.05.06-.1.1-.2l.05-.08.09-.2q.01-.05.04-.11l.06-.18q0-.08.04-.14.01-.07.04-.16l.03-.19q0-.06.02-.13v-.33a3.37 3.37 0 0 0-3.36-3.37l-.33.01q-.06 0-.12.02-.1 0-.2.03-.07 0-.15.04l-.14.04-.18.06-.11.04-.2.09-.07.04-.2.11q-.03 0-.05.03l-.21.14-.02.02-.21.17a3.4 3.4 0 0 0-4.42 0 3.3 3.3 0 0 0-2.21-.83c-.85 0-1.62.31-2.21.83l-.21-.17-.02-.02-.21-.14q-.02 0-.05-.03l-.2-.11-.08-.04-.2-.09-.11-.04-.18-.06-.14-.04-.16-.04-.2-.03-.12-.02-.33-.01a3.37 3.37 0 0 0-3.34 3.82q0 .1.03.19 0 .07.04.16 0 .08.04.14l.06.18q0 .05.04.11.03.1.09.19l.04.08.1.2q.01.02.04.05l.16.23q.07.1.17.21a3.3 3.3 0 0 0-.83 2.21c0 .85.3 1.62.83 2.21a3.3 3.3 0 0 0-.83 2.21c0 .85.3 1.62.83 2.21l-.17.21-.02.02-.14.21q0 .02-.03.05l-.11.2-.04.08-.1.2-.03.11-.06.18-.04.14-.04.16-.03.19-.02.13-.01.33A3.4 3.4 0 0 0 3.02 21c.6.61 1.45.99 2.38.99l.33-.01q.06 0 .12-.02.1 0 .19-.03.07 0 .16-.04l.14-.04.18-.06.1-.04.2-.09.08-.04.2-.11q.03 0 .05-.03l.2-.14.03-.02.2-.17a3.4 3.4 0 0 0 4.43 0 3.32 3.32 0 0 0 4.42 0 3 3 0 0 0 .44.33q.03 0 .05.03l.2.11.08.04.2.09.10.04.19.06.14.04.16.04.19.03.13.02.33.01c.92 0 1.75-.37 2.36-.97l.02-.02c.6-.61.99-1.45.99-2.38l-.01-.33q0-.06-.02-.12 0-.1-.03-.19 0-.07-.04-.16l-.04-.14-.06-.18-.04-.11-.1-.19-.03-.08-.11-.2q0-.02-.03-.05l-.14-.21-.02-.02-.17-.21c.52-.59.83-1.36.83-2.21s-.31-1.62-.83-2.21M7.5 13.5 6 12l1.5-1.5L9 12zM12 6l1.5 1.5L12 9l-1.5-1.5zm0 12-1.5-1.5L12 15l1.5 1.5zm4.5-4.5L15 12l1.5-1.5L18 12z";
@@ -39,6 +61,8 @@
   let mountTimerId = 0;
   let lastMountAt = 0;
   let turnTimerId = 0;
+  let turnTimerForce = false;
+  let turnTimerDueAt = 0;
   let isReadingTurn = false;
   let lastTurnSignature = '';
   let lastRemainCrackerSignature = '';
@@ -49,7 +73,128 @@
   let lastBalanceCache = null;
   let lastObservedBalance = null;
   let activeChatId = null;
+  let lastRoomDeductedAmount = null;
   const MOUNT_THROTTLE_MS = 120;
+
+  function normalizePlacement(value) {
+    return value === 'chat' ? 'chat' : 'composer';
+  }
+
+  function getSetting(name) {
+    const key = SETTING_KEYS[name];
+    const fallback = DEFAULT_SETTINGS[name];
+
+    try {
+      if (typeof GM_getValue === 'function') {
+        const value = GM_getValue(key, undefined);
+        if (typeof value !== 'undefined') {
+          return name === 'placement' ? normalizePlacement(value) : value !== false;
+        }
+      }
+    } catch {}
+
+    try {
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        return name === 'placement' ? normalizePlacement(value) : value !== 'false';
+      }
+    } catch {}
+
+    return fallback;
+  }
+
+  function setSetting(name, value) {
+    const key = SETTING_KEYS[name];
+    const next = name === 'placement' ? normalizePlacement(value) : Boolean(value);
+
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(key, next);
+    } catch {}
+
+    try {
+      localStorage.setItem(key, String(next));
+    } catch {}
+  }
+
+  function closeSettingsDialog() {
+    document.getElementById(SETTINGS_OVERLAY_ID)?.remove();
+  }
+
+  function openSettingsDialog() {
+    injectStyle();
+    closeSettingsDialog();
+
+    const overlay = document.createElement('div');
+    overlay.id = SETTINGS_OVERLAY_ID;
+    overlay.innerHTML = `
+      <div class="ci-settings-panel" role="dialog" aria-modal="true" aria-label="Crack Indicator 설정">
+        <div class="ci-settings-head">
+          <strong>Crack Indicator 설정</strong>
+          <button type="button" class="ci-settings-close" aria-label="닫기">×</button>
+        </div>
+
+        <div class="ci-settings-section-title">표시 항목</div>
+        <label class="ci-settings-check"><input type="checkbox" data-ci-setting="showTurn"><span>턴 수</span></label>
+        <label class="ci-settings-check"><input type="checkbox" data-ci-setting="showRemainCracker"><span>보유 크래커</span></label>
+        <label class="ci-settings-check"><input type="checkbox" data-ci-setting="showDiffCracker"><span>차감 크래커</span></label>
+
+        <div class="ci-settings-section-title ci-settings-location-title">위치</div>
+        <label class="ci-settings-radio"><input type="radio" name="ci-placement" value="composer"><span>입력창</span></label>
+        <label class="ci-settings-radio"><input type="radio" name="ci-placement" value="chat"><span>채팅창</span></label>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll('input[data-ci-setting]').forEach((input) => {
+      const name = input.dataset.ciSetting;
+      input.checked = getSetting(name);
+      input.addEventListener('change', () => {
+        setSetting(name, input.checked);
+        render();
+        scheduleMount(true);
+      });
+    });
+
+    const placement = getSetting('placement');
+    overlay.querySelectorAll('input[name="ci-placement"]').forEach((input) => {
+      input.checked = input.value === placement;
+      input.addEventListener('change', () => {
+        if (!input.checked) return;
+        setSetting('placement', input.value);
+        scheduleMount(true);
+      });
+    });
+
+    overlay.querySelector('.ci-settings-close')?.addEventListener('click', closeSettingsDialog);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeSettingsDialog();
+    });
+
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      document.removeEventListener('keydown', onKeyDown, true);
+      closeSettingsDialog();
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+  }
+
+  function registerMenuCommands() {
+    if (typeof GM_registerMenuCommand !== 'function') return;
+    GM_registerMenuCommand('Crack Indicator 설정', openSettingsDialog);
+  }
+
+  function statSettingName(key) {
+    if (key === 'turn') return 'showTurn';
+    if (key === 'remainCracker') return 'showRemainCracker';
+    if (key === 'diffCracker') return 'showDiffCracker';
+    return null;
+  }
+
+  function isStatVisible(stat) {
+    const settingName = statSettingName(stat?.key);
+    return !settingName || getSetting(settingName);
+  }
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -168,6 +313,10 @@
         overflow: visible;
       }
 
+      .ci-item[data-ci-key="diffCracker"] .ci-icon {
+        transform: translateY(-1px);
+      }
+
       .ci-icon .ci-cracker-icon {
         width: 13px;
         height: 13px;
@@ -228,6 +377,166 @@
         }
       }
 
+      .${CHAT_INDICATOR_CLASS} {
+        width: fit-content;
+        max-width: none;
+        height: 24px;
+        overflow: visible;
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        color: hsl(var(--line-gray-2));
+        pointer-events: none;
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-bar {
+        width: fit-content;
+        max-width: none;
+        height: 24px;
+        overflow: visible;
+        background: transparent;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        color: hsl(var(--line-gray-2));
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-list {
+        width: fit-content;
+        max-width: none;
+        overflow: visible;
+        padding: 0;
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-item {
+        height: 24px;
+        padding: 0;
+        gap: 3px;
+        color: currentColor;
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-item:first-child {
+        padding-left: 0;
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-item:last-child {
+        padding-right: 0;
+      }
+
+      /* 채팅창 안에서는 글자수·시간 배지처럼 가운데점( · )으로 자연스럽게 구분한다. */
+      .${CHAT_INDICATOR_CLASS} .ci-item + .ci-item::before {
+        content: "·";
+        margin: 0 2px 0 5px;
+        color: currentColor;
+        opacity: .72;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1;
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-icon,
+      .${CHAT_INDICATOR_CLASS} .ci-value {
+        color: inherit;
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-icon {
+        width: 13px;
+        height: 13px;
+        min-width: 13px;
+      }
+
+      .${CHAT_INDICATOR_CLASS} .ci-value {
+        height: 24px;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: inherit;
+      }
+
+      #${SETTINGS_OVERLAY_ID} {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(0, 0, 0, .28);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-panel {
+        width: min(320px, calc(100vw - 32px));
+        padding: 12px;
+        border: 1px solid var(--ci-chip-border);
+        border-radius: 14px;
+        background: var(--ci-settings-bg);
+        color: var(--ci-text);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, .22);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Pretendard", "Apple SD Gothic Neo", system-ui, sans-serif;
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 30px;
+        padding: 0 2px 6px 6px;
+        font-size: 13px;
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-close {
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--ci-muted);
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-close:hover {
+        background: var(--ci-settings-hover);
+        color: var(--ci-text);
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-section-title {
+        padding: 8px 7px 5px;
+        color: var(--ci-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-location-title {
+        margin-top: 3px;
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-check,
+      #${SETTINGS_OVERLAY_ID} .ci-settings-radio {
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0 8px;
+        border-radius: 9px;
+        cursor: pointer;
+        font-size: 13px;
+        user-select: none;
+      }
+
+      #${SETTINGS_OVERLAY_ID} .ci-settings-check:hover,
+      #${SETTINGS_OVERLAY_ID} .ci-settings-radio:hover {
+        background: var(--ci-settings-hover);
+      }
+
+      #${SETTINGS_OVERLAY_ID} input {
+        width: 15px;
+        height: 15px;
+        margin: 0;
+        accent-color: #FE4532;
+      }
+
       :root {
         --ci-bg: rgba(248, 248, 248, 0.74);
         --ci-text: rgba(17, 24, 39, 0.92);
@@ -235,17 +544,21 @@
         --ci-chip: rgba(255, 255, 255, 0.66);
         --ci-chip-border: rgba(0, 0, 0, 0.075);
         --ci-accent: #FE4532;
+        --ci-settings-bg: rgba(255, 255, 255, .96);
+        --ci-settings-hover: rgba(0, 0, 0, .055);
       }
 
       html.dark,
       html[data-theme="dark"],
       html[data-crack-ui-theme-mode="dark"] {
-        --ci-bg: rgba(18, 18, 20, 0.78);
+        --ci-bg: rgba(30, 30, 34, 0.82);
         --ci-text: rgba(255, 255, 255, 0.92);
         --ci-muted: rgba(235, 235, 245, 0.62);
         --ci-chip: rgba(255, 255, 255, 0.13);
         --ci-chip-border: rgba(255, 255, 255, 0.12);
         --ci-accent: #FE4532;
+        --ci-settings-bg: rgba(38, 38, 42, .97);
+        --ci-settings-hover: rgba(255, 255, 255, .08);
       }
     `;
 
@@ -297,6 +610,13 @@
     });
 
     composerBox.dataset.ciComposerBox = '1';
+    setStat(
+      'diffCracker',
+      Number.isFinite(lastRoomDeductedAmount) && lastRoomDeductedAmount > 0
+        ? lastRoomDeductedAmount.toLocaleString('en-US')
+        : '-'
+    );
+    renderList(root);
 
     const firstChild = composerBox.firstElementChild;
     if (root.parentElement !== composerBox || firstChild !== root) {
@@ -329,7 +649,10 @@
   }
 
   function getListSignature() {
-    return stats.map((stat) => `${stat.key}:${stat.value}`).join('|');
+    return stats
+      .filter(isStatVisible)
+      .map((stat) => `${stat.key}:${stat.value}`)
+      .join('|') || '__hidden__';
   }
 
   function renderList(root) {
@@ -341,10 +664,12 @@
     const signature = getListSignature();
     if (list.dataset.ciSignature === signature) return;
 
+    const visibleStats = stats.filter(isStatVisible);
     list.dataset.ciSignature = signature;
     list.innerHTML = '';
+    root.style.display = visibleStats.length ? '' : 'none';
 
-    stats.forEach((stat) => {
+    visibleStats.forEach((stat) => {
       const item = document.createElement('div');
       item.className = 'ci-item';
       item.dataset.ciKey = stat.key;
@@ -359,6 +684,13 @@
   }
 
   function render(root = document.getElementById(ROOT_ID)) {
+    if (getSetting('placement') === 'chat') {
+      if (root) root.style.display = 'none';
+      renderChatIndicators();
+      return;
+    }
+
+    removeAllChatIndicators();
     if (!root) return;
     renderList(root);
   }
@@ -391,9 +723,420 @@
     if (changed) render();
   }
 
+  function getMessageGroupId(group) {
+    return String(group?.getAttribute?.('data-message-group-id') || '').trim();
+  }
+
+  function findModelIndicator(group) {
+    if (!group) return null;
+
+    return group.querySelector(
+      'button[data-crack-ui-novel-model-name], button.crack-ui-novel-model-indicator'
+    );
+  }
+
+  function isRerollLikeButton(button) {
+    if (!button) return false;
+    if (button.dataset?.cleanRerollHooked === '1') return true;
+    if (button.classList?.contains('cr-clean-reroll-btn')) return true;
+
+    const text = String(button.textContent || '').replace(/\s+/g, ' ').trim();
+    if (/답변\s*비교\s*\d+\s*\/\s*\d+/.test(text)) return true;
+
+    const html = button.innerHTML || '';
+    return (
+      html.includes('M3.8 12a8.2') ||
+      html.includes('M3.8 12') ||
+      html.includes('A9.8 9.8') ||
+      html.includes('A8.21 8.21')
+    );
+  }
+
+  function findChatIndicatorHost(group) {
+    if (!group) return null;
+
+    // 소설형: 모델 버튼이 있는 왼쪽 flex 줄을 그대로 사용한다.
+    const modelButton = findModelIndicator(group);
+    if (modelButton) {
+      const leftRow = modelButton.parentElement?.classList?.contains('flex')
+        ? modelButton.parentElement
+        : modelButton.closest('div.flex.items-center');
+
+      if (leftRow) return leftRow;
+    }
+
+    // 채팅형: 같은 하단 메타 툴바의 왼쪽 줄은 비어 있을 수 있다.
+    // 오른쪽에 리롤/메시지 옵션이 있는 assistant 툴바를 찾아 빈 왼쪽 줄에 append한다.
+    const toolbarRows = [...group.querySelectorAll('div.flex.items-center.justify-between.mt-2')];
+
+    for (const toolbar of toolbarRows) {
+      const children = [...toolbar.children];
+      const leftRow = children.find((child) =>
+        child?.matches?.('div.flex.items-center.space-x-3')
+      ) || children.find((child) =>
+        child?.classList?.contains('flex') &&
+        child?.classList?.contains('items-center') &&
+        !child?.classList?.contains('flex-row')
+      );
+
+      const rightRow = children.find((child) =>
+        child?.matches?.('div.flex.flex-row.items-center')
+      ) || children.find((child) =>
+        child?.classList?.contains('flex') &&
+        child?.classList?.contains('flex-row') &&
+        child?.classList?.contains('items-center')
+      );
+
+      if (!leftRow || !rightRow) continue;
+
+      const hasReroll = [...rightRow.querySelectorAll('button')].some(isRerollLikeButton);
+      const hasAssistantBadge = Boolean(rightRow.querySelector('[data-role="assistant"]'));
+      const hasMessageOptions = Boolean(rightRow.querySelector('button[aria-label="메시지 옵션"]'));
+
+      if (hasReroll || hasAssistantBadge || (hasMessageOptions && modelButton)) {
+        return leftRow;
+      }
+    }
+
+    return null;
+  }
+
+  function messageStatsStorageKey(chatId) {
+    return `${MESSAGE_STATS_STORAGE_PREFIX}${chatId || 'unknown'}`;
+  }
+
+  function legacyMessageCostStorageKey(chatId) {
+    return `${LEGACY_MESSAGE_COST_SESSION_PREFIX}${chatId || 'unknown'}`;
+  }
+
+  function normalizeMessageStatsRecord(record) {
+    if (record && typeof record === 'object' && !Array.isArray(record)) {
+      const cost = Number(record.cost);
+      const turn = Number(record.turn);
+      return {
+        ...(Number.isFinite(cost) && cost > 0 ? { cost: Math.round(cost) } : {}),
+        ...(Number.isFinite(turn) && turn >= 0 ? { turn: Math.round(turn) } : {}),
+      };
+    }
+
+    // v0.1.54 sessionStorage 포맷은 messageId -> cost 숫자였다.
+    const legacyCost = Number(record);
+    return Number.isFinite(legacyCost) && legacyCost > 0
+      ? { cost: Math.round(legacyCost) }
+      : {};
+  }
+
+  function normalizeMessageStatsMap(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+    const normalized = {};
+    for (const [messageId, record] of Object.entries(value)) {
+      if (!messageId) continue;
+      const next = normalizeMessageStatsRecord(record);
+      if (Object.keys(next).length) normalized[messageId] = next;
+    }
+    return normalized;
+  }
+
+  function loadMessageStatsMap(chatId = getCurrentChatIdFromUrl()) {
+    if (!chatId) return {};
+
+    try {
+      const parsed = JSON.parse(localStorage.getItem(messageStatsStorageKey(chatId)) || '{}');
+      const normalized = normalizeMessageStatsMap(parsed);
+      if (Object.keys(normalized).length) return normalized;
+    } catch {}
+
+    // 바로 전 버전에서 같은 탭에 잡힌 차감값은 최초 1회 localStorage로 승격한다.
+    try {
+      const legacy = JSON.parse(sessionStorage.getItem(legacyMessageCostStorageKey(chatId)) || '{}');
+      const migrated = normalizeMessageStatsMap(legacy);
+      if (Object.keys(migrated).length) {
+        localStorage.setItem(messageStatsStorageKey(chatId), JSON.stringify(migrated));
+        return migrated;
+      }
+    } catch {}
+
+    return {};
+  }
+
+  function saveMessageStatsMap(chatId, map) {
+    if (!chatId) return false;
+    try {
+      const key = messageStatsStorageKey(chatId);
+      const serialized = JSON.stringify(map);
+      if (localStorage.getItem(key) === serialized) return false;
+      localStorage.setItem(key, serialized);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function saveMessageCost(chatId, messageId, amount) {
+    const value = Number(amount);
+    if (!chatId || !messageId || !Number.isFinite(value) || value <= 0) return false;
+
+    const map = loadMessageStatsMap(chatId);
+    const record = normalizeMessageStatsRecord(map[messageId]);
+    const normalizedCost = Math.max(0, Math.round(value));
+    if (record.cost === normalizedCost) return false;
+    record.cost = normalizedCost;
+    map[messageId] = record;
+    return saveMessageStatsMap(chatId, map);
+  }
+
+  function saveMessageTurn(chatId, messageId, turn) {
+    const value = Number(turn);
+    if (!chatId || !messageId || !Number.isFinite(value) || value < 0) return false;
+
+    const map = loadMessageStatsMap(chatId);
+    const record = normalizeMessageStatsRecord(map[messageId]);
+    const normalizedTurn = Math.max(0, Math.round(value));
+    if (record.turn === normalizedTurn) return false;
+    record.turn = normalizedTurn;
+    map[messageId] = record;
+    return saveMessageStatsMap(chatId, map);
+  }
+
+  function mergeMessageTurns(chatId, messageTurns) {
+    if (!chatId || !messageTurns || typeof messageTurns !== 'object') return false;
+
+    const map = loadMessageStatsMap(chatId);
+    let changed = false;
+
+    for (const [messageId, rawTurn] of Object.entries(messageTurns)) {
+      const turn = Number(rawTurn);
+      if (!messageId || !Number.isFinite(turn) || turn < 0) continue;
+
+      const normalizedTurn = Math.max(0, Math.round(turn));
+      const record = normalizeMessageStatsRecord(map[messageId]);
+      if (record.turn === normalizedTurn) continue;
+
+      record.turn = normalizedTurn;
+      map[messageId] = record;
+      changed = true;
+    }
+
+    if (!changed) return false;
+    const saved = saveMessageStatsMap(chatId, map);
+    if (saved) scheduleMount(true);
+    return saved;
+  }
+
+  function roomTurnStorageKey(chatId) {
+    return `${ROOM_TURN_STORAGE_PREFIX}${chatId || 'unknown'}`;
+  }
+
+  function loadStoredRoomTurn(chatId = getCurrentChatIdFromUrl()) {
+    if (!chatId) return null;
+    try {
+      const value = Number(localStorage.getItem(roomTurnStorageKey(chatId)));
+      return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveStoredRoomTurn(chatId, turn) {
+    const value = Number(turn);
+    if (!chatId || !Number.isFinite(value) || value < 0) return false;
+    try {
+      const key = roomTurnStorageKey(chatId);
+      const normalized = String(Math.round(value));
+      if (localStorage.getItem(key) === normalized) return false;
+      localStorage.setItem(key, normalized);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function saveTurnToLatestAssistant(chatId, turn) {
+    const value = Number(turn);
+    if (!chatId || !Number.isFinite(value) || value < 0) return false;
+
+    const group = findNewestAssistantGroup();
+    const messageId = getMessageGroupId(group);
+    if (!group || !messageId) return false;
+
+    const saved = saveMessageTurn(chatId, messageId, value);
+    if (saved) scheduleMount(true);
+    return saved;
+  }
+
+  function removeAllChatIndicators() {
+    document.querySelectorAll(`.${CHAT_INDICATOR_CLASS}`).forEach((el) => el.remove());
+  }
+
+  function renderChatIndicators() {
+    if (getSetting('placement') !== 'chat') {
+      removeAllChatIndicators();
+      return;
+    }
+
+    const chatId = getCurrentChatIdFromUrl();
+    if (!chatId) {
+      removeAllChatIndicators();
+      return;
+    }
+
+    const visibleStats = stats.filter(isStatVisible);
+    const messageStats = loadMessageStatsMap(chatId);
+    const liveGroups = new Set();
+
+    document.querySelectorAll(MESSAGE_SELECTOR).forEach((group) => {
+      const row = findChatIndicatorHost(group);
+      const messageId = getMessageGroupId(group);
+      if (!row || !messageId) return;
+
+      liveGroups.add(messageId);
+
+      let indicator = group.querySelector(`.${CHAT_INDICATOR_CLASS}`);
+      if (!visibleStats.length) {
+        indicator?.remove();
+        return;
+      }
+
+      if (!indicator) {
+        indicator = document.createElement('span');
+        indicator.className = CHAT_INDICATOR_CLASS;
+        indicator.innerHTML = '<span class="ci-list"></span>';
+        // 기존 확프 요소 뒤에 append만 해서 순서 싸움을 하지 않는다.
+        row.appendChild(indicator);
+      } else if (indicator.parentElement !== row) {
+        row.appendChild(indicator);
+      }
+
+      const list = indicator.querySelector('.ci-list');
+      const messageRecord = normalizeMessageStatsRecord(messageStats[messageId]);
+      const cost = Number(messageRecord.cost);
+      const savedTurn = Number(messageRecord.turn);
+      const signature = visibleStats.map((stat) => {
+        let value = stat.value;
+        if (stat.key === 'diffCracker') {
+          value = Number.isFinite(cost) && cost > 0
+            ? Math.round(cost).toLocaleString('en-US')
+            : '-';
+        } else if (stat.key === 'turn') {
+          value = Number.isFinite(savedTurn) && savedTurn >= 0
+            ? String(Math.round(savedTurn))
+            : '-';
+        }
+        return `${stat.key}:${value}`;
+      }).join('|');
+
+      if (list.dataset.ciSignature === signature) return;
+      list.dataset.ciSignature = signature;
+      list.innerHTML = '';
+
+      visibleStats.forEach((stat) => {
+        let value = stat.value;
+        if (stat.key === 'diffCracker') {
+          value = Number.isFinite(cost) && cost > 0
+            ? Math.round(cost).toLocaleString('en-US')
+            : '-';
+        } else if (stat.key === 'turn') {
+          value = Number.isFinite(savedTurn) && savedTurn >= 0
+            ? String(Math.round(savedTurn))
+            : '-';
+        }
+
+        const item = document.createElement('span');
+        item.className = 'ci-item';
+        item.dataset.ciKey = stat.key;
+        item.title = stat.key === 'diffCracker'
+          ? '이 응답의 차감 크래커'
+          : (stat.key === 'turn' ? '이 응답 당시 턴 수' : stat.label);
+        item.innerHTML = `
+          <span class="ci-icon">${stat.icon}</span>
+          <span class="ci-value">${value}</span>
+        `;
+        list.appendChild(item);
+      });
+    });
+
+    document.querySelectorAll(`.${CHAT_INDICATOR_CLASS}`).forEach((indicator) => {
+      const group = indicator.closest(MESSAGE_SELECTOR);
+      const messageId = getMessageGroupId(group);
+      if (!messageId || !liveGroups.has(messageId)) indicator.remove();
+    });
+  }
+
+  function captureMessageGroupIds() {
+    return new Set(
+      [...document.querySelectorAll(MESSAGE_SELECTOR)]
+        .map(getMessageGroupId)
+        .filter(Boolean)
+    );
+  }
+
+  function findNewestAssistantGroup(excludedIds = null) {
+    const groups = [...document.querySelectorAll(MESSAGE_SELECTOR)]
+      .filter((group) => findChatIndicatorHost(group));
+
+    if (excludedIds) {
+      const fresh = groups.filter((group) => {
+        const id = getMessageGroupId(group);
+        return id && !excludedIds.has(id);
+      });
+      return fresh.length ? fresh[fresh.length - 1] : null;
+    }
+
+    return groups.length ? groups[groups.length - 1] : null;
+  }
+
+  async function attachMessageCostToGeneratedReply(session, amount) {
+    if (!session?.chatId || !Number.isFinite(Number(amount)) || Number(amount) <= 0) return false;
+
+    const checkpoints = [0, 120, 300, 650, 1100, 1800, 2800, 4200];
+    let previous = 0;
+
+    for (const checkpoint of checkpoints) {
+      const delay = Math.max(0, checkpoint - previous);
+      previous = checkpoint;
+      if (delay) await sleep(delay);
+
+      if (getCurrentChatIdFromUrl() !== session.chatId) return false;
+
+      const group = findNewestAssistantGroup(session.messageGroupIdsAtStart);
+      const messageId = getMessageGroupId(group);
+      if (!group || !messageId) continue;
+
+      saveMessageCost(session.chatId, messageId, amount);
+      scheduleMount(true);
+      return true;
+    }
+
+    // 리롤처럼 같은 메시지 그룹을 재사용하는 UI도 있으므로 마지막에만 현재 최신 AI 그룹으로 fallback.
+    if (getCurrentChatIdFromUrl() === session.chatId) {
+      const group = findNewestAssistantGroup();
+      const messageId = getMessageGroupId(group);
+      if (group && messageId) {
+        saveMessageCost(session.chatId, messageId, amount);
+        scheduleMount(true);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   function mount() {
     injectStyle();
-    mountToComposer(getRoot());
+    const root = getRoot();
+
+    if (getSetting('placement') === 'chat') {
+      document.querySelectorAll('[data-ci-composer-box="1"]').forEach((box) => {
+        delete box.dataset.ciComposerBox;
+      });
+      if (root.isConnected) root.remove();
+      renderChatIndicators();
+      return;
+    }
+
+    removeAllChatIndicators();
+    mountToComposer(root);
   }
 
 
@@ -450,6 +1193,153 @@
 
   function isUserMessage(message) {
     return String(message?.role || '').toLowerCase() === 'user';
+  }
+
+  function isAssistantMessage(message) {
+    const role = String(message?.role || '').toLowerCase();
+    return role === 'assistant' || role === 'ai' || role === 'model';
+  }
+
+  function objectIdTime(value) {
+    const id = String(value || '').trim();
+    if (!/^[a-f0-9]{24}$/i.test(id)) return 0;
+
+    const seconds = Number.parseInt(id.slice(0, 8), 16);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+  }
+
+  function messageTime(message) {
+    const candidates = [
+      message?.createdAt,
+      message?.created_at,
+      message?.date,
+      message?.timestamp,
+      message?.createdTime,
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate == null || candidate === '') continue;
+
+      if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+        return candidate < 1e12 ? candidate * 1000 : candidate;
+      }
+
+      const numeric = Number(candidate);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        return numeric < 1e12 ? numeric * 1000 : numeric;
+      }
+
+      const parsed = new Date(candidate).getTime();
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+
+    return objectIdTime(getMessageId(message));
+  }
+
+  function getTurnIdentityKeys(message, includeParent = false) {
+    const values = [
+      getMessageId(message),
+      message?.turnId,
+      message?.turn_id,
+      message?.turn?._id,
+      message?.turn?.id,
+    ];
+
+    if (includeParent) {
+      values.push(
+        message?.parentTurnId,
+        message?.parent_turn_id,
+        message?.parentTurn?._id,
+        message?.parentTurn?.id,
+      );
+    }
+
+    return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+  }
+
+  function buildTurnInfoFromMessages(rows) {
+    const indexed = rows.map((message, index) => ({
+      message,
+      index,
+      time: messageTime(message),
+    }));
+
+    // messages API가 최신순으로 오더라도 ObjectId/createdAt 기준으로 오래된 메시지부터 정렬한다.
+    // 같은 시각이면 user를 assistant보다 먼저 두어 해당 응답이 같은 턴 번호를 받게 한다.
+    indexed.sort((a, b) => {
+      const aHasTime = a.time > 0;
+      const bHasTime = b.time > 0;
+
+      if (aHasTime && bHasTime && a.time !== b.time) return a.time - b.time;
+      if (aHasTime !== bHasTime) return aHasTime ? -1 : 1;
+
+      const aRoleOrder = isUserMessage(a.message) ? 0 : (isAssistantMessage(a.message) ? 1 : 2);
+      const bRoleOrder = isUserMessage(b.message) ? 0 : (isAssistantMessage(b.message) ? 1 : 2);
+      if (aRoleOrder !== bRoleOrder) return aRoleOrder - bRoleOrder;
+
+      return a.index - b.index;
+    });
+
+    const seenUserIds = new Set();
+    const logicalTurnByKey = new Map();
+    const assistantTurnByParent = new Map();
+    const messageTurns = {};
+    let turn = 0;
+
+    for (const { message } of indexed) {
+      const messageId = getMessageId(message);
+
+      if (isUserMessage(message)) {
+        if (messageId && seenUserIds.has(messageId)) continue;
+        if (messageId) seenUserIds.add(messageId);
+
+        turn += 1;
+        getTurnIdentityKeys(message, false).forEach((key) => logicalTurnByKey.set(key, turn));
+        continue;
+      }
+
+      if (!isAssistantMessage(message) || !messageId) continue;
+
+      const parentKeys = [
+        message?.parentTurnId,
+        message?.parent_turn_id,
+        message?.parentTurn?._id,
+        message?.parentTurn?.id,
+        message?.turnId,
+        message?.turn_id,
+      ].map((value) => String(value || '').trim()).filter(Boolean);
+
+      let messageTurn = null;
+
+      // 가장 정확한 경우: assistant의 parentTurnId/turnId가 user turn 식별자와 직접 연결된다.
+      for (const key of parentKeys) {
+        if (logicalTurnByKey.has(key)) {
+          messageTurn = logicalTurnByKey.get(key);
+          break;
+        }
+      }
+
+      // 리롤 답변들은 같은 parentTurnId를 공유하므로 최초 판정된 턴 번호를 재사용한다.
+      if (messageTurn == null) {
+        for (const key of parentKeys) {
+          if (assistantTurnByParent.has(key)) {
+            messageTurn = assistantTurnByParent.get(key);
+            break;
+          }
+        }
+      }
+
+      // parentTurnId 연결 정보가 없는 일반 응답은 직전까지 센 user 턴 수를 사용한다.
+      if (messageTurn == null) messageTurn = turn;
+
+      messageTurns[messageId] = Math.max(0, Math.round(messageTurn));
+      parentKeys.forEach((key) => assistantTurnByParent.set(key, messageTurns[messageId]));
+    }
+
+    return {
+      turn,
+      messageTurns,
+    };
   }
 
 
@@ -535,14 +1425,14 @@
     }
 
     const rows = await fetchAllMessages(chatId);
-    const userRows = rows.filter(isUserMessage);
-    const userIds = new Set(userRows.map(getMessageId).filter(Boolean));
-    const idlessUserCount = userRows.filter((message) => !getMessageId(message)).length;
-    const turns = userIds.size + idlessUserCount;
+    const turnInfo = buildTurnInfoFromMessages(rows);
+    const info = {
+      chatId,
+      turn: turnInfo.turn,
+      messageTurns: turnInfo.messageTurns,
+    };
 
-    const info = { chatId, turn: turns };
-
-    lastTurnFetchAt = now;
+    lastTurnFetchAt = Date.now();
     lastTurnInfoCache = info;
     return info;
   }
@@ -582,11 +1472,17 @@
 
     activeChatId = nextChatId;
     activeGeneration = null;
+    lastRoomDeductedAmount = null;
 
-    // 차감 크래커는 방 단위 상태다.
-    // 방을 바꿀 때만 '-'로 시작하고, 같은 방에서는 새 차감이 생길 때까지 마지막 값을 유지한다.
-    lastTurnSignature = '-';
-    setStats({ turn: '-', diffCracker: '-' });
+    // 턴 수는 방별 마지막 정상값을 localStorage에서 즉시 복구한다.
+    // 실제 API 조회가 끝나면 최신값으로 다시 갱신/저장된다.
+    const storedTurn = loadStoredRoomTurn(nextChatId);
+    const storedTurnDisplay = storedTurn === null ? '-' : String(storedTurn);
+    lastTurnSignature = storedTurnDisplay;
+
+    // 입력창의 차감 크래커는 방을 바꿀 때만 '-'로 시작한다.
+    // 채팅창의 메시지별 차감값은 localStorage에서 각 메시지별로 복구된다.
+    setStats({ turn: storedTurnDisplay, diffCracker: '-' });
 
     // 보유 크래커는 전역 잔액이므로 방 전환 직후의 첫 잔액은 비교하지 않고 기준값으로만 사용한다.
     // 이전 방에서 늦게 반영된 차감을 새 방의 차감으로 오인하는 것을 막는다.
@@ -601,18 +1497,40 @@
 
     const normalized = Math.max(0, Math.round(value));
     const displayValue = normalized.toLocaleString('en-US');
+    lastRoomDeductedAmount = normalized;
 
-    setStat('diffCracker', displayValue);
+    if (getSetting('placement') === 'composer') {
+      setStat('diffCracker', displayValue);
+    }
 
     console.log(`[CrackIndicator] -${normalized} 크래커`);
     return normalized;
+  }
+
+  function saveCostToLatestAssistant(amount) {
+    const value = Number(amount);
+    const chatId = getCurrentChatIdFromUrl();
+    const group = findNewestAssistantGroup();
+    const messageId = getMessageGroupId(group);
+
+    if (!chatId || !group || !messageId || !Number.isFinite(value) || value <= 0) return false;
+    const saved = saveMessageCost(chatId, messageId, value);
+    if (saved) scheduleMount(true);
+    return saved;
   }
 
   function handleBalanceDrop(previousBalance, currentBalance) {
     if (!Number.isFinite(previousBalance) || !Number.isFinite(currentBalance)) return 0;
     if (currentBalance >= previousBalance) return 0;
 
-    return showDeductedAmount(previousBalance - currentBalance);
+    const deducted = showDeductedAmount(previousBalance - currentBalance);
+
+    // 생성 시작 이벤트를 놓친 경우에도 채팅창 위치에서는 최신 AI 응답에 한 번 연결한다.
+    if (deducted > 0 && !activeGeneration) {
+      saveCostToLatestAssistant(deducted);
+    }
+
+    return deducted;
   }
 
   async function pollBalanceDeduction(session) {
@@ -638,12 +1556,16 @@
 
       if (balance < session.baselineBalance) {
         const deducted = showDeductedAmount(session.baselineBalance - balance);
+        attachMessageCostToGeneratedReply(session, deducted).catch((error) => {
+          console.warn('[CrackIndicator] 메시지별 차감 배지 연결 실패', error);
+        });
         lastObservedBalance = balance;
         lastBalanceCache = balance;
         lastBalanceFetchAt = Date.now();
 
         if (activeGeneration === session) activeGeneration = null;
-        scheduleTurnRefresh(0, true);
+        // generate_done의 턴 갱신과 같은 타이머로 합쳐 중복 전체 메시지 조회를 피한다.
+        scheduleTurnRefresh(600, true);
         return deducted;
       }
 
@@ -671,6 +1593,7 @@
     const session = {
       chatId,
       startedAt: now,
+      messageGroupIdsAtStart: captureMessageGroupIds(),
       baselineBalance: Number.isFinite(lastObservedBalance)
         ? lastObservedBalance
         : (Number.isFinite(lastBalanceCache) ? lastBalanceCache : null),
@@ -764,10 +1687,9 @@
         }
 
         if (/^generate_done$/i.test(eventName)) {
-          // 시작 이벤트를 놓쳤더라도 기존 관측 잔액과 비교할 기회를 준다.
-          scheduleTurnRefresh(0, true);
-          setTimeout(() => scheduleTurnRefresh(0, true), 500);
-          setTimeout(() => scheduleTurnRefresh(0, true), 1200);
+          // 새 메시지가 API에 반영될 짧은 여유를 두고 한 번만 강제 갱신한다.
+          // 잔액 polling 쪽에서도 같은 타이머를 사용하므로 서로 겹치면 자동 병합된다.
+          scheduleTurnRefresh(600, true);
         }
       }
 
@@ -778,7 +1700,10 @@
   }
 
   async function refreshTurnCount(force = false) {
-    if (isReadingTurn) return;
+    if (isReadingTurn) {
+      scheduleTurnRefresh(250, force);
+      return;
+    }
     isReadingTurn = true;
 
     try {
@@ -788,9 +1713,13 @@
       const [info, balance] = await Promise.all([
         getTurnStats(chatId, force || chatChanged).catch((error) => {
           console.warn('[CrackIndicator] 턴 조회 실패', error);
-          return lastTurnInfoCache?.chatId === chatId ? lastTurnInfoCache : null;
+          if (lastTurnInfoCache?.chatId === chatId) return lastTurnInfoCache;
+          const storedTurn = loadStoredRoomTurn(chatId);
+          return storedTurn === null ? null : { chatId, turn: storedTurn, source: 'localStorage' };
         }),
-        getBalance(force || chatChanged),
+        // 턴 강제 갱신과 잔액 강제 갱신을 묶지 않는다.
+        // 차감 직후 잔액은 전용 polling이 이미 force 조회하므로 여기서는 짧은 캐시를 재사용한다.
+        getBalance(false),
       ]);
 
       // 조회 중 방이 또 바뀌었으면 이전 방 결과를 UI에 적용하지 않는다.
@@ -804,6 +1733,18 @@
           handleBalanceDrop(previousObservedBalance, balance);
         }
         lastObservedBalance = balance;
+      }
+
+      if (Number.isFinite(Number(info?.turn))) {
+        const normalizedTurn = Math.max(0, Math.round(Number(info.turn)));
+        saveStoredRoomTurn(chatId, normalizedTurn);
+
+        // messages API 전체 목록에서 각 AI messageId가 몇 번째 user 턴에 속하는지 계산해
+        // 과거 응답까지 한 번에 영구 저장한다. 리롤은 같은 parentTurnId면 같은 턴을 공유한다.
+        mergeMessageTurns(chatId, info?.messageTurns);
+
+        // API에 막 생성된 최신 메시지가 아직 반영되지 않은 짧은 구간만 DOM 최신 응답으로 보완한다.
+        saveTurnToLatestAssistant(chatId, normalizedTurn);
       }
 
       const turnSignature = String(info?.turn ?? '-');
@@ -829,12 +1770,33 @@
   }
 
   function scheduleTurnRefresh(delay = TURN_REFRESH_DELAY_MS, force = false) {
-    if (turnTimerId) clearTimeout(turnTimerId);
+    const wait = Math.max(0, Number(delay) || 0);
+    const dueAt = Date.now() + wait;
+    const wantsForce = Boolean(force);
+    const alreadyForced = turnTimerForce;
 
+    if (turnTimerId) {
+      if (wantsForce) {
+        // 일반 갱신이 먼저 잡혀 있어도 강제 갱신 요청의 지연시간을 존중한다.
+        // 이미 강제 갱신이 예약돼 있다면 더 빠른 쪽 하나만 남긴다.
+        if (alreadyForced && turnTimerDueAt <= dueAt) return;
+      } else {
+        // 강제 갱신이 대기 중이면 일반 DOM 변화가 그 시점을 앞당기거나 뒤로 밀지 못하게 한다.
+        if (alreadyForced || turnTimerDueAt <= dueAt) return;
+      }
+
+      clearTimeout(turnTimerId);
+    }
+
+    turnTimerForce = alreadyForced || wantsForce;
+    turnTimerDueAt = dueAt;
     turnTimerId = setTimeout(() => {
       turnTimerId = 0;
-      refreshTurnCount(force);
-    }, delay);
+      turnTimerDueAt = 0;
+      const shouldForce = turnTimerForce;
+      turnTimerForce = false;
+      refreshTurnCount(shouldForce);
+    }, Math.max(0, dueAt - Date.now()));
   }
 
   function isOwnUiNode(node) {
@@ -846,7 +1808,11 @@
     return Boolean(
       el.id === ROOT_ID ||
       el.id === STYLE_ID ||
-      el.closest?.(`#${ROOT_ID}`)
+      el.id === SETTINGS_OVERLAY_ID ||
+      el.classList?.contains(CHAT_INDICATOR_CLASS) ||
+      el.closest?.(`#${ROOT_ID}`) ||
+      el.closest?.(`#${SETTINGS_OVERLAY_ID}`) ||
+      el.closest?.(`.${CHAT_INDICATOR_CLASS}`)
     );
   }
 
@@ -927,18 +1893,49 @@
     window.addEventListener('popstate', notifyRouteChange);
   }
 
+  function nodeContainsMessageGroup(node) {
+    if (!node) return false;
+    const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    if (!el) return false;
+    return Boolean(el.matches?.(MESSAGE_SELECTOR) || el.querySelector?.(MESSAGE_SELECTOR));
+  }
+
+  function mutationTouchesMessages(mutation) {
+    if (!mutation) return false;
+
+    if (
+      mutation.type === 'attributes' &&
+      mutation.attributeName === 'data-message-group-id'
+    ) {
+      return true;
+    }
+
+    if (mutation.type !== 'childList') return false;
+
+    return [
+      ...mutation.addedNodes,
+      ...mutation.removedNodes,
+    ].some(nodeContainsMessageGroup);
+  }
+
   function observe() {
     const observer = new MutationObserver((mutations) => {
       if (mutations.every(isOwnMutation)) return;
+
       scheduleMount();
-      scheduleTurnRefresh();
+
+      // 가상 스크롤로 과거 메시지가 재마운트되는 것만으로 messages API를 다시 읽지 않는다.
+      // 실제 생성 세션 중 새 메시지 그룹 변화가 보일 때만 fallback 턴 갱신을 예약한다.
+      if (activeGeneration && mutations.some(mutationTouchesMessages)) {
+        scheduleTurnRefresh(600, true);
+      }
     });
 
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['class', 'style'],
+      attributeFilter: ['class', 'style', 'data-message-group-id'],
     });
 
     window.addEventListener('resize', () => {
@@ -947,15 +1944,14 @@
 
     document.addEventListener('focusin', () => {
       scheduleMount(true);
-      scheduleTurnRefresh(800);
     }, true);
 
     document.addEventListener('click', () => {
       scheduleMount(true);
-      scheduleTurnRefresh(800);
     }, true);
   }
 
+  registerMenuCommands();
   mount();
   observe();
   watchChatRouteChanges();
