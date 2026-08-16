@@ -12,8 +12,8 @@
 // @connect      crack-api.wrtn.ai
 // @connect      *
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/UImax.webp
-// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
-// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackUI.user.js
+// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/UImax.user.js
+// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/UImax.user.js
 // ==/UserScript==
 
 (() => {
