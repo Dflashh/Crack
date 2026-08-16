@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.7
+// @version      1.0.8
 // @description  Crack chat indicator UI with API-derived per-message turns and persistent per-message cost stats
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -1109,6 +1109,34 @@
   function clearLiveMessageCost(group) {
     if (!group?.dataset) return;
     delete group.dataset.ciLiveDiffCracker;
+    delete group.dataset.ciLiveDiffSavedMessageId;
+  }
+
+  function persistLiveMessageCost(group, chatId = getCurrentChatIdFromUrl()) {
+    if (!group?.dataset || !chatId) return false;
+
+    const amount = Number(group.dataset.ciLiveDiffCracker);
+    const messageId = getMessageGroupId(group);
+    if (!messageId || !Number.isFinite(amount) || amount <= 0) return false;
+
+    // 스트리밍 중 data-message-group-id가 바뀔 수 있으므로 같은 DOM에 붙어 있는
+    // live 차감값을 새 messageId가 보일 때마다 다시 영구 저장한다.
+    if (group.dataset.ciLiveDiffSavedMessageId === messageId) return true;
+
+    saveMessageCost(chatId, messageId, amount);
+    group.dataset.ciLiveDiffSavedMessageId = messageId;
+    return true;
+  }
+
+  function persistVisibleLiveMessageCosts() {
+    const chatId = getCurrentChatIdFromUrl();
+    if (!chatId) return;
+
+    document.querySelectorAll(MESSAGE_SELECTOR).forEach((group) => {
+      const amount = Number(group.dataset?.ciLiveDiffCracker);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      persistLiveMessageCost(group, chatId);
+    });
   }
 
   function clearPendingMessageCost() {
@@ -1154,12 +1182,13 @@
 
     const messageId = getMessageGroupId(group);
     if (!messageId) {
-      // 화면에는 이미 즉시 표시됨. messageId가 붙는 순간 observer가 다시 들어와 영구 저장한다.
+      // 표시값은 DOM에 그대로 유지한다. messageId가 붙는 순간 observer가 같은 156을 저장한다.
       return true;
     }
 
-    saveMessageCost(pending.chatId, messageId, pending.amount);
-    clearLiveMessageCost(group);
+    // 저장 뒤에도 live 값을 지우지 않는다. 스트리밍 중 group id가 바뀌어도
+    // 화면의 값은 계속 156이고, observer가 새 id에 다시 저장한다.
+    persistLiveMessageCost(group, pending.chatId);
     pending.liveGroup = null;
     pendingMessageCost = null;
     scheduleMount(true);
@@ -1179,23 +1208,10 @@
       liveGroup: null,
     };
 
-    // 차감 감지는 입력창/채팅창이 완전히 같은 amount를 공유한다.
-    // generate_done이 이미 먼저 왔다면 최신 assistant 줄을 즉시 확정 저장하고,
-    // 아직 생성 중이면 새 DOM을 우선 찾는다.
-    const attached = tryAttachPendingMessageCost(Boolean(session.generateDoneAt));
-
-    // 크랙이 같은 assistant DOM을 스트리밍 중 재사용하는 경우에는
-    // "새 element" 판정이 실패할 수 있다. 그래도 화면 표시는 입력창처럼 즉시 보여야 하므로
-    // 현재 최신 assistant 줄에 live 값만 먼저 얹는다. 이 값은 새 DOM/ID가 확인되면 이동/영구 저장된다.
-    if (!attached && pendingMessageCost) {
-      const fallbackGroup = findNewestAssistantGroup();
-      if (fallbackGroup) {
-        pendingMessageCost.liveGroup = fallbackGroup;
-        fallbackGroup.dataset.ciLiveDiffCracker = String(pendingMessageCost.amount);
-        scheduleMount(true);
-      }
-    }
-
+    // 새 AI 응답 DOM이 이미 있으면 그 자리에서 바로 같은 amount를 표시/저장한다.
+    // 아직 DOM 자체가 없다면 붙일 곳이 없으므로 observer가 생기는 즉시 연결한다.
+    // 일반 생성 중 이전 AI 줄에 잘못 156을 얹는 fallback은 사용하지 않는다.
+    tryAttachPendingMessageCost(Boolean(session.generateDoneAt));
     return true;
   }
 
@@ -1552,6 +1568,8 @@
     lastGenerationChatId = null;
     lastGenerationStartedAt = 0;
     clearPendingMessageCost();
+    // SPA 방 전환 순간 이전 방 DOM이 잠깐 남아 있어도 live 차감값을 새 chatId에 저장하지 않게 제거한다.
+    document.querySelectorAll(MESSAGE_SELECTOR).forEach(clearLiveMessageCost);
     lastRoomDeductedAmount = null;
 
     // 턴 수는 방별 마지막 정상값을 localStorage에서 즉시 복구한다.
@@ -1579,8 +1597,17 @@
     const displayValue = normalized.toLocaleString('en-US');
     lastRoomDeductedAmount = normalized;
 
-    if (getSetting('placement') === 'composer') {
-      setStat('diffCracker', displayValue);
+    // 입력창/채팅창이 같은 차감 감지값을 단 하나의 source로 공유한다.
+    // 위치가 채팅창이어도 stats 값 자체는 항상 156으로 갱신해 둔다.
+    setStat('diffCracker', displayValue);
+
+    const chatId = getCurrentChatIdFromUrl();
+    if (chatId) {
+      if (activeGeneration?.chatId === chatId) {
+        queueMessageCostForGeneratedReply(activeGeneration, normalized);
+      } else {
+        saveCostToLatestAssistant(normalized);
+      }
     }
 
     console.log(`[CrackIndicator] -${normalized} 크래커`);
@@ -1597,15 +1624,19 @@
 
     const normalized = Math.max(0, Math.round(value));
 
-    // messageId가 이미 있으면 즉시 영구 저장한다.
+    // 화면 표시는 저장 성공 여부와 분리한다. 입력창에 156이 잡힌 순간
+    // 최신 AI DOM에도 동일한 156을 live 값으로 유지한다.
+    group.dataset.ciLiveDiffCracker = String(normalized);
+    scheduleMount(true);
+
+    // messageId가 이미 있으면 즉시 영구 저장한다. 이후 id가 바뀌면 observer가 재저장한다.
     if (messageId) {
-      const saved = saveMessageCost(chatId, messageId, normalized);
-      if (saved) scheduleMount(true);
-      return saved;
+      persistLiveMessageCost(group, chatId);
+      return true;
     }
 
     // 생성 시작 신호 자체를 놓친 특수 케이스에서도 입력창과 동일한 값을 즉시 표시한다.
-    // messageId가 나중에 붙으면 MutationObserver가 같은 pending 값을 영구 저장한다.
+    // messageId가 나중에 붙으면 MutationObserver가 같은 live 값을 영구 저장한다.
     pendingMessageCost = {
       chatId,
       amount: normalized,
@@ -1614,8 +1645,6 @@
       assistantGroupsAtStart: new Set(),
       liveGroup: group,
     };
-    group.dataset.ciLiveDiffCracker = String(normalized);
-    scheduleMount(true);
     return true;
   }
 
@@ -1623,14 +1652,7 @@
     if (!Number.isFinite(previousBalance) || !Number.isFinite(currentBalance)) return 0;
     if (currentBalance >= previousBalance) return 0;
 
-    const deducted = showDeductedAmount(previousBalance - currentBalance);
-
-    // 생성 시작 이벤트를 놓친 경우에도 채팅창 위치에서는 최신 AI 응답에 한 번 연결한다.
-    if (deducted > 0 && !activeGeneration) {
-      saveCostToLatestAssistant(deducted);
-    }
-
-    return deducted;
+    return showDeductedAmount(previousBalance - currentBalance);
   }
 
   async function pollBalanceDeduction(session) {
@@ -1656,7 +1678,6 @@
 
       if (balance < session.baselineBalance) {
         const deducted = showDeductedAmount(session.baselineBalance - balance);
-        queueMessageCostForGeneratedReply(session, deducted);
         lastObservedBalance = balance;
         lastBalanceCache = balance;
         lastBalanceFetchAt = Date.now();
@@ -2054,6 +2075,10 @@
       if (pendingMessageCost) {
         tryAttachPendingMessageCost(false);
       }
+
+      // 이미 표시 중인 live 차감값은 message-group-id가 바뀌어도 같은 DOM을 따라간다.
+      // 따라서 스트리밍 임시 id -> 최종 id 전환 시 최종 id에도 자동으로 영구 저장된다.
+      persistVisibleLiveMessageCosts();
 
       // 가상 스크롤로 과거 메시지가 재마운트되는 것만으로 messages API를 다시 읽지 않는다.
       // 실제 생성 세션 중 새 메시지 그룹 변화가 보일 때만 fallback 턴 갱신을 예약한다.
