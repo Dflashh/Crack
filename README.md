@@ -1,8 +1,8 @@
 # Crack 확장 프로그램
 
-## Crack UI Plus <v2.6.1>  
+## Crack UI Plus <v2.6.3>  
 <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/CrackUI.user.js"><img src="https://img.shields.io/badge/➕-Plus-blue?style=for-the-badge" alt="UIplus" /></a> <a href="Guide/UIplus.md"><img src="https://img.shields.io/badge/🔧-UI Plus 가이드-e9a01e?style=for-the-badge" alt="P가이드" /></a>
-## Crack UI Max <v3.0.0>  
+## Crack UI Max <v3.0.3>  
 <a href="https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/UImax.user.js"><img src="https://img.shields.io/badge/🌐-Max-blue?style=for-the-badge" alt="UImax" /></a> <a href="Guide/UImax.md"><img src="https://img.shields.io/badge/🔧-UI Max 가이드-e9a01e?style=for-the-badge" alt="M가이드" /></a>  
 
 <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=248591"><img src="https://img.shields.io/badge/📜-버그제보는 여기 댓글로-f52887?style=for-the-badge" alt="게시글" /></a>
@@ -22,7 +22,7 @@
 
 클린 리롤 >> 클립보드 기능
 ***
-## Crack Alibi <v1.0.5> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Alibi.user.js)
+## Crack Alibi <v1.3.3> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Alibi.user.js)
 <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=231353"><img src="https://img.shields.io/badge/📜-게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 
 유사 빨간약 / 이용 내역 상세조회
@@ -30,10 +30,3 @@
 ## SVG 워커 자동 생성기 <v2.9> [설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Cloudflare.user.js)
 <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=211439"><img src="https://img.shields.io/badge/📜-기본 설정 게시글-f52887?style=for-the-badge" alt="게시글" /></a> <a href="https://gall.dcinside.com/mini/board/view/?id=wrtnw&no=211810"><img src="https://img.shields.io/badge/📜-사용 방법 게시글-f52887?style=for-the-badge" alt="게시글" /></a>
 ***
-## 턴수 & 크래커 표시기 <v2.5>	[설치](https://github.com/Dflashh/Crack/raw/refs/heads/main/archive/crack-infoD.user.js)
-[패치 노트 & 참고 확프](https://github.com/Dflashh/Crack/blob/main/Patch%20Notes/crack-infoD.md)
-
-갤에 올라온 통합 확프로 설치하세요
-
-**기능**
-> 턴수 | 응답누적수 | 사용 크래커 | 잔여 크래커 | 차감 크래커
