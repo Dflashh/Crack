@@ -1,28 +1,39 @@
 // ==UserScript==
 // @name         Crack Alibi
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.5
+// @version      1.3.3
 // @description  선택한 기간의 크랙 사용 알리바이만 빠르게 조회합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
 // @connect      crack-api.wrtn.ai
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Alibi.webp
-// @downloadURL  https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Alibi.user.js
-// @updateURL    https://github.com/Dflashh/Crack/raw/refs/heads/main/Archive/Alibi.user.js
+// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackAlibi.user.js
+// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackAlibi.user.js
+// @require      https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js#sha256-lfTRy/CZ9XFhtmS8BIQm7D35JjeAGkx5EW6DMVqnh+c=
 // @grant        GM_addStyle
 // ==/UserScript==
 
 (function () {
   "use strict";
 
-  const ALIBI_VERSION = "v1.0.5";
+  const ALIBI_VERSION = "v1.3.3";
   const POINT = "#FE4532";
   const API = "https://crack-api.wrtn.ai/crack-cash/crackers/history";
-  // 이 API는 실제로 한 페이지에 10개만 주는 것으로 보여서 limit은 10 유지.
-  // 속도 개선은 limit을 올리는 게 아니라, 오래된 날짜 위치를 더 똑똑하게 찾는 방식으로 처리.
   const PAGE_LIMIT = 10;
   const MAX_PAGE = 20000;
   const LOOKBACK_YEARS = 1;
+  const CACHE_DB_NAME = "CrackAlibiCache";
+  const CACHE_DB_VERSION = 1;
+  const CACHE_STORE = "cache";
+  const LEGACY_CACHE_KEY = "main";
+  const ACCOUNT_CACHE_PREFIX = "account:";
+  const BACKUP_FORMAT = "CrackAlibiBackup";
+  const BACKUP_VERSION = 2;
+  const REDPILL_HISTORY_KEY = "chasmRedpillHistory";
+  const REDPILL_COMPRESSION_KEY = "chasmRedpillCompressionStatus";
+  const REDPILL_DB_NAME = "chasmRedpillDB";
+  const REDPILL_DB_STORE = "keyValue";
+  const REDPILL_DB_HISTORY_KEY = "redpillHistory";
 
   let currentAborter = null;
   let isSearching = false;
@@ -34,6 +45,11 @@
   let currentResultView = "summary";
   let currentCalendarMonth = "";
   let selectedCalendarDate = "";
+  let lastResultNotice = "";
+  let lastEmptyMessage = "";
+  let activeSearchRange = null;
+  let currentProgressMain = "알리바이 확인 중...";
+  let currentProgressSub = "기록 금고 뒤지는 중";
 
   const SPEEDS = {
     safe: { label: "기본", jump: 25, delay: 220, desc: "최근 내역 조회시" },
@@ -169,8 +185,9 @@
       }
       .ca-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 82px;
         gap: 12px;
+        align-items: end;
       }
       .ca-field label,
       .ca-speed-title {
@@ -211,6 +228,321 @@
         padding: 0;
       }
       body[data-theme="dark"] .ca-date { background: rgba(255,255,255,.10); color-scheme: dark; }
+      .ca-record-btn {
+        flex: 0 0 88px;
+        width: 88px;
+        height: 42px;
+        border: 0;
+        border-radius: 15px;
+        cursor: pointer;
+        padding: 0 14px;
+        background: rgba(254,69,50,.12);
+        color: ${POINT};
+        font-size: 14px;
+        font-weight: 950;
+        letter-spacing: -0.03em;
+      }
+      .ca-record-btn:hover { background: rgba(254,69,50,.17); }
+      .ca-record-btn:disabled { opacity: .48; cursor: not-allowed; }
+      body[data-theme="dark"] .ca-record-btn { background: rgba(254,69,50,.16); }
+      .ca-record-panel {
+        margin-top: 12px;
+        min-height: 0;
+      }
+      .ca-record-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .ca-record-title {
+        font-size: 17px;
+        font-weight: 950;
+        letter-spacing: -0.04em;
+      }
+      .ca-record-desc {
+        margin-top: 4px;
+        color: rgba(30,30,32,.50);
+        font-size: 11px;
+        line-height: 1.45;
+        font-weight: 750;
+      }
+      body[data-theme="dark"] .ca-record-desc { color: rgba(245,245,247,.48); }
+      .ca-record-close {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 999px;
+        cursor: pointer;
+        background: rgba(118,118,128,.12);
+        color: inherit;
+        font-size: 15px;
+        font-weight: 950;
+        flex: 0 0 auto;
+      }
+      .ca-record-meta {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0,1fr));
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .ca-record-stat {
+        border-radius: 15px;
+        padding: 10px;
+        background: rgba(118,118,128,.10);
+      }
+      body[data-theme="dark"] .ca-record-stat { background: rgba(255,255,255,.075); }
+      .ca-record-stat span {
+        display: block;
+        font-size: 10px;
+        opacity: .52;
+        font-weight: 850;
+      }
+      .ca-record-stat strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 14px;
+        font-weight: 950;
+        letter-spacing: -0.035em;
+      }
+      .ca-record-list {
+        max-height: 230px;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .ca-record-section-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 5px 2px 1px;
+        color: rgba(30,30,32,.50);
+        font-size: 10.5px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+      body[data-theme="dark"] .ca-record-section-label { color: rgba(245,245,247,.48); }
+      .ca-record-range {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        box-sizing: border-box;
+        border: 2px solid transparent;
+        border-radius: 14px;
+        padding: 9px 11px;
+        background: rgba(118,118,128,.09);
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 850;
+        transition: background .14s ease, border-color .14s ease, transform .14s ease;
+      }
+      .ca-record-range:hover { background: rgba(118,118,128,.14); }
+      .ca-record-range:active { transform: scale(.995); }
+      .ca-record-range.is-selected {
+        border-color: ${POINT};
+        background: rgba(254,69,50,.10);
+      }
+      .ca-record-range.is-redpill {
+        background: rgba(254,69,50,.055);
+      }
+      .ca-record-range.is-redpill:hover {
+        background: rgba(254,69,50,.095);
+      }
+      .ca-record-range.is-redpill.is-selected {
+        background: rgba(254,69,50,.13);
+      }
+      body[data-theme="dark"] .ca-record-range { background: rgba(255,255,255,.065); }
+      body[data-theme="dark"] .ca-record-range:hover { background: rgba(255,255,255,.10); }
+      body[data-theme="dark"] .ca-record-range.is-selected { background: rgba(254,69,50,.15); }
+      body[data-theme="dark"] .ca-record-range.is-redpill { background: rgba(254,69,50,.10); }
+      body[data-theme="dark"] .ca-record-range.is-redpill:hover { background: rgba(254,69,50,.15); }
+      .ca-record-range-main {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .ca-record-source-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 18px;
+        border-radius: 999px;
+        padding: 0 6px;
+        flex: 0 0 auto;
+        background: rgba(118,118,128,.13);
+        color: rgba(30,30,32,.58);
+        font-size: 9px;
+        font-weight: 950;
+      }
+      .ca-record-source-badge.is-redpill {
+        background: rgba(254,69,50,.12);
+        color: ${POINT};
+      }
+      body[data-theme="dark"] .ca-record-source-badge {
+        background: rgba(255,255,255,.09);
+        color: rgba(245,245,247,.58);
+      }
+      body[data-theme="dark"] .ca-record-source-badge.is-redpill {
+        background: rgba(254,69,50,.16);
+        color: #ff7a6d;
+      }
+      .ca-record-range-side {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        flex: 0 0 auto;
+      }
+      .ca-record-range small { opacity: .50; font-weight: 800; white-space: nowrap; }
+      .ca-record-check {
+        width: 18px;
+        height: 18px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(118,118,128,.14);
+        color: transparent;
+        font-size: 11px;
+        font-weight: 950;
+      }
+      .ca-record-range.is-selected .ca-record-check {
+        background: ${POINT};
+        color: white;
+      }
+      .ca-record-empty {
+        padding: 15px 8px;
+        text-align: center;
+        color: rgba(30,30,32,.48);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      body[data-theme="dark"] .ca-record-empty { color: rgba(245,245,247,.46); }
+      .ca-record-delete-box {
+        display: none;
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 15px;
+        background: rgba(118,118,128,.08);
+      }
+      .ca-record-delete-box.is-on { display: block; }
+      body[data-theme="dark"] .ca-record-delete-box { background: rgba(255,255,255,.06); }
+      .ca-record-delete-title {
+        margin-bottom: 7px;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+      .ca-record-delete-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+      }
+      .ca-record-delete-field label {
+        display: block;
+        margin: 0 0 5px;
+        font-size: 9px;
+        opacity: .52;
+        font-weight: 850;
+      }
+      .ca-record-delete-date {
+        width: 100%;
+        height: 34px;
+        box-sizing: border-box;
+        min-width: 0;
+        border: 0;
+        outline: none;
+        border-radius: 11px;
+        padding: 0 8px;
+        background: rgba(255,255,255,.72);
+        color: inherit;
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 850;
+        color-scheme: light;
+      }
+      body[data-theme="dark"] .ca-record-delete-date {
+        background: rgba(255,255,255,.09);
+        color-scheme: dark;
+      }
+      .ca-record-delete-hint {
+        margin-top: 7px;
+        font-size: 10px;
+        line-height: 1.35;
+        opacity: .50;
+        font-weight: 750;
+      }
+      .ca-record-transfer,
+      .ca-record-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .ca-record-transfer {
+        padding-top: 10px;
+        border-top: 1px solid rgba(118,118,128,.12);
+      }
+      body[data-theme="dark"] .ca-record-transfer {
+        border-top-color: rgba(255,255,255,.08);
+      }
+      .ca-record-action {
+        flex: 1;
+        height: 36px;
+        border: 0;
+        border-radius: 13px;
+        cursor: pointer;
+        padding: 0 10px;
+        background: rgba(118,118,128,.12);
+        color: inherit;
+        font-size: 12px;
+        font-weight: 900;
+      }
+      .ca-record-legacy {
+        margin-top: 12px;
+        border-radius: 16px;
+        padding: 12px;
+        background: rgba(254,69,50,.10);
+        color: ${POINT};
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.45;
+      }
+      .ca-record-legacy button {
+        margin-top: 9px;
+        min-height: 34px;
+        border: 0;
+        border-radius: 12px;
+        padding: 0 12px;
+        cursor: pointer;
+        background: ${POINT};
+        color: white;
+        font-weight: 900;
+      }
+      body[data-theme="dark"] .ca-record-legacy { background: rgba(254,69,50,.14); }
+      .ca-record-action.is-danger { color: ${POINT}; background: rgba(254,69,50,.10); }
+      .ca-record-action:disabled { opacity: .45; cursor: not-allowed; }
+      body[data-theme="dark"] .ca-record-action { background: rgba(255,255,255,.085); }
+      body[data-theme="dark"] .ca-record-action.is-danger { background: rgba(254,69,50,.14); }
+      .ca-record-redpill-info {
+        margin-top: 10px;
+        border-radius: 14px;
+        padding: 9px 11px;
+        background: rgba(254,69,50,.075);
+        color: rgba(30,30,32,.66);
+        font-size: 10.5px;
+        line-height: 1.42;
+        font-weight: 780;
+      }
+      body[data-theme="dark"] .ca-record-redpill-info {
+        background: rgba(254,69,50,.11);
+        color: rgba(245,245,247,.66);
+      }
       .ca-speed {
         margin-top: 14px;
       }
@@ -251,7 +583,7 @@
       .ca-speed-btn.is-on {
         background: ${POINT};
         color: white;
-        box-shadow: 0 10px 22px rgba(254,69,50,.28);
+        box-shadow: 0 4px 10px rgba(254,69,50,.18);
       }
       .ca-actions {
         display: flex;
@@ -273,7 +605,7 @@
         flex: 1;
         background: ${POINT};
         color: white;
-        box-shadow: 0 14px 30px rgba(254,69,50,.32);
+        box-shadow: 0 5px 12px rgba(254,69,50,.20);
       }
       .ca-primary:disabled { opacity: .55; cursor: not-allowed; }
       .ca-ghost {
@@ -418,6 +750,9 @@
       body[data-theme="dark"] .ca-limit-notice {
         background: rgba(254,69,50,.14);
       }
+      .ca-result-notice {
+        margin: 10px 0 0;
+      }
 
       .ca-result .spent { color: ${POINT}; }
       .ca-result .gain { color: #2C9F60; }
@@ -445,7 +780,7 @@
       .ca-view-tab.is-on {
         background: ${POINT};
         color: white;
-        box-shadow: 0 10px 22px rgba(254,69,50,.22);
+        box-shadow: 0 4px 10px rgba(254,69,50,.16);
       }
       .ca-view-content {
         display: flex;
@@ -646,6 +981,7 @@
           font-size: 13px;
           letter-spacing: -0.04em;
         }
+        .ca-record-btn { flex-basis: 82px; width: 82px; height: 40px; border-radius: 14px; }
         .ca-actions { margin-top: 12px; }
         .ca-primary,
         .ca-ghost {
@@ -684,6 +1020,8 @@
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 8px;
         }
+        .ca-record-field { grid-column: 1 / -1; }
+        .ca-record-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         .ca-stat-grid {
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 8px;
@@ -798,6 +1136,10 @@
         }
         .ca-primary,
         .ca-ghost { height: 38px; }
+        .ca-record-btn { flex-basis: 74px; width: 74px; height: 38px; border-radius: 12px; padding: 0 10px; }
+        .ca-record-meta { gap: 6px; }
+        .ca-record-stat { padding: 9px 6px; }
+        .ca-record-stat strong { font-size: 12px; }
         .ca-view-tab { min-height: 30px; }
         .ca-stat-grid { gap: 6px; }
         .ca-stat {
@@ -870,6 +1212,533 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function decodeJwtPayload(token) {
+    try {
+      const decodedToken = decodeURIComponent(String(token || ""));
+      const parts = decodedToken.split(".");
+      if (parts.length !== 3) return null;
+
+      let part = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      part += "=".repeat((4 - (part.length % 4)) % 4);
+
+      const binary = atob(part);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function sha256Hex(value) {
+    const bytes = new TextEncoder().encode(String(value));
+    const hash = await crypto.subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(hash)]
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  async function getCurrentAccountIdentity() {
+    const token = extractAccessToken();
+    if (!token) throw new Error("access_token을 못 찾음. 크랙에 다시 로그인하거나 새로고침해줘.");
+
+    const payload = decodeJwtPayload(token);
+    const rawId = payload?.id;
+    if (rawId == null || rawId === "") {
+      throw new Error("로그인 토큰에서 계정 id를 찾지 못함. 다시 로그인한 뒤 시도해줘.");
+    }
+
+    // raw id 자체는 저장하지 않고 해시만 계정 구분키로 사용.
+    const hash = await sha256Hex(`CrackAlibiAccount:${String(rawId)}`);
+    return {
+      key: `${ACCOUNT_CACHE_PREFIX}${hash}`,
+      hash,
+      fingerprint: hash.slice(0, 12),
+      idField: "id",
+    };
+  }
+
+  function createEmptyCacheRecord(key = "") {
+    return { key, ranges: [], rows: [], updatedAt: null };
+  }
+
+  function openCacheDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(CACHE_STORE)) {
+          db.createObjectStore(CACHE_STORE, { keyPath: "key" });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("기록 DB를 열 수 없음"));
+    });
+  }
+
+  async function loadCacheByKey(key) {
+    const db = await openCacheDB();
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, "readonly");
+        const request = tx.objectStore(CACHE_STORE).get(key);
+        request.onsuccess = () => resolve(request.result || createEmptyCacheRecord(key));
+        request.onerror = () => reject(request.error || new Error("기록을 읽을 수 없음"));
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function loadCacheData(accountKey = "") {
+    const key = accountKey || (await getCurrentAccountIdentity()).key;
+    return loadCacheByKey(key);
+  }
+
+  async function saveCacheData(cache, accountKey = "") {
+    const key = accountKey || (await getCurrentAccountIdentity()).key;
+    const db = await openCacheDB();
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, "readwrite");
+        tx.objectStore(CACHE_STORE).put({
+          ...cache,
+          key,
+          updatedAt: new Date().toISOString(),
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("기록을 저장할 수 없음"));
+        tx.onabort = () => reject(tx.error || new Error("기록 저장이 취소됨"));
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function deleteCacheByKey(key) {
+    const db = await openCacheDB();
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, "readwrite");
+        tx.objectStore(CACHE_STORE).delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("기록을 삭제할 수 없음"));
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function clearCacheData(accountKey = "") {
+    const key = accountKey || (await getCurrentAccountIdentity()).key;
+    await deleteCacheByKey(key);
+  }
+
+  function normalizeRedpillHistoryList(value) {
+    return Array.isArray(value) ? value.filter((item) => item && item.date) : [];
+  }
+
+  function makeRedpillHistoryKey(item) {
+    if (!item) return "";
+    const id = item.id || item.historyId || item.uuid || item.logId || "";
+    if (id) return `id:${id}`;
+    return [
+      item.date || "",
+      item.title || "",
+      item.product || "",
+      item.isConsumed === undefined ? "" : String(item.isConsumed),
+      item.consumedType || "",
+      item.quantity ?? item.balance?.total ?? "",
+      item.type || "",
+      item.reason || "",
+      item.source || "",
+    ].join("|");
+  }
+
+  function mergeRedpillHistoryRows(...lists) {
+    const map = new Map();
+    lists.flat().forEach((item) => {
+      if (!item || !item.date) return;
+      const key = makeRedpillHistoryKey(item);
+      if (!key || map.has(key)) return;
+      map.set(key, item);
+    });
+    return [...map.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  }
+
+  async function getRedpillLocalStorageHistory() {
+    const raw = localStorage.getItem(REDPILL_HISTORY_KEY);
+    if (!raw) return [];
+
+    let text = raw;
+    if (localStorage.getItem(REDPILL_COMPRESSION_KEY)) {
+      if (typeof LZString === "undefined" || typeof LZString.decompress !== "function") {
+        throw new Error("빨간약 압축 캐시를 풀 LZString을 불러오지 못했어.");
+      }
+      text = LZString.decompress(raw);
+      if (typeof text !== "string") throw new Error("빨간약 localStorage 압축 캐시를 풀지 못했어.");
+    }
+
+    try {
+      return normalizeRedpillHistoryList(JSON.parse(text));
+    } catch (_) {
+      throw new Error("빨간약 localStorage 캐시 JSON이 손상되어 있어.");
+    }
+  }
+
+  function openExistingRedpillDB() {
+    return new Promise((resolve) => {
+      if (!window.indexedDB) {
+        resolve(null);
+        return;
+      }
+
+      let created = false;
+      const request = indexedDB.open(REDPILL_DB_NAME);
+      request.onupgradeneeded = () => {
+        // DB가 없는데 가져오기 버튼만 눌렀다고 새 빨간약 DB를 만들지는 않는다.
+        created = true;
+        try { request.transaction?.abort(); } catch (_) {}
+      };
+      request.onsuccess = () => resolve(created ? null : request.result);
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    });
+  }
+
+  async function getRedpillIndexedDBHistory() {
+    const db = await openExistingRedpillDB();
+    if (!db) return [];
+    try {
+      if (!db.objectStoreNames.contains(REDPILL_DB_STORE)) return [];
+      return await new Promise((resolve) => {
+        const tx = db.transaction(REDPILL_DB_STORE, "readonly");
+        const request = tx.objectStore(REDPILL_DB_STORE).get(REDPILL_DB_HISTORY_KEY);
+        request.onsuccess = () => resolve(normalizeRedpillHistoryList(request.result));
+        request.onerror = () => resolve([]);
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function getRedpillBrowserCache() {
+    const [localRows, indexedRows] = await Promise.all([
+      getRedpillLocalStorageHistory(),
+      getRedpillIndexedDBHistory(),
+    ]);
+    return {
+      rows: mergeRedpillHistoryRows(indexedRows, localRows),
+      localCount: localRows.length,
+      indexedCount: indexedRows.length,
+    };
+  }
+
+  function makeRowFallbackMatchKey(row) {
+    const date = String(row?.date || "");
+    const title = String(row?.title || "제목 없음");
+    const consumed = String(Boolean(row?.isConsumed));
+    const quantity = String(extractQuantity(row));
+    return `${date}|${title}|${consumed}|${quantity}`;
+  }
+
+  function getRowMatchKeys(row) {
+    const keys = [makeRowFallbackMatchKey(row)];
+    const id = row?.id || row?.historyId || row?.uuid || row?.logId || "";
+    if (id) keys.unshift(`id:${id}`);
+    return keys;
+  }
+
+  function rowsHaveAnyMatch(leftRows, rightRows) {
+    const keys = new Set(rightRows.flatMap(getRowMatchKeys));
+    return leftRows.some((row) => getRowMatchKeys(row).some((key) => keys.has(key)));
+  }
+
+  async function verifyRedpillCacheAccount(redpillRows) {
+    const cutoff = getLookupCutoffDate();
+    const today = kstDateString(new Date());
+    const byDate = new Map();
+
+    for (const row of redpillRows) {
+      const date = safeKstDateString(row?.date);
+      if (!date || date < cutoff || date > today) continue;
+      if (!byDate.has(date)) byDate.set(date, []);
+      byDate.get(date).push(row);
+    }
+
+    const candidateDates = [...byDate.keys()].sort((a, b) => b.localeCompare(a)).slice(0, 3);
+    if (!candidateDates.length) {
+      return { status: "unknown", reason: "빨간약 캐시가 전부 API 최근 1년 범위 밖이라 계정을 자동 대조할 수 없음" };
+    }
+
+    for (const date of candidateDates) {
+      try {
+        const aborter = new AbortController();
+        const apiRows = await searchAlibi({
+          start: date,
+          end: date,
+          speedKey: "express",
+          signal: aborter.signal,
+        });
+        if (!apiRows.length) continue;
+
+        const sourceRows = byDate.get(date) || [];
+        if (rowsHaveAnyMatch(sourceRows, apiRows)) {
+          return { status: "verified", date };
+        }
+
+        return {
+          status: "mismatch",
+          date,
+          reason: `${date} 빨간약 캐시와 현재 계정 API 내역이 서로 맞지 않음`,
+        };
+      } catch (error) {
+        console.warn("[Crack Alibi] 빨간약 계정 대조 실패", error);
+      }
+    }
+
+    return { status: "unknown", reason: "현재 계정 API에서 대조할 수 있는 같은 날짜 내역을 찾지 못함" };
+  }
+
+  function makeAlibiRowKey(row) {
+    return makeRowFallbackMatchKey(row);
+  }
+
+  // 빨간약에서 실제 내역이 존재하는 날짜는 캐시 완료 날짜로 취급한다.
+  // v1.3.2 이하에서 이미 가져온 빨간약 row도 이 함수가 자동으로 완료 범위에 승격한다.
+  function promoteRedpillDatesToCoverage(cache) {
+    const base = normalizeBackupCache(cache || createEmptyCacheRecord());
+    const redpillRows = (base.rows || []).filter((row) => row?.cacheSource === "redpill");
+    const redpillRanges = getPresenceRangesFromRows(redpillRows);
+    const ranges = mergeCoverageRanges([...(base.ranges || []), ...redpillRanges]);
+    return {
+      key: cache?.key || base.key || "",
+      ranges,
+      rows: base.rows || [],
+      updatedAt: base.updatedAt || null,
+    };
+  }
+
+  function mergeRedpillIntoCache(currentCache, redpillRows) {
+    const current = normalizeBackupCache(currentCache || createEmptyCacheRecord());
+    const ranges = mergeCoverageRanges(current.ranges || []);
+    const nextRows = [...(current.rows || [])];
+    const existingKeys = new Set(nextRows.map(makeAlibiRowKey));
+    const importedDates = new Set();
+    let importedRows = 0;
+    let skippedCoveredRows = 0;
+    let skippedDuplicateRows = 0;
+    let invalidRows = 0;
+
+    for (const sourceRow of redpillRows) {
+      const date = String(sourceRow?.date || "");
+      const kstDate = safeKstDateString(date);
+      if (!kstDate || !isValidYMD(kstDate)) {
+        invalidRows++;
+        continue;
+      }
+
+      // Alibi가 API 조회 완료라고 확정한 날짜는 현재 금고가 무조건 우선.
+      if (dateInRanges(kstDate, ranges)) {
+        skippedCoveredRows++;
+        continue;
+      }
+
+      let kstTime = "";
+      try { kstTime = kstTimeString(date); } catch (_) {}
+      const converted = {
+        date,
+        kstDate,
+        kstTime,
+        title: String(sourceRow.title || "제목 없음"),
+        isConsumed: Boolean(sourceRow.isConsumed),
+        alibiQuantity: extractQuantity(sourceRow),
+        cacheSource: "redpill",
+      };
+      const key = makeAlibiRowKey(converted);
+      if (existingKeys.has(key)) {
+        skippedDuplicateRows++;
+        continue;
+      }
+
+      existingKeys.add(key);
+      nextRows.push(converted);
+      importedDates.add(kstDate);
+      importedRows++;
+    }
+
+    const sortedDates = [...importedDates].sort();
+    const redpillCoverage = getPresenceRangesFromRows(
+      nextRows.filter((row) => row?.cacheSource === "redpill")
+    );
+    const completedRanges = mergeCoverageRanges([...ranges, ...redpillCoverage]);
+    return {
+      cache: {
+        key: currentCache?.key || "",
+        ranges: completedRanges,
+        rows: nextRows,
+        updatedAt: current.updatedAt || null,
+      },
+      importedRows,
+      importedDates: importedDates.size,
+      firstDate: sortedDates[0] || "",
+      lastDate: sortedDates[sortedDates.length - 1] || "",
+      skippedCoveredRows,
+      skippedDuplicateRows,
+      invalidRows,
+    };
+  }
+
+  function hasCacheData(cache) {
+    return Boolean(
+      (Array.isArray(cache?.ranges) && cache.ranges.length > 0) ||
+      (Array.isArray(cache?.rows) && cache.rows.length > 0)
+    );
+  }
+
+  function isValidYMD(value) {
+    const text = String(value || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+    const { year, month, day } = parseYMD(text);
+    if (!year || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return false;
+    return makeYMD(year, month, day) === text;
+  }
+
+  function normalizeBackupCache(rawCache) {
+    if (!rawCache || typeof rawCache !== "object") {
+      throw new Error("백업 안에 기록 데이터가 없음");
+    }
+
+    const rawRanges = Array.isArray(rawCache.ranges) ? rawCache.ranges : [];
+    const ranges = mergeCoverageRanges(rawRanges.map((range) => {
+      let start = String(range?.start || "");
+      let end = String(range?.end || "");
+      if (!isValidYMD(start) || !isValidYMD(end)) return null;
+      if (start > end) [start, end] = [end, start];
+      return { start, end };
+    }).filter(Boolean));
+
+    const rawRows = Array.isArray(rawCache.rows) ? rawCache.rows : [];
+    const rows = rawRows.map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const date = String(row.date || "");
+      const kstDate = String(row.kstDate || safeKstDateString(date) || "");
+      if (!isValidYMD(kstDate)) return null;
+
+      let kstTime = String(row.kstTime || "");
+      if (!kstTime && date) {
+        try { kstTime = kstTimeString(date); } catch (_) { kstTime = ""; }
+      }
+
+      const quantity = row.alibiQuantity != null
+        ? Number(row.alibiQuantity) || 0
+        : extractQuantity(row);
+
+      return {
+        date,
+        kstDate,
+        kstTime,
+        title: String(row.title || "제목 없음"),
+        isConsumed: Boolean(row.isConsumed),
+        alibiQuantity: quantity,
+        ...(row.cacheSource === "redpill" ? { cacheSource: "redpill" } : {}),
+      };
+    }).filter(Boolean);
+
+    return {
+      key: String(rawCache.key || ""),
+      ranges,
+      rows,
+      updatedAt: typeof rawCache.updatedAt === "string" ? rawCache.updatedAt : null,
+    };
+  }
+
+  function buildBackupPayload(cache, identity) {
+    const normalized = normalizeBackupCache(cache || createEmptyCacheRecord(identity?.key || ""));
+    return {
+      format: BACKUP_FORMAT,
+      formatVersion: BACKUP_VERSION,
+      appVersion: ALIBI_VERSION,
+      exportedAt: new Date().toISOString(),
+      account: {
+        key: identity.key,
+        fingerprint: identity.fingerprint,
+        idField: identity.idField,
+      },
+      cache: {
+        ranges: normalized.ranges,
+        rows: normalized.rows,
+        updatedAt: normalized.updatedAt,
+      },
+    };
+  }
+
+  async function downloadCacheBackup() {
+    const identity = await getCurrentAccountIdentity();
+    const cache = await loadCacheData(identity.key);
+    const payload = buildBackupPayload(cache, identity);
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `crack_alibi_backup_${identity.fingerprint}_${kstDateString(new Date())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function readCacheBackupFile(file) {
+    if (!file) throw new Error("복원할 백업 파일을 골라줘.");
+
+    let parsed;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch (_) {
+      throw new Error("JSON 백업 파일을 읽을 수 없음");
+    }
+
+    let rawCache = null;
+    let accountKey = null;
+    let accountFingerprint = null;
+    let legacy = false;
+
+    if (parsed?.format === BACKUP_FORMAT) {
+      const version = Number(parsed.formatVersion);
+      if (version !== 1 && version !== BACKUP_VERSION) {
+        throw new Error(`지원하지 않는 백업 버전임: ${parsed.formatVersion ?? "알 수 없음"}`);
+      }
+
+      rawCache = parsed.cache;
+      if (version >= 2) {
+        accountKey = typeof parsed?.account?.key === "string" ? parsed.account.key : null;
+        accountFingerprint = typeof parsed?.account?.fingerprint === "string"
+          ? parsed.account.fingerprint
+          : accountKey?.startsWith(ACCOUNT_CACHE_PREFIX)
+            ? accountKey.slice(ACCOUNT_CACHE_PREFIX.length, ACCOUNT_CACHE_PREFIX.length + 12)
+            : null;
+        if (!accountKey?.startsWith(ACCOUNT_CACHE_PREFIX)) {
+          throw new Error("백업의 계정 식별 정보가 손상됨");
+        }
+      } else {
+        legacy = true;
+      }
+    } else if (Array.isArray(parsed?.ranges) && Array.isArray(parsed?.rows)) {
+      // v1.1.6 이전에 cache 객체 자체를 저장한 수동 백업도 읽을 수는 있음.
+      rawCache = parsed;
+      legacy = true;
+    } else {
+      throw new Error("Crack Alibi 기록 백업 파일이 아님");
+    }
+
+    return {
+      cache: normalizeBackupCache(rawCache),
+      accountKey,
+      accountFingerprint,
+      legacy,
+    };
+  }
+
   function extractAccessToken() {
     return document.cookie
       .split(";")
@@ -878,6 +1747,7 @@
   }
 
   function extractQuantity(row) {
+    if (row.alibiQuantity != null) return Number(row.alibiQuantity) || 0;
     if (row.quantity != null) return Number(row.quantity) || 0;
     if (row.product === "cracker") return Number(row?.balance?.total) || 0;
     if (row.product === "superchat") return (Number(row?.balance?.total) || 0) * 35;
@@ -897,7 +1767,23 @@
     if (result) result.innerHTML = html;
   }
 
+  function setResultNotice(message = "") {
+    const notice = document.querySelector("#ca-result-notice");
+    if (!notice) return;
+
+    if (!message) {
+      notice.style.display = "none";
+      notice.innerHTML = "";
+      return;
+    }
+
+    notice.innerHTML = formatMessageHTML(message);
+    notice.style.display = "block";
+  }
+
   function setLoading(message = "알리바이 확인 중...", subMessage = "기록 금고 뒤지는 중") {
+    currentProgressMain = message;
+    currentProgressSub = subMessage;
     setResultHTML(`
       <div class="ca-loading">
         <div class="ca-spinner"></div>
@@ -908,6 +1794,8 @@
   }
 
   function setProgress(message, subMessage = "") {
+    currentProgressMain = message;
+    currentProgressSub = subMessage;
     const main = document.querySelector("#ca-loading-main");
     const sub = document.querySelector("#ca-loading-sub");
 
@@ -1014,6 +1902,241 @@
 
   function makeYMD(year, month, day) {
     return `${year}-${pad2(month)}-${pad2(day)}`;
+  }
+
+  function addDaysToYMD(ymd, delta) {
+    const { year, month, day } = parseYMD(ymd);
+    const date = new Date(Date.UTC(year, month - 1, day + delta));
+    return makeYMD(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  }
+
+  function countDaysInclusive(start, end) {
+    const s = parseYMD(start);
+    const e = parseYMD(end);
+    const startMs = Date.UTC(s.year, s.month - 1, s.day);
+    const endMs = Date.UTC(e.year, e.month - 1, e.day);
+    return Math.max(0, Math.floor((endMs - startMs) / 86400000) + 1);
+  }
+
+  function getPresenceRangesFromRows(rows = []) {
+    const dates = [...new Set(
+      (Array.isArray(rows) ? rows : [])
+        .map((row) => row?.kstDate || safeKstDateString(row?.date))
+        .filter((date) => date && isValidYMD(date))
+    )].sort();
+
+    const ranges = [];
+    for (const date of dates) {
+      const last = ranges[ranges.length - 1];
+      if (last && date === addDaysToYMD(last.end, 1)) {
+        last.end = date;
+      } else {
+        ranges.push({ start: date, end: date });
+      }
+    }
+
+    return ranges;
+  }
+
+  function mergeCoverageRanges(ranges = []) {
+    const sorted = ranges
+      .filter((range) => range?.start && range?.end && range.start <= range.end)
+      .map((range) => ({ start: range.start, end: range.end }))
+      .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+    const merged = [];
+
+    for (const range of sorted) {
+      const last = merged[merged.length - 1];
+      if (!last || range.start > addDaysToYMD(last.end, 1)) {
+        merged.push({ ...range });
+      } else if (range.end > last.end) {
+        last.end = range.end;
+      }
+    }
+
+    return merged;
+  }
+
+  function subtractCoverage(start, end, ranges = []) {
+    const covered = mergeCoverageRanges(ranges);
+    const missing = [];
+    let cursor = start;
+
+    for (const range of covered) {
+      if (range.end < cursor) continue;
+      if (range.start > end) break;
+
+      if (range.start > cursor) {
+        missing.push({ start: cursor, end: addDaysToYMD(range.start, -1) });
+      }
+
+      if (range.end >= cursor) cursor = addDaysToYMD(range.end, 1);
+      if (cursor > end) break;
+    }
+
+    if (cursor <= end) missing.push({ start: cursor, end });
+    return missing;
+  }
+
+  function removeCoverage(ranges, start, end) {
+    const next = [];
+
+    for (const range of mergeCoverageRanges(ranges)) {
+      if (range.end < start || range.start > end) {
+        next.push(range);
+        continue;
+      }
+
+      if (range.start < start) {
+        next.push({ start: range.start, end: addDaysToYMD(start, -1) });
+      }
+      if (range.end > end) {
+        next.push({ start: addDaysToYMD(end, 1), end: range.end });
+      }
+    }
+
+    return mergeCoverageRanges(next);
+  }
+
+  function toCacheRow(row) {
+    const date = String(row.date || "");
+    return {
+      date,
+      kstDate: row.kstDate || safeKstDateString(date),
+      kstTime: row.kstTime || (date ? kstTimeString(date) : ""),
+      title: row.title || "제목 없음",
+      isConsumed: Boolean(row.isConsumed),
+      alibiQuantity: extractQuantity(row),
+      ...(row.cacheSource === "redpill" ? { cacheSource: "redpill" } : {}),
+    };
+  }
+
+  function getCachedRowsInRange(cache, start, end) {
+    return (Array.isArray(cache?.rows) ? cache.rows : []).filter((row) => {
+      const date = row.kstDate || safeKstDateString(row.date);
+      return date && date >= start && date <= end;
+    });
+  }
+
+  function applyFetchedRangeToCache(cache, start, end, rows) {
+    const base = cache || createEmptyCacheRecord();
+    const remainingRows = (Array.isArray(base.rows) ? base.rows : []).filter((row) => {
+      const date = row.kstDate || safeKstDateString(row.date);
+      return !date || date < start || date > end;
+    });
+    const nextRows = remainingRows.concat(rows.map(toCacheRow));
+    const today = kstDateString(new Date());
+    const stableEnd = end >= today ? addDaysToYMD(today, -1) : end;
+    const nextRanges = start <= stableEnd
+      ? mergeCoverageRanges([...(base.ranges || []), { start, end: stableEnd }])
+      : mergeCoverageRanges(base.ranges || []);
+
+    return {
+      key: base.key || "",
+      ranges: nextRanges,
+      rows: nextRows,
+      updatedAt: base.updatedAt || null,
+    };
+  }
+
+  function deleteCacheRange(cache, start, end) {
+    return {
+      key: cache?.key || "",
+      ranges: removeCoverage(cache?.ranges || [], start, end),
+      rows: (cache?.rows || []).filter((row) => {
+        const date = row.kstDate || safeKstDateString(row.date);
+        return !date || date < start || date > end;
+      }),
+      updatedAt: cache?.updatedAt || null,
+    };
+  }
+
+  function deleteRedpillRowsRange(cache, start, end) {
+    return {
+      key: cache?.key || "",
+      // 빨간약 날짜는 캐시 완료 취급이므로 row 삭제 시 완료 범위도 같이 해제한다.
+      // 이후 같은 기간을 검사하면 API에서 다시 조회된다.
+      ranges: removeCoverage(cache?.ranges || [], start, end),
+      rows: (cache?.rows || []).filter((row) => {
+        if (row?.cacheSource !== "redpill") return true;
+        const date = row.kstDate || safeKstDateString(row.date);
+        return !date || date < start || date > end;
+      }),
+      updatedAt: cache?.updatedAt || null,
+    };
+  }
+
+  function dateInRanges(date, ranges = []) {
+    return ranges.some((range) => date >= range.start && date <= range.end);
+  }
+
+  function mergeRestoredCache(currentCache, backupCache) {
+    const current = normalizeBackupCache(currentCache || createEmptyCacheRecord());
+    const backup = normalizeBackupCache(backupCache || createEmptyCacheRecord());
+    let mergedRanges = mergeCoverageRanges(current.ranges || []);
+    const importRanges = [];
+
+    for (const backupRange of mergeCoverageRanges(backup.ranges || [])) {
+      const missing = subtractCoverage(backupRange.start, backupRange.end, mergedRanges);
+      if (!missing.length) continue;
+      importRanges.push(...missing);
+      mergedRanges = mergeCoverageRanges([...mergedRanges, ...missing]);
+    }
+
+    // 이미 완료 기록인 날짜는 현재 금고가 우선. 없는 날짜만 백업에서 통째로 가져온다.
+    // 미완료 날짜에 남아 있던 임시 row가 있으면 백업의 완성된 날짜 데이터로 교체한다.
+    const keptCurrentRows = (current.rows || []).filter((row) => {
+      const date = row.kstDate || safeKstDateString(row.date);
+      return !date || !dateInRanges(date, importRanges);
+    });
+    const importedRows = (backup.rows || []).filter((row) => {
+      const date = row.kstDate || safeKstDateString(row.date);
+      return Boolean(date && dateInRanges(date, importRanges));
+    });
+
+    const backupDays = (backup.ranges || []).reduce(
+      (sum, range) => sum + countDaysInclusive(range.start, range.end),
+      0
+    );
+    const importedDays = importRanges.reduce(
+      (sum, range) => sum + countDaysInclusive(range.start, range.end),
+      0
+    );
+
+    return {
+      cache: {
+        key: currentCache?.key || "",
+        ranges: mergedRanges,
+        rows: keptCurrentRows.concat(importedRows),
+        updatedAt: current.updatedAt || null,
+      },
+      importRanges: mergeCoverageRanges(importRanges),
+      importedDays,
+      skippedDays: Math.max(0, backupDays - importedDays),
+      importedRows: importedRows.length,
+    };
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function formatCacheUpdatedAt(value) {
+    if (!value) return "없음";
+    try {
+      return new Intl.DateTimeFormat("ko-KR", {
+        timeZone: "Asia/Seoul",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(value));
+    } catch (_) {
+      return "알 수 없음";
+    }
   }
 
   function addYearsToYMD(ymd, delta) {
@@ -1591,11 +2714,13 @@
     return found;
   }
 
-  function renderResults(rawRows, start, end, notice = "") {
+  function renderResults(rawRows, start, end, notice = "", emptyMessage = "") {
     lastRawRows = rawRows;
     lastSummaryRows = summarizeRows(rawRows);
     lastRangeStart = start;
     lastRangeEnd = end;
+    lastResultNotice = notice;
+    lastEmptyMessage = emptyMessage;
     currentResultView = "summary";
     currentCalendarMonth = "";
     selectedCalendarDate = "";
@@ -1603,8 +2728,11 @@
     const totals = sumRows(rawRows);
     const period = start === end ? start : `${start} ~ ${end}`;
 
+    // 조회/기록 안내는 결과 카드 안이 아니라 검사 버튼과 결과 카드 사이에 표시.
+    setResultNotice(notice);
+
     if (rawRows.length === 0) {
-      setEmpty(notice ? `${notice}\n\n${period} 알리바이 없음` : `${period} 알리바이 없음`);
+      setEmpty(emptyMessage || `${period} 알리바이 없음`);
       return;
     }
 
@@ -1613,7 +2741,6 @@
         <h3>${period}</h3>
         <button type="button" class="ca-download" id="ca-download-csv">CSV 저장</button>
       </div>
-      ${notice ? `<div class="ca-limit-notice">${formatMessageHTML(notice)}</div>` : ""}
       <div class="ca-view-tabs" role="tablist" aria-label="결과 보기 방식">
         <button type="button" class="ca-view-tab is-on" data-view="summary" role="tab">전체</button>
         <button type="button" class="ca-view-tab" data-view="calendar" role="tab">달력</button>
@@ -1693,20 +2820,462 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  async function renderRecordPanel() {
+    const panel = document.querySelector("#ca-record-panel");
+    if (!panel) return;
+
+    panel.style.display = "block";
+    panel.innerHTML = `<div class="ca-record-empty">기록 확인 중...</div>`;
+
+    try {
+      const identity = await getCurrentAccountIdentity();
+      const loadedCache = await loadCacheData(identity.key);
+      const beforeRangesJSON = JSON.stringify(mergeCoverageRanges(loadedCache.ranges || []));
+      const cache = promoteRedpillDatesToCoverage(loadedCache);
+      if (JSON.stringify(cache.ranges) !== beforeRangesJSON) {
+        await saveCacheData(cache, identity.key);
+      }
+      const legacyCache = await loadCacheByKey(LEGACY_CACHE_KEY);
+      const hasLegacy = hasCacheData(legacyCache);
+      const ranges = mergeCoverageRanges(cache.ranges || []);
+      const rows = Array.isArray(cache.rows) ? cache.rows : [];
+      const redpillRows = rows.filter((row) => row?.cacheSource === "redpill");
+      const redpillRanges = getPresenceRangesFromRows(redpillRows);
+      let alibiRanges = [...ranges];
+      for (const redpillRange of redpillRanges) {
+        alibiRanges = removeCoverage(alibiRanges, redpillRange.start, redpillRange.end);
+      }
+      const coveredDays = ranges.reduce((sum, range) => sum + countDaysInclusive(range.start, range.end), 0);
+      const alibiDays = alibiRanges.reduce((sum, range) => sum + countDaysInclusive(range.start, range.end), 0);
+      const redpillDays = redpillRanges.reduce((sum, range) => sum + countDaysInclusive(range.start, range.end), 0);
+      const visibleStoredDays = coveredDays;
+      const approxBytes = new Blob([JSON.stringify(cache)]).size;
+
+      const completedRangesHTML = alibiRanges.length
+        ? `
+          <div class="ca-record-section-label"><span>Alibi 조회 완료</span><span>${formatNumber(alibiDays)}일</span></div>
+          ${alibiRanges.map((range) => `
+            <button type="button" class="ca-record-range" data-kind="coverage" data-start="${escapeHTML(range.start)}" data-end="${escapeHTML(range.end)}" aria-pressed="false">
+              <span class="ca-record-range-main">
+                <span class="ca-record-source-badge">완료</span>
+                <span>${escapeHTML(range.start)} ~ ${escapeHTML(range.end)}</span>
+              </span>
+              <span class="ca-record-range-side">
+                <small>${formatNumber(countDaysInclusive(range.start, range.end))}일</small>
+                <span class="ca-record-check">✓</span>
+              </span>
+            </button>
+          `).join("")}
+        `
+        : "";
+
+      const redpillRangesHTML = redpillRanges.length
+        ? `
+          <div class="ca-record-section-label"><span>빨간약 캐시 완료</span><span>${formatNumber(redpillDays)}일</span></div>
+          ${redpillRanges.map((range) => `
+            <button type="button" class="ca-record-range is-redpill" data-kind="redpill" data-start="${escapeHTML(range.start)}" data-end="${escapeHTML(range.end)}" aria-pressed="false">
+              <span class="ca-record-range-main">
+                <span class="ca-record-source-badge is-redpill">빨간약</span>
+                <span>${escapeHTML(range.start)}${range.start === range.end ? "" : ` ~ ${escapeHTML(range.end)}`}</span>
+              </span>
+              <span class="ca-record-range-side">
+                <small>${formatNumber(countDaysInclusive(range.start, range.end))}일</small>
+                <span class="ca-record-check">✓</span>
+              </span>
+            </button>
+          `).join("")}
+        `
+        : "";
+
+      const rangesHTML = completedRangesHTML || redpillRangesHTML
+        ? `${completedRangesHTML}${redpillRangesHTML}`
+        : `<div class="ca-record-empty">아직 저장된 기록 없음<br>검사하거나 빨간약 캐시를 가져오면 여기에 날짜가 표시됨</div>`;
+
+      panel.innerHTML = `
+        <div class="ca-record-head">
+          <div>
+            <div class="ca-record-title">기록 금고</div>
+            <div class="ca-record-desc">현재 계정 ${escapeHTML(identity.fingerprint)} · 완료된 과거 날짜는 계정별로 따로 저장. JSON 백업도 같은 계정끼리만 자동 병합함.</div>
+          </div>
+          <button type="button" class="ca-record-close" id="ca-record-close" aria-label="기록 닫기">×</button>
+        </div>
+        <div class="ca-record-meta">
+          <div class="ca-record-stat"><span>보유 날짜</span><strong>${formatNumber(visibleStoredDays)}일</strong><span>Alibi ${formatNumber(alibiDays)}일${redpillDays ? ` · 빨간약 ${formatNumber(redpillDays)}일` : ""}</span></div>
+          <div class="ca-record-stat"><span>저장 내역</span><strong>${formatNumber(rows.length)}개</strong>${redpillRows.length ? `<span>빨간약 ${formatNumber(redpillRows.length)}개</span>` : ""}</div>
+          <div class="ca-record-stat"><span>용량 / 갱신</span><strong>${formatBytes(approxBytes)}</strong><span>${escapeHTML(formatCacheUpdatedAt(cache.updatedAt))}</span></div>
+        </div>
+        ${hasLegacy ? `
+          <div class="ca-record-legacy">
+            이전 버전의 계정 미분류 기록이 남아 있음. 어느 계정 기록인지 자동 판별할 수 없어서 현재 금고에는 아직 넣지 않았어.
+            <button type="button" id="ca-record-claim-legacy">현재 계정으로 가져오기</button>
+          </div>
+        ` : ""}
+        <div class="ca-record-list">${rangesHTML}</div>
+        <div class="ca-record-delete-box" id="ca-record-delete-box">
+          <div class="ca-record-delete-title">선택한 기록에서 삭제할 날짜만 지정</div>
+          <div class="ca-record-delete-grid">
+            <div class="ca-record-delete-field">
+              <label for="ca-record-delete-start">삭제 시작일</label>
+              <input type="date" class="ca-record-delete-date" id="ca-record-delete-start">
+            </div>
+            <div class="ca-record-delete-field">
+              <label for="ca-record-delete-end">삭제 종료일</label>
+              <input type="date" class="ca-record-delete-date" id="ca-record-delete-end">
+            </div>
+          </div>
+          <div class="ca-record-delete-hint">구간 전체를 지우려면 그대로 두고, 일부만 지우려면 원하는 날짜로 좁혀서 삭제하면 됨.</div>
+        </div>
+        <div class="ca-record-transfer">
+          <button type="button" class="ca-record-action" id="ca-record-import-redpill">빨간약 가져오기</button>
+          <button type="button" class="ca-record-action" id="ca-record-backup">백업</button>
+          <button type="button" class="ca-record-action" id="ca-record-restore">복원</button>
+          <input type="file" id="ca-record-restore-file" accept=".json,application/json" hidden>
+        </div>
+        <div class="ca-record-actions">
+          <button type="button" class="ca-record-action" id="ca-record-delete-range" disabled>지정 기간 삭제</button>
+          <button type="button" class="ca-record-action is-danger" id="ca-record-clear">전체 기록 삭제</button>
+        </div>
+      `;
+
+      panel.querySelector("#ca-record-close")?.addEventListener("click", () => {
+        panel.style.display = "none";
+      });
+
+      let selectedRecordRange = null;
+      const deleteRangeButton = panel.querySelector("#ca-record-delete-range");
+      const deleteBox = panel.querySelector("#ca-record-delete-box");
+      const deleteStartInput = panel.querySelector("#ca-record-delete-start");
+      const deleteEndInput = panel.querySelector("#ca-record-delete-end");
+      const rangeButtons = [...panel.querySelectorAll(".ca-record-range[data-start][data-end]")];
+
+      function syncDeleteRangeUI() {
+        const hasSelection = Boolean(selectedRecordRange);
+        deleteBox?.classList.toggle("is-on", hasSelection);
+        if (deleteRangeButton) deleteRangeButton.disabled = !hasSelection;
+
+        if (!hasSelection) {
+          if (deleteStartInput) {
+            deleteStartInput.value = "";
+            deleteStartInput.removeAttribute("min");
+            deleteStartInput.removeAttribute("max");
+          }
+          if (deleteEndInput) {
+            deleteEndInput.value = "";
+            deleteEndInput.removeAttribute("min");
+            deleteEndInput.removeAttribute("max");
+          }
+          return;
+        }
+
+        const { start, end } = selectedRecordRange;
+        if (deleteStartInput) {
+          deleteStartInput.min = start;
+          deleteStartInput.max = end;
+          deleteStartInput.value = start;
+        }
+        if (deleteEndInput) {
+          deleteEndInput.min = start;
+          deleteEndInput.max = end;
+          deleteEndInput.value = end;
+        }
+      }
+
+      rangeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const start = button.dataset.start;
+          const end = button.dataset.end;
+          const alreadySelected = button.classList.contains("is-selected");
+
+          rangeButtons.forEach((item) => {
+            item.classList.remove("is-selected");
+            item.setAttribute("aria-pressed", "false");
+          });
+
+          if (alreadySelected) {
+            selectedRecordRange = null;
+          } else {
+            button.classList.add("is-selected");
+            button.setAttribute("aria-pressed", "true");
+            selectedRecordRange = { start, end, kind: button.dataset.kind || "coverage" };
+          }
+
+          syncDeleteRangeUI();
+        });
+      });
+
+      deleteRangeButton?.addEventListener("click", async () => {
+        if (!selectedRecordRange) return;
+
+        let start = deleteStartInput?.value || "";
+        let end = deleteEndInput?.value || "";
+        if (!start || !end) {
+          alert("삭제 시작일과 종료일을 둘 다 골라줘.");
+          return;
+        }
+        if (start > end) [start, end] = [end, start];
+
+        if (start < selectedRecordRange.start || end > selectedRecordRange.end) {
+          alert(`선택한 기록 구간(${selectedRecordRange.start} ~ ${selectedRecordRange.end}) 안에서만 삭제할 수 있어.`);
+          return;
+        }
+
+        const isRedpillSelection = selectedRecordRange.kind === "redpill";
+        const confirmMessage = isRedpillSelection
+          ? `${start} ~ ${end} 빨간약 캐시 내역을 삭제할까?\n이 날짜의 캐시 완료 표시도 같이 풀려서 다음 검사 때 API로 다시 조회돼.`
+          : `${start} ~ ${end} 저장 기록만 삭제할까?\n나머지 날짜 기록은 그대로 남아.`;
+        if (!confirm(confirmMessage)) return;
+
+        const latest = await loadCacheData(identity.key);
+        const nextCache = isRedpillSelection
+          ? deleteRedpillRowsRange(latest, start, end)
+          : deleteCacheRange(latest, start, end);
+        await saveCacheData(nextCache, identity.key);
+        await renderRecordPanel();
+      });
+
+      panel.querySelector("#ca-record-import-redpill")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "빨간약 읽는 중...";
+
+        try {
+          const source = await getRedpillBrowserCache();
+          if (!source.rows.length) {
+            alert("이 브라우저에서 빨간약 저장 캐시를 찾지 못했어.");
+            return;
+          }
+
+          button.textContent = "계정 확인 중...";
+          const currentIdentity = await getCurrentAccountIdentity();
+          const verification = await verifyRedpillCacheAccount(source.rows);
+
+          if (verification.status === "mismatch") {
+            throw new Error(
+              `현재 로그인 계정과 빨간약 캐시가 다른 계정으로 보여서 가져오기를 막았어.\n` +
+              `대조 날짜: ${verification.date}\n\n` +
+              `빨간약 캐시는 계정별 저장소가 아니라서, 다른 계정 기록을 가져오면 금고가 섞일 수 있어.`
+            );
+          }
+
+          if (verification.status === "unknown") {
+            const proceed = confirm(
+              `빨간약 캐시 ${formatNumber(source.rows.length)}개를 찾았지만 현재 계정인지 자동 확인하지 못했어.\n\n` +
+              `${verification.reason}\n\n` +
+              `이 빨간약 캐시가 현재 로그인 계정(${currentIdentity.fingerprint}) 기록이 확실하면 [확인]을 눌러줘.\n` +
+              `다른 계정 기록일 가능성이 있으면 취소해.`
+            );
+            if (!proceed) return;
+          }
+
+          const current = await loadCacheData(currentIdentity.key);
+          const merged = mergeRedpillIntoCache(current, source.rows);
+
+          if (merged.importedRows === 0) {
+            alert(
+              `새로 가져올 빨간약 내역이 없어.\n\n` +
+              `빨간약 캐시: ${formatNumber(source.rows.length)}개\n` +
+              `이미 Alibi 완료 날짜라 제외: ${formatNumber(merged.skippedCoveredRows)}개\n` +
+              `이미 같은 내역이 있어 제외: ${formatNumber(merged.skippedDuplicateRows)}개`
+            );
+            return;
+          }
+
+          const verificationText = verification.status === "verified"
+            ? `계정 자동 확인 완료 (${verification.date} 내역 일치)`
+            : "계정 자동 확인 불가 · 사용자 확인으로 진행";
+          const rangeText = merged.firstDate === merged.lastDate
+            ? merged.firstDate
+            : `${merged.firstDate} ~ ${merged.lastDate}`;
+
+          const ok = confirm(
+            `빨간약 브라우저 캐시를 현재 Alibi 금고로 가져올까?\n\n` +
+            `${verificationText}\n` +
+            `빨간약 원본: ${formatNumber(source.rows.length)}개 (localStorage ${formatNumber(source.localCount)} / IndexedDB ${formatNumber(source.indexedCount)})\n` +
+            `새로 추가: ${formatNumber(merged.importedRows)}개 · ${formatNumber(merged.importedDates)}일\n` +
+            `추가 범위: ${rangeText}\n` +
+            `Alibi 완료 날짜라 건너뜀: ${formatNumber(merged.skippedCoveredRows)}개\n` +
+            `중복이라 건너뜀: ${formatNumber(merged.skippedDuplicateRows)}개\n\n` +
+            `빨간약에서 실제 내역이 존재하는 날짜는 Alibi에서도 캐시 완료로 취급해.\n` +
+            `이 날짜는 이후 검사 때 API를 다시 조회하지 않고 금고에서 바로 불러와. 다시 조회하려면 기록에서 해당 날짜를 삭제하면 됨.`
+          );
+          if (!ok) return;
+
+          await saveCacheData(merged.cache, currentIdentity.key);
+          await renderRecordPanel();
+          alert(
+            `빨간약 캐시 가져오기 완료.\n` +
+            `${formatNumber(merged.importedRows)}개 내역 / ${formatNumber(merged.importedDates)}일 추가했어.`
+          );
+        } catch (error) {
+          alert(`빨간약 캐시 가져오기 실패: ${error.message}`);
+          console.error("[Crack Alibi RedPill Import]", error);
+        } finally {
+          if (button?.isConnected) {
+            button.disabled = false;
+            button.textContent = originalText;
+          }
+        }
+      });
+
+      panel.querySelector("#ca-record-backup")?.addEventListener("click", async () => {
+        try {
+          await downloadCacheBackup();
+        } catch (error) {
+          alert(`백업 실패: ${error.message}`);
+          console.error("[Crack Alibi Backup]", error);
+        }
+      });
+
+      const restoreButton = panel.querySelector("#ca-record-restore");
+      const restoreInput = panel.querySelector("#ca-record-restore-file");
+
+      restoreButton?.addEventListener("click", () => {
+        if (!restoreInput) return;
+        restoreInput.value = "";
+        restoreInput.click();
+      });
+
+      restoreInput?.addEventListener("change", async () => {
+        const file = restoreInput.files?.[0];
+        if (!file) return;
+
+        try {
+          const restoredPackage = await readCacheBackupFile(file);
+          const currentIdentity = await getCurrentAccountIdentity();
+
+          if (restoredPackage.accountKey && restoredPackage.accountKey !== currentIdentity.key) {
+            throw new Error(
+              `다른 계정 백업이라 복원을 막았어.\n` +
+              `현재 계정: ${currentIdentity.fingerprint}\n` +
+              `백업 계정: ${restoredPackage.accountFingerprint || "알 수 없음"}`
+            );
+          }
+
+          if (restoredPackage.legacy) {
+            const legacyOk = confirm(
+              `이 백업은 계정 구분 기능이 생기기 전 버전이라 어느 계정 기록인지 확인할 수 없어.\n\n` +
+              `현재 계정(${currentIdentity.fingerprint}) 기록으로 취급해서 병합할까?\n` +
+              `확실하지 않으면 취소해.`
+            );
+            if (!legacyOk) return;
+          }
+
+          const current = await loadCacheData(currentIdentity.key);
+          const merged = mergeRestoredCache(current, restoredPackage.cache);
+          const backupRanges = mergeCoverageRanges(restoredPackage.cache.ranges || []);
+          const backupDays = backupRanges.reduce((sum, range) => sum + countDaysInclusive(range.start, range.end), 0);
+          const backupRows = Array.isArray(restoredPackage.cache.rows) ? restoredPackage.cache.rows.length : 0;
+
+          if (merged.importedDays === 0) {
+            alert(
+              `복원할 새 날짜가 없음.\n` +
+              `백업 ${formatNumber(backupDays)}일이 전부 현재 기록과 겹쳐서 기존 기록을 그대로 유지했어.`
+            );
+            return;
+          }
+
+          const importText = merged.importRanges
+            .map((range) => range.start === range.end ? range.start : `${range.start} ~ ${range.end}`)
+            .join(", ");
+
+          const ok = confirm(
+            `현재 계정 기록에 없는 날짜만 자동으로 합칠까?\n\n` +
+            `백업 전체: ${formatNumber(backupDays)}일 · ${formatNumber(backupRows)}개 내역\n` +
+            `새로 복원: ${formatNumber(merged.importedDays)}일 · ${formatNumber(merged.importedRows)}개 내역\n` +
+            `겹쳐서 유지: ${formatNumber(merged.skippedDays)}일\n\n` +
+            `추가되는 구간: ${importText}\n\n` +
+            `겹치는 날짜는 현재 기록을 절대 덮어쓰지 않아.`
+          );
+          if (!ok) return;
+
+          await saveCacheData(merged.cache, currentIdentity.key);
+          await renderRecordPanel();
+          alert(
+            `복원 완료 · 새 날짜 ${formatNumber(merged.importedDays)}일 / ${formatNumber(merged.importedRows)}개 내역 추가\n` +
+            `겹친 ${formatNumber(merged.skippedDays)}일은 기존 기록 유지`
+          );
+        } catch (error) {
+          alert(`복원 실패: ${error.message}`);
+          console.error("[Crack Alibi Restore]", error);
+        }
+      });
+
+      panel.querySelector("#ca-record-claim-legacy")?.addEventListener("click", async () => {
+        const latestLegacy = await loadCacheByKey(LEGACY_CACHE_KEY);
+        if (!hasCacheData(latestLegacy)) {
+          await renderRecordPanel();
+          return;
+        }
+
+        const legacyRanges = mergeCoverageRanges(latestLegacy.ranges || []);
+        const legacyDays = legacyRanges.reduce((sum, range) => sum + countDaysInclusive(range.start, range.end), 0);
+        const legacyRows = Array.isArray(latestLegacy.rows) ? latestLegacy.rows.length : 0;
+        const ok = confirm(
+          `이전 버전 기록은 계정 정보가 없어서 자동 판별이 불가능해.\n\n` +
+          `${formatNumber(legacyDays)}일 · ${formatNumber(legacyRows)}개 내역을\n` +
+          `현재 계정(${identity.fingerprint}) 기록으로 취급해서 가져올까?\n\n` +
+          `예전에 두 계정을 섞어서 검사했다면 취소하는 게 안전해.`
+        );
+        if (!ok) return;
+
+        const latestCurrent = await loadCacheData(identity.key);
+        const merged = mergeRestoredCache(latestCurrent, latestLegacy);
+        await saveCacheData(merged.cache, identity.key);
+        await deleteCacheByKey(LEGACY_CACHE_KEY);
+        await renderRecordPanel();
+        alert(`이전 기록 가져오기 완료 · ${formatNumber(merged.importedDays)}일 추가`);
+      });
+
+      panel.querySelector("#ca-record-clear")?.addEventListener("click", async () => {
+        if (!confirm("저장된 알리바이 기록을 전부 삭제할까?")) return;
+        await clearCacheData(identity.key);
+        await renderRecordPanel();
+      });
+    } catch (error) {
+      panel.innerHTML = `
+        <div class="ca-record-head">
+          <div>
+            <div class="ca-record-title">기록 금고</div>
+            <div class="ca-record-desc">기록 저장소를 열지 못했음.</div>
+          </div>
+          <button type="button" class="ca-record-close" id="ca-record-close">×</button>
+        </div>
+        <div class="ca-record-empty">${escapeHTML(error.message)}</div>
+      `;
+      panel.querySelector("#ca-record-close")?.addEventListener("click", () => panel.style.display = "none");
+      console.error("[Crack Alibi Cache]", error);
+    }
+  }
+
+  function toggleRecordPanel() {
+    const panel = document.querySelector("#ca-record-panel");
+    if (!panel) return;
+    if (panel.style.display !== "none") {
+      panel.style.display = "none";
+      return;
+    }
+    renderRecordPanel();
+  }
+
   function setSearchingUI(searching) {
     isSearching = searching;
     const run = document.querySelector("#ca-run");
     const stop = document.querySelector("#ca-stop");
+    const record = document.querySelector("#ca-record");
     const speedButtons = document.querySelectorAll(".ca-speed-btn");
     const dates = document.querySelectorAll(".ca-date");
+    const recordActions = document.querySelectorAll(".ca-record-action");
 
     if (run) {
       run.disabled = searching;
       run.textContent = searching ? "검사 중..." : "검사";
     }
     if (stop) stop.style.display = searching ? "inline-block" : "none";
+    if (record) record.disabled = searching;
     speedButtons.forEach((b) => b.disabled = searching);
     dates.forEach((d) => d.disabled = searching);
+    recordActions.forEach((b) => b.disabled = searching);
   }
 
   async function runSearch() {
@@ -1720,32 +3289,101 @@
       return;
     }
 
-    const lookupRange = resolveLookupRange(range.start, range.end);
-
-    if (!lookupRange.ok) {
-      setEmpty(lookupRange.message);
-      return;
-    }
+    const today = kstDateString(new Date());
+    if (range.end > today) range.end = today;
+    if (range.start > range.end) range.start = range.end;
 
     currentAborter = new AbortController();
+    activeSearchRange = { start: range.start, end: range.end, notice: "" };
+    setResultNotice("");
     setSearchingUI(true);
-    if (lookupRange.clipped) {
-      setLoading("조회 가능한 범위로 조정 중...", `${lookupRange.cutoff} 이후 내역만 확인할게요`);
-    } else {
-      setLoading();
-    }
+    const recordPanel = document.querySelector("#ca-record-panel");
+    if (recordPanel) recordPanel.style.display = "none";
+    setLoading("저장된 기록 확인 중...", `${range.start} ~ ${range.end}`);
 
     try {
-      const rows = await searchAlibi({
-        start: lookupRange.start,
-        end: lookupRange.end,
-        speedKey: currentSpeed,
-        signal: currentAborter.signal,
-      });
-      renderResults(rows, lookupRange.start, lookupRange.end, lookupRange.notice);
+      const searchIdentity = await getCurrentAccountIdentity();
+      let cache = await loadCacheData(searchIdentity.key);
+      const beforeRangesJSON = JSON.stringify(mergeCoverageRanges(cache.ranges || []));
+      cache = promoteRedpillDatesToCoverage(cache);
+      if (JSON.stringify(cache.ranges) !== beforeRangesJSON) {
+        await saveCacheData(cache, searchIdentity.key);
+      }
+      const missingRanges = subtractCoverage(range.start, range.end, cache.ranges);
+      const cutoff = getLookupCutoffDate();
+      const fetchRanges = [];
+      const unavailableRanges = [];
+
+      for (const missing of missingRanges) {
+        if (missing.end < cutoff) {
+          unavailableRanges.push(missing);
+          continue;
+        }
+        if (missing.start < cutoff) {
+          unavailableRanges.push({ start: missing.start, end: addDaysToYMD(cutoff, -1) });
+          fetchRanges.push({ start: cutoff, end: missing.end });
+        } else {
+          fetchRanges.push(missing);
+        }
+      }
+
+      if (missingRanges.length === 0) {
+        setProgress("저장된 기록 불러오는 중", "이 기간은 API 조회 없이 바로 불러옴");
+      }
+
+      for (let i = 0; i < fetchRanges.length; i++) {
+        const fetchRange = fetchRanges[i];
+        setProgress(
+          `미기록 구간 ${i + 1} / ${fetchRanges.length} 조회 중`,
+          `${fetchRange.start} ~ ${fetchRange.end}`
+        );
+        const rows = await searchAlibi({
+          start: fetchRange.start,
+          end: fetchRange.end,
+          speedKey: currentSpeed,
+          signal: currentAborter.signal,
+        });
+
+        cache = applyFetchedRangeToCache(cache, fetchRange.start, fetchRange.end, rows);
+        await saveCacheData(cache, searchIdentity.key);
+      }
+
+      const rows = getCachedRowsInRange(cache, range.start, range.end);
+      const redpillResultRows = rows.filter((row) => row?.cacheSource === "redpill").length;
+      const noticeParts = [];
+      const coveredBefore = countDaysInclusive(range.start, range.end) - missingRanges.reduce((sum, r) => sum + countDaysInclusive(r.start, r.end), 0);
+
+      if (missingRanges.length === 0) {
+        noticeParts.push("전부 저장된 기록이라 API 조회 없이 불러왔어요.");
+      } else if (coveredBefore > 0) {
+        noticeParts.push(`기존 기록 ${formatNumber(coveredBefore)}일은 건너뛰고 미기록 구간만 조회했어요.`);
+      } else if (fetchRanges.length > 0) {
+        noticeParts.push("조회한 과거 날짜는 자동 기록했어요. 다음번 같은 기간 검사는 더 빨라져요.");
+      }
+
+      if (range.end === today && !dateInRanges(today, cache.ranges)) {
+        noticeParts.push("오늘 기록은 새 내역이 생길 수 있어서 다음 검사 때 다시 확인해요.");
+      }
+
+      if (redpillResultRows > 0) {
+        noticeParts.push(`빨간약 캐시 ${formatNumber(redpillResultRows)}개 내역을 금고에서 불러왔어요. 빨간약 날짜도 캐시 완료 취급이라 API를 다시 조회하지 않아요.`);
+      }
+
+      if (unavailableRanges.length > 0) {
+        const unavailableText = unavailableRanges
+          .map((r) => r.start === r.end ? r.start : `${r.start} ~ ${r.end}`)
+          .join(", ");
+        noticeParts.push(`API 최근 1년 제한 때문에 아직 기록되지 않은 ${unavailableText} 구간은 확인할 수 없어요.`);
+      }
+
+      const notice = noticeParts.join("\n");
+      const emptyMessage = unavailableRanges.length > 0 && rows.length === 0
+        ? "저장된 내역 없음"
+        : "";
+      renderResults(rows, range.start, range.end, notice, emptyMessage);
     } catch (error) {
       if (error.name === "AbortError") {
-        setEmpty("검사 중지됨");
+        setEmpty("검사 중지됨\n완료된 구간까지의 기록은 저장되어 있음");
       } else {
         setEmpty(`오류: ${error.message}`);
         console.error("[Crack Alibi]", error);
@@ -1753,6 +3391,7 @@
     } finally {
       setSearchingUI(false);
       currentAborter = null;
+      activeSearchRange = null;
     }
   }
 
@@ -1764,6 +3403,8 @@
     document.querySelector(".ca-overlay")?.remove();
 
     const today = kstDateString(new Date());
+    const displayStart = activeSearchRange?.start || lastRangeStart || today;
+    const displayEnd = activeSearchRange?.end || lastRangeEnd || today;
     const overlay = document.createElement("div");
     overlay.className = "ca-overlay";
     overlay.innerHTML = `
@@ -1773,7 +3414,7 @@
             <div class="ca-logo">🧾</div>
             <div>
               <h2 class="ca-title">Alibi</h2>
-              <div class="ca-subtitle"><span class="ca-version">${ALIBI_VERSION}</span><span class="ca-limit-copy">최근 1년 내역만 조회 가능</span></div>
+              <div class="ca-subtitle"><span class="ca-version">${ALIBI_VERSION}</span><span class="ca-limit-copy">API 최근 1년 · 저장 기록은 계속 보관</span></div>
             </div>
           </div>
           <button type="button" class="ca-close" aria-label="닫기">×</button>
@@ -1783,11 +3424,11 @@
             <div class="ca-grid">
               <div class="ca-field">
                 <label for="ca-start-date">시작일</label>
-                <input id="ca-start-date" class="ca-date" type="date" value="${today}">
+                <input id="ca-start-date" class="ca-date" type="date" value="${displayStart}" max="${today}">
               </div>
               <div class="ca-field">
                 <label for="ca-end-date">종료일</label>
-                <input id="ca-end-date" class="ca-date" type="date" value="${today}">
+                <input id="ca-end-date" class="ca-date" type="date" value="${displayEnd}" max="${today}">
               </div>
             </div>
             <div class="ca-speed">
@@ -1801,29 +3442,35 @@
               </div>
             </div>
             <div class="ca-actions">
+              <button type="button" class="ca-record-btn" id="ca-record">기록</button>
               <button type="button" class="ca-primary" id="ca-run">검사</button>
               <button type="button" class="ca-ghost" id="ca-stop" style="display:none;">중지</button>
             </div>
           </div>
+          <div class="ca-limit-notice ca-result-notice" id="ca-result-notice" style="display:none;"></div>
+          <div class="ca-record-panel ca-card" id="ca-record-panel" style="display:none;"></div>
           <div class="ca-result ca-card"></div>
         </div>
       </div>
     `;
 
     document.body.appendChild(overlay);
-    setEmpty();
 
+    if (isSearching) {
+      setLoading(currentProgressMain, currentProgressSub);
+      setSearchingUI(true);
+    } else if (lastRangeStart && lastRangeEnd) {
+      renderResults(lastRawRows, lastRangeStart, lastRangeEnd, lastResultNotice, lastEmptyMessage);
+    } else {
+      setEmpty();
+    }
+
+    // X 버튼은 창만 닫는다. 실행 중인 조회는 계속 진행된다.
     overlay.querySelector(".ca-close")?.addEventListener("click", () => {
-      stopSearch();
       overlay.remove();
     });
 
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) {
-        stopSearch();
-        overlay.remove();
-      }
-    });
+    // 배경(빈 공간)을 눌러도 창이 닫히지 않도록 별도 핸들러를 두지 않는다.
 
     overlay.querySelectorAll(".ca-speed-btn").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1835,6 +3482,7 @@
 
     overlay.querySelector("#ca-run")?.addEventListener("click", runSearch);
     overlay.querySelector("#ca-stop")?.addEventListener("click", stopSearch);
+    overlay.querySelector("#ca-record")?.addEventListener("click", toggleRecordPanel);
   }
 
   function isPurchaseTablist(tablist) {
