@@ -2,7 +2,7 @@
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
 // @version      1.1.0
-// @description  몰라
+// @description  크랙 채팅의 턴 수와 보유·차감 크래커를 표시합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Indicator.webp
@@ -31,12 +31,14 @@
     showTurn: `${SETTINGS_NS}:showTurn`,
     showRemainCracker: `${SETTINGS_NS}:showRemainCracker`,
     showDiffCracker: `${SETTINGS_NS}:showDiffCracker`,
+    showChatIcons: `${SETTINGS_NS}:showChatIcons`,
     placement: `${SETTINGS_NS}:placement`,
   };
   const DEFAULT_SETTINGS = {
     showTurn: true,
     showRemainCracker: true,
     showDiffCracker: true,
+    showChatIcons: true,
     placement: 'composer',
   };
   const CRACK_STATS_API = {
@@ -147,6 +149,9 @@
         <div class="ci-settings-section-title ci-settings-location-title">위치</div>
         <label class="ci-settings-radio"><input type="radio" name="ci-placement" value="composer"><span>입력창</span></label>
         <label class="ci-settings-radio"><input type="radio" name="ci-placement" value="chat"><span>채팅창</span></label>
+
+        <div class="ci-settings-section-title ci-settings-location-title">채팅창</div>
+        <label class="ci-settings-check"><input type="checkbox" data-ci-setting="showChatIcons"><span>아이콘 표시</span></label>
       </div>
     `;
 
@@ -448,6 +453,11 @@
         width: 13px;
         height: 13px;
         min-width: 13px;
+      }
+
+      /* 채팅창 배지에서만 아이콘을 숨긴다. 입력창 아이콘에는 영향 없음. */
+      .${CHAT_INDICATOR_CLASS}.ci-chat-icons-off .ci-icon {
+        display: none;
       }
 
       .${CHAT_INDICATOR_CLASS} .ci-value {
@@ -988,6 +998,7 @@
     }
 
     const visibleStats = stats.filter(isStatVisible);
+    const showChatIcons = getSetting('showChatIcons');
     const messageStats = loadMessageStatsMap(chatId);
     const liveGroups = new Set();
     // 화면 표시용 최신 차감값은 messageId/localStorage와 완전히 분리한다.
@@ -1018,6 +1029,9 @@
       } else if (indicator.parentElement !== row) {
         row.appendChild(indicator);
       }
+
+      // 이 옵션은 채팅창 배지에만 적용한다. 입력창 렌더링은 그대로 유지한다.
+      indicator.classList.toggle('ci-chat-icons-off', !showChatIcons);
 
       const list = indicator.querySelector('.ci-list');
       const messageRecord = messageId
