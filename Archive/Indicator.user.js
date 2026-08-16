@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.0.8
-// @description  Crack chat indicator UI with API-derived per-message turns and persistent per-message cost stats
+// @version      1.1.0
+// @description  몰라
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Indicator.webp
@@ -75,6 +75,8 @@
   let lastObservedBalance = null;
   let activeChatId = null;
   let lastRoomDeductedAmount = null;
+  // 채팅창의 최신 응답은 messageId 저장 여부와 무관하게 이 값을 즉시 표시한다.
+  // 새 생성 시작/방 전환 때만 비우고, 입력창의 마지막 차감값과는 별개로 관리한다.
   let pendingMessageCost = null;
   let lastGenerationStartedAt = 0;
   let lastGenerationChatId = null;
@@ -988,6 +990,10 @@
     const visibleStats = stats.filter(isStatVisible);
     const messageStats = loadMessageStatsMap(chatId);
     const liveGroups = new Set();
+    // 화면 표시용 최신 차감값은 messageId/localStorage와 완전히 분리한다.
+    // 입력창에서 156이 잡힌 바로 그 순간 이 값도 156이 되며,
+    // 최신 AI 줄은 저장 성공 여부와 상관없이 이를 최우선으로 표시한다.
+    const newestAssistantGroup = findNewestAssistantGroup();
 
     document.querySelectorAll(MESSAGE_SELECTOR).forEach((group) => {
       const row = findChatIndicatorHost(group);
@@ -1018,7 +1024,15 @@
         ? normalizeMessageStatsRecord(messageStats[messageId])
         : normalizeMessageStatsRecord(null);
       const storedCost = Number(messageRecord.cost);
-      const cost = Number.isFinite(liveCost) && liveCost > 0 ? liveCost : storedCost;
+      // 입력창과 채팅창의 최신 차감 표시는 완전히 같은 source를 쓴다.
+      // lastRoomDeductedAmount는 입력창에 표시되는 바로 그 값이며,
+      // messageId 저장/생성 신호와 무관하게 최신 AI 줄에도 그대로 사용한다.
+      const latestRoomCost = group === newestAssistantGroup
+        ? Number(lastRoomDeductedAmount)
+        : NaN;
+      const cost = Number.isFinite(latestRoomCost) && latestRoomCost > 0
+        ? latestRoomCost
+        : (Number.isFinite(liveCost) && liveCost > 0 ? liveCost : storedCost);
       const savedTurn = Number(messageRecord.turn);
       const signature = visibleStats.map((stat) => {
         let value = stat.value;
@@ -1085,13 +1099,50 @@
     );
   }
 
+  function pickNewestAssistantGroup(groups) {
+    const candidates = (groups || []).filter(Boolean);
+    if (!candidates.length) return null;
+
+    // Crack의 메시지 DOM 순서는 최신→과거일 수 있어서 배열의 마지막 요소를
+    // "최신"으로 취급하면 아주 오래된 응답에 차감/턴이 붙는다.
+    // data-message-group-id가 Mongo ObjectId이면 앞 8자리의 생성 시각으로
+    // 실제 최신 응답을 결정한다.
+    let newestById = null;
+    let newestTime = 0;
+
+    for (const group of candidates) {
+      const time = objectIdTime(getMessageGroupId(group));
+      if (time > newestTime) {
+        newestTime = time;
+        newestById = group;
+      }
+    }
+
+    if (newestById) return newestById;
+
+    // 스트리밍 초기에 임시 ID를 쓰는 예외 상황에서는 화면상 아래쪽에 있는
+    // assistant 그룹을 최신으로 본다. ObjectId가 생기면 위 로직이 우선한다.
+    let newestByPosition = candidates[0];
+    let newestTop = Number.NEGATIVE_INFINITY;
+
+    for (const group of candidates) {
+      const top = Number(group.getBoundingClientRect?.().top);
+      if (Number.isFinite(top) && top > newestTop) {
+        newestTop = top;
+        newestByPosition = group;
+      }
+    }
+
+    return newestByPosition;
+  }
+
   function findNewestAssistantGroup(excludedIds = null, excludedGroups = null) {
     const groups = [...document.querySelectorAll(MESSAGE_SELECTOR)]
       .filter((group) => findChatIndicatorHost(group));
 
     if (excludedGroups) {
       const freshByElement = groups.filter((group) => !excludedGroups.has(group));
-      if (freshByElement.length) return freshByElement[freshByElement.length - 1];
+      if (freshByElement.length) return pickNewestAssistantGroup(freshByElement);
     }
 
     if (excludedIds) {
@@ -1099,11 +1150,11 @@
         const id = getMessageGroupId(group);
         return id && !excludedIds.has(id);
       });
-      if (freshById.length) return freshById[freshById.length - 1];
+      if (freshById.length) return pickNewestAssistantGroup(freshById);
     }
 
     if (excludedGroups || excludedIds) return null;
-    return groups.length ? groups[groups.length - 1] : null;
+    return pickNewestAssistantGroup(groups);
   }
 
   function clearLiveMessageCost(group) {
@@ -1199,18 +1250,31 @@
     const value = Number(amount);
     if (!session?.chatId || !Number.isFinite(value) || value <= 0) return false;
 
+    const normalized = Math.max(0, Math.round(value));
+
     pendingMessageCost = {
       chatId: session.chatId,
-      amount: Math.max(0, Math.round(value)),
+      amount: normalized,
       queuedAt: Date.now(),
       messageGroupIdsAtStart: new Set(session.messageGroupIdsAtStart || []),
       assistantGroupsAtStart: new Set(session.assistantGroupsAtStart || []),
       liveGroup: null,
     };
 
-    // 새 AI 응답 DOM이 이미 있으면 그 자리에서 바로 같은 amount를 표시/저장한다.
-    // 아직 DOM 자체가 없다면 붙일 곳이 없으므로 observer가 생기는 즉시 연결한다.
-    // 일반 생성 중 이전 AI 줄에 잘못 156을 얹는 fallback은 사용하지 않는다.
+    // 화면 표시는 입력창과 완전히 같은 타이밍으로 처리한다.
+    // 차감값이 잡힌 순간 현재 최신 AI 줄에 먼저 그대로 띄우고,
+    // "새 메시지인지 / 최종 messageId가 뭔지" 판별은 저장용으로만 뒤에서 처리한다.
+    // 즉 저장이 늦더라도 채팅창 표시가 '-'로 기다리지 않는다.
+    const provisionalGroup = findNewestAssistantGroup();
+    if (provisionalGroup) {
+      pendingMessageCost.liveGroup = provisionalGroup;
+      provisionalGroup.dataset.ciLiveDiffCracker = String(normalized);
+      scheduleMount(true);
+    }
+
+    // 새 assistant DOM이 이미 생겼다면 정확한 그룹으로 즉시 옮겨 저장한다.
+    // 아직 없거나 같은 DOM을 재사용 중이면 provisional 표시를 유지한 채
+    // MutationObserver / generate_done에서 최종 messageId에 저장한다.
     tryAttachPendingMessageCost(Boolean(session.generateDoneAt));
     return true;
   }
@@ -1597,9 +1661,14 @@
     const displayValue = normalized.toLocaleString('en-US');
     lastRoomDeductedAmount = normalized;
 
-    // 입력창/채팅창이 같은 차감 감지값을 단 하나의 source로 공유한다.
-    // 위치가 채팅창이어도 stats 값 자체는 항상 156으로 갱신해 둔다.
+    // 입력창/채팅창은 lastRoomDeductedAmount라는 단 하나의 source를 공유한다.
+    // 채팅창의 messageId 저장 여부는 화면 표시와 무관하다.
     setStat('diffCracker', displayValue);
+    // 연속 두 응답의 차감액이 우연히 같아 stat.value가 변하지 않아도
+    // 채팅창 최신 응답은 반드시 같은 프레임에 다시 그린다.
+    if (getSetting('placement') === 'chat') {
+      renderChatIndicators();
+    }
 
     const chatId = getCurrentChatIdFromUrl();
     if (chatId) {
@@ -1723,6 +1792,9 @@
     ) {
       return;
     }
+
+    // 여기까지 통과한 경우에만 진짜 새 생성이다.
+    // 마지막 차감값은 입력창과 채팅창이 공유하므로 생성 시작 때 따로 지우지 않는다.
 
     const session = {
       chatId,
