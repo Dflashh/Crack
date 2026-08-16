@@ -7,8 +7,8 @@
 // @author       깡통들과 나
 // @connect      crack-api.wrtn.ai
 // @icon         https://cdn.jsdelivr.net/gh/Dflashh/Crack@main/Icon/Alibi.webp
-// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackAlibi.user.js
-// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/CrackAlibi.user.js
+// @downloadURL  https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/Alibi.user.js
+// @updateURL    https://raw.githubusercontent.com/Dflashh/Crack/main/Archive/Alibi.user.js
 // @require      https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js#sha256-lfTRy/CZ9XFhtmS8BIQm7D35JjeAGkx5EW6DMVqnh+c=
 // @grant        GM_addStyle
 // ==/UserScript==
