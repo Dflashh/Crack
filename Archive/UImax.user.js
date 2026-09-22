@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      3.0.3
+// @version      3.0.5
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '3.0.3';
+  const CRACK_UI_VERSION = '3.0.5';
 
   function getCrackUiPublicWindow() {
     try {
@@ -3594,15 +3594,33 @@
       }
 
       [role="menuitem"][data-crack-ui-official-model-hidden="1"],
-      [role="option"][data-crack-ui-official-model-hidden="1"] {
+      [role="option"][data-crack-ui-official-model-hidden="1"],
+      button[data-crack-ui-official-model-hidden="1"] {
         display: none !important;
       }
 
       /* Crack 원본 모델 메뉴의 모델별 설명문은 UI Max 활성화 시 항상 숨김.
-         구형 Radix menu/menuitem과 신형 Select combobox/listbox/option을 모두 지원한다. */
+         구형 Radix menu/menuitem, Select listbox/option, 신형 dialog/button 모델 선택창을 모두 지원한다. */
       [data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"]):has(img[src*="model-icon"], img[srcset*="model-icon"]) > div:first-child > div[class*="text-text_secondary"],
-      [data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"]):has(img[src*="model-icon"], img[srcset*="model-icon"]) [class*="text-text_secondary"] {
+      [data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"]):has(img[src*="model-icon"], img[srcset*="model-icon"]) [class*="text-text_secondary"],
+      [role="dialog"] button:has(img[src*="model-icon"], img[srcset*="model-icon"]) :is(
+        p,
+        [class*="text-text_secondary"],
+        [class*="text-muted-foreground"],
+        [class*="typo-text-xs"]
+      ) {
         display: none !important;
+      }
+
+      /* 신형 모델 선택 dialog는 원본이 569px 고정 높이라 설명을 숨긴 뒤 빈 공간이 남는다.
+         모델 행 수만큼만 높이가 잡히도록 고정 height를 해제하고, 기존 최대 높이/스크롤은 유지한다. */
+      [data-radix-popper-content-wrapper] > [role="dialog"]:has(
+        button img[src*="model-icon"],
+        button img[srcset*="model-icon"]
+      ) {
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: min(569px, var(--radix-popover-content-available-height, 569px)) !important;
       }
 
       .crack-ui-model-option-main {
@@ -15881,16 +15899,25 @@ ${error?.message || error}`);
     }
 
     const found = [...document.querySelectorAll(
-      'button[aria-haspopup="menu"], button[id^="radix-"], button[role="combobox"][aria-controls]'
+      'button[aria-haspopup="menu"], button[aria-haspopup="dialog"], button[id^="radix-"], button[role="combobox"][aria-controls]'
     )].find((button) => isOriginalModelButtonCandidate(button, panel, popup)) || null;
 
     cachedOriginalModelButton = found;
     return found;
   }
 
+  function getOfficialModelItemCandidates(menu) {
+    if (!(menu instanceof Element)) return [];
+    return [...menu.querySelectorAll(
+      '[role="menuitem"], [role="option"], [data-radix-select-item], button'
+    )].filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
+  }
+
   function getOfficialModelMenu() {
     const popup = document.getElementById(ID.bottomModelPopup);
-    return [...document.querySelectorAll('[role="menu"], [role="listbox"], [data-radix-select-content]')].find((menu) => {
+    return [...document.querySelectorAll(
+      '[role="menu"], [role="listbox"], [data-radix-select-content], [role="dialog"]'
+    )].find((menu) => {
       if (popup?.contains(menu) || menu.closest?.(`#${ID.panel}`)) return false;
       if (
         menu.classList?.contains('crack-ui-novel-model-menu') ||
@@ -15898,9 +15925,7 @@ ${error?.message || error}`);
       ) {
         return false;
       }
-      const modelItems = [...menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
-        .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
-      return modelItems.length >= 2;
+      return getOfficialModelItemCandidates(menu).length >= 2;
     }) || null;
   }
 
@@ -15913,8 +15938,7 @@ ${error?.message || error}`);
       return [];
     }
 
-    const modelItems = [...menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
-      .filter((item) => item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
+    const modelItems = getOfficialModelItemCandidates(menu);
     if (modelItems.length < 2) return [];
 
     const entries = [];
@@ -16154,11 +16178,15 @@ ${error?.message || error}`);
       const escapedName = String(name).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
       const next = [
         `[data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"], [data-radix-select-item]):has(img[alt="${escapedName}"])`,
+        `[role="dialog"] button:has(img[alt="${escapedName}"])`,
       ];
 
       if (file) {
         const escapedFile = String(file).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
-        next.push(`[data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"], [data-radix-select-item]):has(img[src*="${escapedFile}"])`);
+        next.push(
+          `[data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"], [data-radix-select-item]):has(img[src*="${escapedFile}"])`,
+          `[role="dialog"] button:has(img[src*="${escapedFile}"])`
+        );
       }
 
       return next;
@@ -16183,7 +16211,7 @@ ${error?.message || error}`);
     const visible = new Set(getVisibleChatModelNames());
     let hiddenCount = 0;
 
-    menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]').forEach((item) => {
+    getOfficialModelItemCandidates(menu).forEach((item) => {
       const name = getModelNameFromNode(item);
       if (!isKnownChatModelName(name)) {
         delete item.dataset.crackUiOfficialModelHidden;
@@ -16216,7 +16244,7 @@ ${error?.message || error}`);
       if (!(wrapper instanceof HTMLElement)) return;
       if (document.getElementById(ID.bottomModelPopup)?.contains(wrapper)) return;
 
-      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-content]');
+      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-content], [role="dialog"]');
       if (!menu) return;
 
       const hasModelText = CHAT_MODEL_ORDER.some((model) => normalizeText(wrapper.textContent).includes(model));
@@ -16348,7 +16376,7 @@ ${error?.message || error}`);
     const shouldBlur =
       active === officialBtn ||
       officialBtn?.contains?.(active) ||
-      !!active.closest?.('[data-radix-popper-content-wrapper], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]');
+      !!active.closest?.('[data-radix-popper-content-wrapper], [role="dialog"], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]');
 
     if (shouldBlur) {
       try {
@@ -16424,7 +16452,7 @@ ${error?.message || error}`);
           return false;
         }
 
-        const targetItem = [...modelMenu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
+        const targetItem = getOfficialModelItemCandidates(modelMenu)
           .find((item) => {
             const itemName = getModelNameFromNode(item);
             return itemName === targetName || normalizeText(item.textContent).includes(targetName);
