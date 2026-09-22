@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Shortcut Customizer
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.3.1
+// @version      1.3.2
 // @description  Crack 단축키 커스텀 + 로어/프로필/플레이 가이드/공식 모델 자동 동기화
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -457,6 +457,25 @@
     const imgAlt = normalizeText(node.querySelector?.('img[alt]')?.getAttribute('alt'));
     if (isPlausibleRawModelName(imgAlt)) return imgAlt;
 
+    // 2026-09 신형 dialog 모델 선택창은 아이콘 바로 다음 형제 span에 모델명이 있다.
+    // 설명문이 더 길어서 일반 텍스트 후보 정렬 시 설명을 모델명으로 오인할 수 있으므로
+    // model-icon 옆의 짧은 라벨을 가장 먼저 읽는다.
+    const modelIcon = node.querySelector?.('img[src*="model-icon"], img[srcset*="model-icon"]');
+    if (modelIcon) {
+      let sibling = modelIcon.nextElementSibling;
+      while (sibling) {
+        const label = normalizeText(sibling.textContent || '');
+        if (
+          isPlausibleRawModelName(label) &&
+          !/^\d+(?:\.\d+)?(?:개)?$/.test(label) &&
+          !/^\d+개$/.test(label)
+        ) {
+          return label;
+        }
+        sibling = sibling.nextElementSibling;
+      }
+    }
+
     const wholeText = normalizeText(node.textContent || '');
     const knownFromText = [...KNOWN_MODEL_NAMES]
       .sort((a, b) => b.length - a.length)
@@ -486,7 +505,7 @@
 
   function isOfficialModelButtonCandidate(button) {
     if (!button || !button.isConnected) return false;
-    if (button.closest?.('#' + ID.panel + ', [role="menu"], [role="listbox"], [role="menuitem"], [role="option"], [data-radix-select-content], [data-radix-select-item]')) return false;
+    if (button.closest?.('#' + ID.panel + ', [role="dialog"], [role="menu"], [role="listbox"], [role="menuitem"], [role="option"], [data-radix-select-content], [data-radix-select-item]')) return false;
 
     const image = button.querySelector?.('img[alt], img[src*="model-icon"], img[srcset*="model-icon"]');
     if (!image) return false;
@@ -497,9 +516,9 @@
   }
 
   function findOfficialModelButton() {
-    // 구형 menu 버튼 + 신형 Radix Select combobox 버튼을 모두 지원.
+    // 구형 menu/listbox + Select combobox + 2026-09 Popover dialog 버튼을 모두 지원.
     const candidates = [...document.querySelectorAll(
-      'button[aria-haspopup="menu"], button[aria-haspopup="listbox"], button[id^="radix-"], button[role="combobox"][aria-controls]'
+      'button[aria-haspopup="menu"], button[aria-haspopup="listbox"], button[aria-haspopup="dialog"], button[id^="radix-"], button[role="combobox"][aria-controls]'
     )]
       .filter(isOfficialModelButtonCandidate)
       .sort((a, b) => {
@@ -516,8 +535,9 @@
   function getOfficialModelItemNodes(menu) {
     if (!menu) return [];
 
+    // 신형 dialog 모델 선택창은 각 모델 항목 자체가 일반 button이다.
     return [
-      ...menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]'),
+      ...menu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item], button'),
     ].filter((item) => {
       if (item.closest?.('#' + ID.panel)) return false;
       return Boolean(item.querySelector('img[src*="model-icon"], img[srcset*="model-icon"]'));
@@ -552,7 +572,7 @@
 
   function getOfficialModelMenu() {
     const candidates = [...document.querySelectorAll(
-      '[role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport]'
+      '[role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport], [role="dialog"]'
     )].filter((menu) => !menu.closest?.('#' + ID.panel));
 
     return candidates.find((menu) => scanOfficialModelMenuEntries(menu).length >= 2) || null;
@@ -637,7 +657,7 @@
       if (!(wrapper instanceof HTMLElement)) return;
       if (wrapper.closest?.('#' + ID.panel)) return;
 
-      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport]');
+      const menu = wrapper.querySelector('[role="menu"], [role="listbox"], [data-radix-select-content], [data-radix-select-viewport], [role="dialog"]');
       if (!menu || scanOfficialModelMenuEntries(menu).length < 2) return;
 
       if (!hiddenWrappers.has(wrapper)) {
@@ -710,7 +730,7 @@
     const shouldBlur =
       active === officialButton ||
       officialButton?.contains?.(active) ||
-      Boolean(active.closest?.('[data-radix-popper-content-wrapper], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [data-radix-select-content], [data-radix-select-item]'));
+      Boolean(active.closest?.('[data-radix-popper-content-wrapper], [role="dialog"], [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [data-radix-select-content], [data-radix-select-item]'));
 
     if (shouldBlur) {
       try {
@@ -912,7 +932,7 @@
 
       syncModelRegistryFromOfficialMenu(modelMenu);
 
-      const targetItem = [...modelMenu.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-select-item]')]
+      const targetItem = getOfficialModelItemNodes(modelMenu)
         .find((item) => {
           const itemName = getModelNameFromNode(item);
           return itemName === targetName || normalizeText(item.textContent || '').includes(targetName);
@@ -2427,7 +2447,7 @@
     panel.innerHTML = `
       <div class="crack-sc-panel-head">
         <div class="crack-sc-title-wrap">
-          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.3.1</span></div>
+          <div class="crack-sc-panel-title">단축키 커스텀 <span class="crack-sc-panel-version">v1.3.2</span></div>
           <div class="crack-sc-panel-subtitle"><span class="crack-sc-desktop-hint">커스텀 창 열기: ${escapeHtml(humanCombo(PANEL_SHORTCUT))}</span></div>
         </div>
         <button type="button" class="crack-sc-panel-close" data-crack-sc-close aria-label="닫기">×</button>
