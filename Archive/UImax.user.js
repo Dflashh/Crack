@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack UI Max
 // @namespace    https://github.com/Dflashh/Crack
-// @version      3.0.5
+// @version      3.0.7
 // @description  Crack을 더 가볍고 편하게
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const CRACK_UI_VERSION = '3.0.5';
+  const CRACK_UI_VERSION = '3.0.7';
 
   function getCrackUiPublicWindow() {
     try {
@@ -3603,7 +3603,7 @@
          구형 Radix menu/menuitem, Select listbox/option, 신형 dialog/button 모델 선택창을 모두 지원한다. */
       [data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"]):has(img[src*="model-icon"], img[srcset*="model-icon"]) > div:first-child > div[class*="text-text_secondary"],
       [data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"]):has(img[src*="model-icon"], img[srcset*="model-icon"]) [class*="text-text_secondary"],
-      [role="dialog"] button:has(img[src*="model-icon"], img[srcset*="model-icon"]) :is(
+      [data-radix-popper-content-wrapper] > [role="dialog"] button:has(img[src*="model-icon"], img[srcset*="model-icon"]) :is(
         p,
         [class*="text-text_secondary"],
         [class*="text-muted-foreground"],
@@ -16080,45 +16080,53 @@ ${error?.message || error}`);
     }, MODEL_REGISTRY_REMOVAL_CONFIRM_MS);
   }
 
-  function syncChatModelRegistryFromOfficialMenu(menu = DOM.modelMenu(), options = {}) {
+  function syncChatModelRegistryFromOfficialMenu(menu = DOM.modelMenu()) {
     const entries = scanOfficialModelMenuEntries(menu);
     if (!entries.length) return false;
 
     const signature = entries.map((entry) => `${entry.name}|${entry.image}`).join('\n');
-    if (signature === lastOfficialModelRegistrySignature) {
-      clearPendingOfficialModelRegistryRemoval();
-      return false;
-    }
-
     const previousOrder = [...CHAT_MODEL_ORDER];
     const previousInfo = CHAT_MODEL_INFO;
     const previousNames = new Set(previousOrder);
-    const nextOrder = entries.map((entry) => entry.name);
-    const nextNames = new Set(nextOrder);
-    const nextInfo = Object.fromEntries(entries.map((entry) => [entry.name, { image: entry.image }]));
-    const added = nextOrder.filter((name) => !previousNames.has(name));
-    const removed = previousOrder.filter((name) => !nextNames.has(name));
 
-    // 메뉴가 열리는 중 잠깐 일부 항목만 렌더되는 순간을 실제 삭제로 오인하면,
-    // 사용자가 숨겨둔 모델이 다시 켜질 수 있다. 삭제/이름변경은 같은 결과를 한 번 더 확인한다.
-    if (removed.length && options.confirmRemovalSignature !== signature) {
-      scheduleOfficialModelRegistryRemovalConfirmation(signature);
-      return false;
+    // 중요: 원본 모델 메뉴는 "표시할 모델" 필터에 의해 일부 항목이 숨겨질 수 있다.
+    // 따라서 메뉴 DOM에서 안 보인 모델을 서비스 종료/삭제로 판단하면 안 된다.
+    // 메뉴 스캔은 신규 모델 추가 + 현재 보이는 모델의 아이콘 갱신만 담당하고,
+    // 실제 삭제는 필터의 영향을 받지 않는 공식 API 모델 목록에서만 확정한다.
+    const nextOrder = [...previousOrder];
+    const nextInfo = Object.fromEntries(
+      previousOrder.map((name) => [name, { ...(previousInfo[name] || {}) }])
+    );
+    const added = [];
+    let changed = false;
+
+    for (const entry of entries) {
+      if (!previousNames.has(entry.name)) {
+        previousNames.add(entry.name);
+        nextOrder.push(entry.name);
+        added.push(entry.name);
+        changed = true;
+      }
+
+      const previousImage = String(nextInfo[entry.name]?.image || '');
+      if (!nextInfo[entry.name]) nextInfo[entry.name] = {};
+      if (entry.image && previousImage !== String(entry.image)) {
+        nextInfo[entry.name].image = entry.image;
+        changed = true;
+      }
     }
-
-    clearPendingOfficialModelRegistryRemoval();
-
-    const registryChanged =
-      previousOrder.length !== nextOrder.length ||
-      previousOrder.some((name, index) => name !== nextOrder[index]) ||
-      nextOrder.some((name) => String(previousInfo[name]?.image || '') !== String(nextInfo[name]?.image || ''));
 
     lastOfficialModelRegistrySignature = signature;
     lastOfficialModelRegistryAdded = added;
-    lastOfficialModelRegistryRemoved = removed;
+    lastOfficialModelRegistryRemoved = [];
     lastOfficialModelRegistryCount = nextOrder.length;
+    clearPendingOfficialModelRegistryRemoval();
 
-    if (!registryChanged) return false;
+    if (!changed) {
+      // 체크 상태에 맞는 숨김 속성은 메뉴가 다시 렌더될 때마다 재적용한다.
+      applyOfficialModelMenuVisibility(menu);
+      return false;
+    }
 
     CHAT_MODEL_INFO = nextInfo;
     CHAT_MODEL_ORDER = nextOrder;
@@ -16178,14 +16186,14 @@ ${error?.message || error}`);
       const escapedName = String(name).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
       const next = [
         `[data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"], [data-radix-select-item]):has(img[alt="${escapedName}"])`,
-        `[role="dialog"] button:has(img[alt="${escapedName}"])`,
+        `[data-radix-popper-content-wrapper] > [role="dialog"] button:has(img[alt="${escapedName}"])`,
       ];
 
       if (file) {
         const escapedFile = String(file).replaceAll('\\', '\\\\').replaceAll('\"', '\\"');
         next.push(
           `[data-radix-popper-content-wrapper] :is([role="menuitem"], [role="option"], [data-radix-select-item]):has(img[src*="${escapedFile}"])`,
-          `[role="dialog"] button:has(img[src*="${escapedFile}"])`
+          `[data-radix-popper-content-wrapper] > [role="dialog"] button:has(img[src*="${escapedFile}"])`
         );
       }
 
