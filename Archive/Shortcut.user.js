@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Shortcut Customizer
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.3.2
+// @version      1.3.3
 // @description  Crack 단축키 커스텀 + 로어/프로필/플레이 가이드/공식 모델 자동 동기화
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -816,6 +816,59 @@
     scheduleModelSelectionTimer(seq, () => releaseWhenMenuIsGone(), 260);
   }
 
+  function temporarilyForceModelItemVisible(item) {
+    if (!(item instanceof HTMLElement)) return () => {};
+
+    // UI Max / UI Plus에서 "표시할 모델" 체크를 끄면 공식 모델 항목에
+    // display:none !important가 걸릴 수 있다. 단축키 선택 중에는 메뉴 wrapper
+    // 자체를 숨겨두므로 사용자에게 보이지 않는 상태에서 대상 항목만 잠깐 렌더링한다.
+    const styleSnapshot = {
+      display: item.style.getPropertyValue('display'),
+      displayPriority: item.style.getPropertyPriority('display'),
+      visibility: item.style.getPropertyValue('visibility'),
+      visibilityPriority: item.style.getPropertyPriority('visibility'),
+      opacity: item.style.getPropertyValue('opacity'),
+      opacityPriority: item.style.getPropertyPriority('opacity'),
+      pointerEvents: item.style.getPropertyValue('pointer-events'),
+      pointerEventsPriority: item.style.getPropertyPriority('pointer-events'),
+    };
+    const hadHiddenAttribute = item.hasAttribute('hidden');
+    const previousAriaHidden = item.getAttribute('aria-hidden');
+
+    item.removeAttribute('hidden');
+    item.setAttribute('aria-hidden', 'false');
+    item.style.setProperty('display', 'flex', 'important');
+    item.style.setProperty('visibility', 'visible', 'important');
+    item.style.setProperty('opacity', '1', 'important');
+    item.style.setProperty('pointer-events', 'auto', 'important');
+
+    // 스타일 반영을 강제로 확정해 React/Radix 쪽 클릭 처리에서도 실제 항목으로 인식되게 한다.
+    try {
+      void item.offsetWidth;
+      item.getBoundingClientRect?.();
+    } catch (_) {}
+
+    return () => {
+      if (!item.isConnected) return;
+
+      const restoreProp = (prop, value, priority) => {
+        if (value) item.style.setProperty(prop, value, priority || '');
+        else item.style.removeProperty(prop);
+      };
+
+      restoreProp('display', styleSnapshot.display, styleSnapshot.displayPriority);
+      restoreProp('visibility', styleSnapshot.visibility, styleSnapshot.visibilityPriority);
+      restoreProp('opacity', styleSnapshot.opacity, styleSnapshot.opacityPriority);
+      restoreProp('pointer-events', styleSnapshot.pointerEvents, styleSnapshot.pointerEventsPriority);
+
+      if (hadHiddenAttribute) item.setAttribute('hidden', '');
+      else item.removeAttribute('hidden');
+
+      if (previousAriaHidden == null) item.removeAttribute('aria-hidden');
+      else item.setAttribute('aria-hidden', previousAriaHidden);
+    };
+  }
+
   function fireModelClickSequence(element) {
     if (!element) return false;
 
@@ -943,10 +996,25 @@
         return false;
       }
 
-      fireModelClickSequence(targetItem);
-      await modelSleep(300);
+      // 다른 UI 확장프로그램이 이 모델을 display:none !important로 숨겼더라도
+      // 단축키 모델 변경은 독립적으로 동작해야 한다.
+      const restoreTargetVisibility = temporarilyForceModelItemVisible(targetItem);
+      try {
+        try {
+          targetItem.focus?.({ preventScroll: true });
+        } catch (_) {}
 
-      return getCurrentModelName() === targetName;
+        // Radix/React가 렌더 상태를 확인할 시간을 한 프레임 준 뒤 클릭한다.
+        await modelSleep(16);
+        if (seq !== modelSelectionSeq) return false;
+
+        fireModelClickSequence(targetItem);
+        await modelSleep(300);
+
+        return getCurrentModelName() === targetName;
+      } finally {
+        restoreTargetVisibility();
+      }
     };
 
     try {
