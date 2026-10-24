@@ -77,8 +77,6 @@
   let lastObservedBalance = null;
   let activeChatId = null;
   let lastRoomDeductedAmount = null;
-  // 채팅창의 최신 응답은 messageId 저장 여부와 무관하게 이 값을 즉시 표시한다.
-  // 새 생성 시작/방 전환 때만 비우고, 입력창의 마지막 차감값과는 별개로 관리한다.
   let pendingMessageCost = null;
   let lastGenerationStartedAt = 0;
   let lastGenerationChatId = null;
@@ -771,7 +769,6 @@
   function findChatIndicatorHost(group) {
     if (!group) return null;
 
-    // 소설형: 모델 버튼이 있는 왼쪽 flex 줄을 그대로 사용한다.
     const modelButton = findModelIndicator(group);
     if (modelButton) {
       const leftRow = modelButton.parentElement?.classList?.contains('flex')
@@ -781,8 +778,6 @@
       if (leftRow) return leftRow;
     }
 
-    // 채팅형: 같은 하단 메타 툴바의 왼쪽 줄은 비어 있을 수 있다.
-    // 오른쪽에 리롤/메시지 옵션이 있는 assistant 툴바를 찾아 빈 왼쪽 줄에 append한다.
     const toolbarRows = [...group.querySelectorAll('div.flex.items-center.justify-between.mt-2')];
 
     for (const toolbar of toolbarRows) {
@@ -863,7 +858,6 @@
       if (Object.keys(normalized).length) return normalized;
     } catch {}
 
-    // 바로 전 버전에서 같은 탭에 잡힌 차감값은 최초 1회 localStorage로 승격한다.
     try {
       const legacy = JSON.parse(sessionStorage.getItem(legacyMessageCostStorageKey(chatId)) || '{}');
       const migrated = normalizeMessageStatsMap(legacy);
@@ -1024,13 +1018,11 @@
         indicator = document.createElement('span');
         indicator.className = CHAT_INDICATOR_CLASS;
         indicator.innerHTML = '<span class="ci-list"></span>';
-        // 기존 확프 요소 뒤에 append만 해서 순서 싸움을 하지 않는다.
         row.appendChild(indicator);
       } else if (indicator.parentElement !== row) {
         row.appendChild(indicator);
       }
 
-      // 이 옵션은 채팅창 배지에만 적용한다. 입력창 렌더링은 그대로 유지한다.
       indicator.classList.toggle('ci-chat-icons-off', !showChatIcons);
 
       const list = indicator.querySelector('.ci-list');
@@ -1038,9 +1030,6 @@
         ? normalizeMessageStatsRecord(messageStats[messageId])
         : normalizeMessageStatsRecord(null);
       const storedCost = Number(messageRecord.cost);
-      // 입력창과 채팅창의 최신 차감 표시는 완전히 같은 source를 쓴다.
-      // lastRoomDeductedAmount는 입력창에 표시되는 바로 그 값이며,
-      // messageId 저장/생성 신호와 무관하게 최신 AI 줄에도 그대로 사용한다.
       const latestRoomCost = group === newestAssistantGroup
         ? Number(lastRoomDeductedAmount)
         : NaN;
@@ -1117,10 +1106,6 @@
     const candidates = (groups || []).filter(Boolean);
     if (!candidates.length) return null;
 
-    // Crack의 메시지 DOM 순서는 최신→과거일 수 있어서 배열의 마지막 요소를
-    // "최신"으로 취급하면 아주 오래된 응답에 차감/턴이 붙는다.
-    // data-message-group-id가 Mongo ObjectId이면 앞 8자리의 생성 시각으로
-    // 실제 최신 응답을 결정한다.
     let newestById = null;
     let newestTime = 0;
 
@@ -1134,8 +1119,6 @@
 
     if (newestById) return newestById;
 
-    // 스트리밍 초기에 임시 ID를 쓰는 예외 상황에서는 화면상 아래쪽에 있는
-    // assistant 그룹을 최신으로 본다. ObjectId가 생기면 위 로직이 우선한다.
     let newestByPosition = candidates[0];
     let newestTop = Number.NEGATIVE_INFINITY;
 
@@ -1184,8 +1167,6 @@
     const messageId = getMessageGroupId(group);
     if (!messageId || !Number.isFinite(amount) || amount <= 0) return false;
 
-    // 스트리밍 중 data-message-group-id가 바뀔 수 있으므로 같은 DOM에 붙어 있는
-    // live 차감값을 새 messageId가 보일 때마다 다시 영구 저장한다.
     if (group.dataset.ciLiveDiffSavedMessageId === messageId) return true;
 
     saveMessageCost(chatId, messageId, amount);
@@ -1223,14 +1204,11 @@
       return false;
     }
 
-    // 일반 생성은 시작 당시 없던 새 assistant DOM을 우선한다.
-    // element 자체를 비교하므로 messageId가 아직 확정되기 전 스트리밍 DOM에도 즉시 표시할 수 있다.
     let group = findNewestAssistantGroup(
       pending.messageGroupIdsAtStart,
       pending.assistantGroupsAtStart
     );
 
-    // 리롤처럼 같은 DOM을 재사용하는 경우에만 완료 신호에서 최신 assistant 줄을 재사용한다.
     if (!group && allowReuseFallback) {
       group = findNewestAssistantGroup();
     }
@@ -1247,12 +1225,9 @@
 
     const messageId = getMessageGroupId(group);
     if (!messageId) {
-      // 표시값은 DOM에 그대로 유지한다. messageId가 붙는 순간 observer가 같은 156을 저장한다.
       return true;
     }
 
-    // 저장 뒤에도 live 값을 지우지 않는다. 스트리밍 중 group id가 바뀌어도
-    // 화면의 값은 계속 156이고, observer가 새 id에 다시 저장한다.
     persistLiveMessageCost(group, pending.chatId);
     pending.liveGroup = null;
     pendingMessageCost = null;
@@ -1275,10 +1250,6 @@
       liveGroup: null,
     };
 
-    // 화면 표시는 입력창과 완전히 같은 타이밍으로 처리한다.
-    // 차감값이 잡힌 순간 현재 최신 AI 줄에 먼저 그대로 띄우고,
-    // "새 메시지인지 / 최종 messageId가 뭔지" 판별은 저장용으로만 뒤에서 처리한다.
-    // 즉 저장이 늦더라도 채팅창 표시가 '-'로 기다리지 않는다.
     const provisionalGroup = findNewestAssistantGroup();
     if (provisionalGroup) {
       pendingMessageCost.liveGroup = provisionalGroup;
@@ -1286,9 +1257,6 @@
       scheduleMount(true);
     }
 
-    // 새 assistant DOM이 이미 생겼다면 정확한 그룹으로 즉시 옮겨 저장한다.
-    // 아직 없거나 같은 DOM을 재사용 중이면 provisional 표시를 유지한 채
-    // MutationObserver / generate_done에서 최종 messageId에 저장한다.
     tryAttachPendingMessageCost(Boolean(session.generateDoneAt));
     return true;
   }
@@ -1435,8 +1403,6 @@
       time: messageTime(message),
     }));
 
-    // messages API가 최신순으로 오더라도 ObjectId/createdAt 기준으로 오래된 메시지부터 정렬한다.
-    // 같은 시각이면 user를 assistant보다 먼저 두어 해당 응답이 같은 턴 번호를 받게 한다.
     indexed.sort((a, b) => {
       const aHasTime = a.time > 0;
       const bHasTime = b.time > 0;
@@ -1482,7 +1448,6 @@
 
       let messageTurn = null;
 
-      // 가장 정확한 경우: assistant의 parentTurnId/turnId가 user turn 식별자와 직접 연결된다.
       for (const key of parentKeys) {
         if (logicalTurnByKey.has(key)) {
           messageTurn = logicalTurnByKey.get(key);
@@ -1490,7 +1455,6 @@
         }
       }
 
-      // 리롤 답변들은 같은 parentTurnId를 공유하므로 최초 판정된 턴 번호를 재사용한다.
       if (messageTurn == null) {
         for (const key of parentKeys) {
           if (assistantTurnByParent.has(key)) {
@@ -1500,7 +1464,6 @@
         }
       }
 
-      // parentTurnId 연결 정보가 없는 일반 응답은 직전까지 센 user 턴 수를 사용한다.
       if (messageTurn == null) messageTurn = turn;
 
       messageTurns[messageId] = Math.max(0, Math.round(messageTurn));
@@ -1646,22 +1609,15 @@
     lastGenerationChatId = null;
     lastGenerationStartedAt = 0;
     clearPendingMessageCost();
-    // SPA 방 전환 순간 이전 방 DOM이 잠깐 남아 있어도 live 차감값을 새 chatId에 저장하지 않게 제거한다.
     document.querySelectorAll(MESSAGE_SELECTOR).forEach(clearLiveMessageCost);
     lastRoomDeductedAmount = null;
 
-    // 턴 수는 방별 마지막 정상값을 localStorage에서 즉시 복구한다.
-    // 실제 API 조회가 끝나면 최신값으로 다시 갱신/저장된다.
     const storedTurn = loadStoredRoomTurn(nextChatId);
     const storedTurnDisplay = storedTurn === null ? '-' : String(storedTurn);
     lastTurnSignature = storedTurnDisplay;
 
-    // 입력창의 차감 크래커는 방을 바꿀 때만 '-'로 시작한다.
-    // 채팅창의 메시지별 차감값은 localStorage에서 각 메시지별로 복구된다.
     setStats({ turn: storedTurnDisplay, diffCracker: '-' });
 
-    // 보유 크래커는 전역 잔액이므로 방 전환 직후의 첫 잔액은 비교하지 않고 기준값으로만 사용한다.
-    // 이전 방에서 늦게 반영된 차감을 새 방의 차감으로 오인하는 것을 막는다.
     lastObservedBalance = null;
 
     return true;
@@ -1675,11 +1631,7 @@
     const displayValue = normalized.toLocaleString('en-US');
     lastRoomDeductedAmount = normalized;
 
-    // 입력창/채팅창은 lastRoomDeductedAmount라는 단 하나의 source를 공유한다.
-    // 채팅창의 messageId 저장 여부는 화면 표시와 무관하다.
     setStat('diffCracker', displayValue);
-    // 연속 두 응답의 차감액이 우연히 같아 stat.value가 변하지 않아도
-    // 채팅창 최신 응답은 반드시 같은 프레임에 다시 그린다.
     if (getSetting('placement') === 'chat') {
       renderChatIndicators();
     }
@@ -1707,19 +1659,14 @@
 
     const normalized = Math.max(0, Math.round(value));
 
-    // 화면 표시는 저장 성공 여부와 분리한다. 입력창에 156이 잡힌 순간
-    // 최신 AI DOM에도 동일한 156을 live 값으로 유지한다.
     group.dataset.ciLiveDiffCracker = String(normalized);
     scheduleMount(true);
 
-    // messageId가 이미 있으면 즉시 영구 저장한다. 이후 id가 바뀌면 observer가 재저장한다.
     if (messageId) {
       persistLiveMessageCost(group, chatId);
       return true;
     }
 
-    // 생성 시작 신호 자체를 놓친 특수 케이스에서도 입력창과 동일한 값을 즉시 표시한다.
-    // messageId가 나중에 붙으면 MutationObserver가 같은 live 값을 영구 저장한다.
     pendingMessageCost = {
       chatId,
       amount: normalized,
@@ -1766,7 +1713,6 @@
         lastBalanceFetchAt = Date.now();
 
         if (activeGeneration === session) activeGeneration = null;
-        // generate_done의 턴 갱신과 같은 타이머로 합쳐 중복 전체 메시지 조회를 피한다.
         scheduleTurnRefresh(600, true);
         return deducted;
       }
@@ -1783,13 +1729,10 @@
 
     const now = Date.now();
 
-    // Enter + 버튼 click + dataLayer start가 연달아 들어오는 경우,
-    // 잔액 차감이 매우 빨라 activeGeneration이 먼저 끝났더라도 1.5초 안의 중복 신호는 무시한다.
     if (lastGenerationChatId === chatId && now - lastGenerationStartedAt < 1500) {
       return;
     }
 
-    // 직전 생성의 차감값이 아직 대기 중이면, 정말 새 생성이 시작될 때만 최신 응답에 마지막 한 번 연결한다.
     if (pendingMessageCost?.chatId === chatId) {
       tryAttachPendingMessageCost(true);
       if (pendingMessageCost) clearPendingMessageCost();
@@ -1798,7 +1741,6 @@
     lastGenerationChatId = chatId;
     lastGenerationStartedAt = now;
 
-    // activeGeneration 자체도 중복 방어로 유지한다.
     if (
       activeGeneration &&
       activeGeneration.chatId === chatId &&
@@ -1806,9 +1748,6 @@
     ) {
       return;
     }
-
-    // 여기까지 통과한 경우에만 진짜 새 생성이다.
-    // 마지막 차감값은 입력창과 채팅창이 공유하므로 생성 시작 때 따로 지우지 않는다.
 
     const session = {
       chatId,
@@ -1830,7 +1769,6 @@
       return;
     }
 
-    // 첫 로드 직후처럼 기준 잔액이 아직 없을 때만 한 번 가져온다.
     getBalance(true).then((balance) => {
       if (activeGeneration !== session || !Number.isFinite(balance)) return;
       session.baselineBalance = balance;
@@ -1909,17 +1847,12 @@
         }
 
         if (/^generate_done$/i.test(eventName)) {
-          // 차감 polling보다 generate_done이 먼저 오는 경우를 기억한다.
-          // 이후 차감이 잡혀도 "완료 신호를 놓친 pending" 상태가 되지 않게 한다.
           if (activeGeneration) {
             activeGeneration.generateDoneAt = Date.now();
           }
 
-          // 새 메시지가 API에 반영될 짧은 여유를 두고 한 번만 강제 갱신한다.
-          // 잔액 polling 쪽에서도 같은 타이머를 사용하므로 서로 겹치면 자동 병합된다.
           scheduleTurnRefresh(600, true);
 
-          // 차감이 먼저 잡힌 경우에는 완료 시점에 최신 assistant 줄로 확정 저장한다.
           if (pendingMessageCost) {
             tryAttachPendingMessageCost(true);
           }
@@ -1950,12 +1883,9 @@
           const storedTurn = loadStoredRoomTurn(chatId);
           return storedTurn === null ? null : { chatId, turn: storedTurn, source: 'localStorage' };
         }),
-        // 턴 강제 갱신과 잔액 강제 갱신을 묶지 않는다.
-        // 차감 직후 잔액은 전용 polling이 이미 force 조회하므로 여기서는 짧은 캐시를 재사용한다.
         getBalance(false),
       ]);
 
-      // 조회 중 방이 또 바뀌었으면 이전 방 결과를 UI에 적용하지 않는다.
       if (chatId !== getCurrentChatIdFromUrl()) {
         setTimeout(() => scheduleTurnRefresh(0, true), 0);
         return;
@@ -1972,11 +1902,8 @@
         const normalizedTurn = Math.max(0, Math.round(Number(info.turn)));
         saveStoredRoomTurn(chatId, normalizedTurn);
 
-        // messages API 전체 목록에서 각 AI messageId가 몇 번째 user 턴에 속하는지 계산해
-        // 과거 응답까지 한 번에 영구 저장한다. 리롤은 같은 parentTurnId면 같은 턴을 공유한다.
         mergeMessageTurns(chatId, info?.messageTurns);
 
-        // API에 막 생성된 최신 메시지가 아직 반영되지 않은 짧은 구간만 DOM 최신 응답으로 보완한다.
         saveTurnToLatestAssistant(chatId, normalizedTurn);
       }
 
@@ -2010,11 +1937,8 @@
 
     if (turnTimerId) {
       if (wantsForce) {
-        // 일반 갱신이 먼저 잡혀 있어도 강제 갱신 요청의 지연시간을 존중한다.
-        // 이미 강제 갱신이 예약돼 있다면 더 빠른 쪽 하나만 남긴다.
         if (alreadyForced && turnTimerDueAt <= dueAt) return;
       } else {
-        // 강제 갱신이 대기 중이면 일반 DOM 변화가 그 시점을 앞당기거나 뒤로 밀지 못하게 한다.
         if (alreadyForced || turnTimerDueAt <= dueAt) return;
       }
 
@@ -2157,17 +2081,12 @@
 
       scheduleMount();
 
-      // 차감값이 대기 중이면 API 호출 없이 DOM 변화가 생긴 그 프레임에 바로 연결한다.
       if (pendingMessageCost) {
         tryAttachPendingMessageCost(false);
       }
 
-      // 이미 표시 중인 live 차감값은 message-group-id가 바뀌어도 같은 DOM을 따라간다.
-      // 따라서 스트리밍 임시 id -> 최종 id 전환 시 최종 id에도 자동으로 영구 저장된다.
       persistVisibleLiveMessageCosts();
 
-      // 가상 스크롤로 과거 메시지가 재마운트되는 것만으로 messages API를 다시 읽지 않는다.
-      // 실제 생성 세션 중 새 메시지 그룹 변화가 보일 때만 fallback 턴 갱신을 예약한다.
       if (activeGeneration && mutations.some(mutationTouchesMessages)) {
         scheduleTurnRefresh(600, true);
       }
