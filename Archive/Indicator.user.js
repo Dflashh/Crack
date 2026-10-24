@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Crack Indicator
 // @namespace    https://github.com/Dflashh/Crack
-// @version      1.1.0
+// @version      1.1.1
 // @description  크랙 채팅의 턴 수와 보유·차감 크래커를 표시합니다.
 // @match        *://crack.wrtn.ai/*
 // @author       깡통들과 나
@@ -43,7 +43,7 @@
   };
   const CRACK_STATS_API = {
     balance: 'https://crack-api.wrtn.ai/crack-cash/crackers',
-    rawMessages: 'https://contents-api.wrtn.ai/character-chat/v3/chats',
+    rawMessages: 'https://crack-api.wrtn.ai/crack-gen/v3/chats',
   };
   const TURN_REFRESH_DELAY_MS = 400;
   const TURN_CACHE_MS = 5000;
